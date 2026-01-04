@@ -10,7 +10,7 @@ import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSlackTool } from "./tools/slack-tool.js";
 
-export function createClawdisTools(options?: {
+export function createClawdbotTools(options?: {
   browserControlUrl?: string;
   agentSessionKey?: string;
   agentSurface?: string;

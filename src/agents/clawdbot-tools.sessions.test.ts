@@ -16,7 +16,7 @@ vi.mock("../config/config.js", () => ({
   resolveGatewayPort: () => 18789,
 }));
 
-import { createClawdisTools } from "./clawdis-tools.js";
+import { createClawdbotTools } from "./clawdbot-tools.js";
 
 describe("sessions tools", () => {
   it("sessions_list filters kinds and includes messages", async () => {
@@ -67,7 +67,7 @@ describe("sessions tools", () => {
       return {};
     });
 
-    const tool = createClawdisTools().find(
+    const tool = createClawdbotTools().find(
       (candidate) => candidate.name === "sessions_list",
     );
     expect(tool).toBeDefined();
@@ -106,7 +106,7 @@ describe("sessions tools", () => {
       return {};
     });
 
-    const tool = createClawdisTools().find(
+    const tool = createClawdbotTools().find(
       (candidate) => candidate.name === "sessions_history",
     );
     expect(tool).toBeDefined();
@@ -190,7 +190,7 @@ describe("sessions tools", () => {
       return {};
     });
 
-    const tool = createClawdisTools({
+    const tool = createClawdbotTools({
       agentSessionKey: requesterKey,
       agentSurface: "discord",
     }).find((candidate) => candidate.name === "sessions_send");
@@ -340,7 +340,7 @@ describe("sessions tools", () => {
       return {};
     });
 
-    const tool = createClawdisTools({
+    const tool = createClawdbotTools({
       agentSessionKey: requesterKey,
       agentSurface: "discord",
     }).find((candidate) => candidate.name === "sessions_send");

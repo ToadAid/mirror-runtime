@@ -10,7 +10,7 @@ vi.mock("../media/image-ops.js", () => ({
   resizeToJpeg: vi.fn(async () => Buffer.from("jpeg")),
 }));
 
-import { createClawdisTools } from "./clawdis-tools.js";
+import { createClawdbotTools } from "./clawdbot-tools.js";
 
 describe("nodes camera_snap", () => {
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe("nodes camera_snap", () => {
       throw new Error(`unexpected method: ${String(method)}`);
     });
 
-    const tool = createClawdisTools().find(
+    const tool = createClawdbotTools().find(
       (candidate) => candidate.name === "nodes",
     );
     if (!tool) throw new Error("missing nodes tool");
@@ -75,7 +75,7 @@ describe("nodes camera_snap", () => {
       throw new Error(`unexpected method: ${String(method)}`);
     });
 
-    const tool = createClawdisTools().find(
+    const tool = createClawdbotTools().find(
       (candidate) => candidate.name === "nodes",
     );
     if (!tool) throw new Error("missing nodes tool");

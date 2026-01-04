@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createClawdisTools } from "./clawdis-tools.js";
+import { createClawdbotTools } from "./clawdbot-tools.js";
 
 describe("gateway tool", () => {
   it("schedules SIGUSR1 restart", async () => {
@@ -8,7 +8,7 @@ describe("gateway tool", () => {
     const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
 
     try {
-      const tool = createClawdisTools().find(
+      const tool = createClawdbotTools().find(
         (candidate) => candidate.name === "gateway",
       );
       expect(tool).toBeDefined();
