@@ -102,3 +102,22 @@ export function storeDeviceAuthToken(params: {
   writeStore(filePath, next);
   return entry;
 }
+
+export function clearDeviceAuthToken(params: {
+  deviceId: string;
+  role: string;
+  env?: NodeJS.ProcessEnv;
+}): void {
+  const filePath = resolveDeviceAuthPath(params.env);
+  const store = readStore(filePath);
+  if (!store || store.deviceId !== params.deviceId) return;
+  const role = normalizeRole(params.role);
+  if (!store.tokens[role]) return;
+  const next: DeviceAuthStore = {
+    version: 1,
+    deviceId: store.deviceId,
+    tokens: { ...store.tokens },
+  };
+  delete next.tokens[role];
+  writeStore(filePath, next);
+}
