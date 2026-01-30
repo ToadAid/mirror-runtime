@@ -15,7 +15,7 @@
     },
     "dbPath": {
       "label": "Database Path",
-      "placeholder": "~/.clawdbot/memory/lancedb",
+      "placeholder": "~/.openclaw/memory/lancedb",
       "advanced": true
     },
     "autoCapture": {
