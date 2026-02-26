@@ -1,17 +1,19 @@
-# Candidate Interception Points (No Code Yet)
+# Response Interception Candidates
 
-Goal: identify where to hook a Mirror output boundary without mutating upstream behavior.
+We need to hook into the engine where agent responses (specifically messages) are finalized before delivery.
 
-## What we need
-- A single place where model output is finalized before being emitted to UI/clients.
-- Ability to apply a guard (Cadence/Policy) under a feature flag.
+## Candidate 1: `src/agents/pi-embedded-subscribe.handlers.tools.ts`
+- **Why:** Handles tool execution lifecycle (`handleToolExecutionUpdate`).
+- **Logic:** `isMessagingToolSendAction` checks if a tool call is a message.
+- **Hook Opportunity:** Inject `cadenceGuard.check()` before `commitMessagingToolText`.
 
-## Candidates to inspect (starting points)
-- Agent loop / response assembly
-- Tool execution pipeline (message tool)
-- Gateway emit / websocket send layer
+## Candidate 2: `src/agents/channel-tools.ts`
+- **Why:** Defines channel capabilities.
+- **Status:** Less likely for interception; more for discovery.
 
-## Rules
-- Document-only in PR#1.
-- No code hooks until PR#2.
-- Prefer hook via adapter layer or plugin boundary if available.
+## Candidate 3: `src/agents/pi-embedded-messaging.ts`
+- **Why:** Helper functions like `isMessagingTool`.
+- **Status:** Utility only.
+
+## Action Plan
+Investigate `pi-embedded-subscribe.handlers.tools.ts` primarily. Look for the point where `ctx.state.messagingToolSentTexts` is populated.
