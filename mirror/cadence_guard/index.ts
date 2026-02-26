@@ -11,6 +11,25 @@
 import type { ToolHandlerContext } from "../src/agents/pi-embedded-subscribe.handlers.types.js";
 
 /**
+ * Cross-runtime environment getter.
+ * Safely retrieves environment variables in both Deno and Node.js.
+ */
+const envGet = (k: string): string | undefined => {
+  // Deno environment
+  if (
+    typeof globalThis !== "undefined" &&
+    (globalThis as unknown as { Deno?: { env: { get: (key: string) => string | undefined } } }).Deno
+      ?.env?.get
+  ) {
+    return (
+      globalThis as unknown as { Deno: { env: { get: (key: string) => string | undefined } } }
+    ).Deno.env.get(k);
+  }
+  // Node.js environment
+  return process.env[k];
+};
+
+/**
  * MIRROR_BOUNDARY environment variable.
  *
  * - "0" or undefined → boundary disabled (default)
@@ -18,7 +37,7 @@ import type { ToolHandlerContext } from "../src/agents/pi-embedded-subscribe.han
  *
  * @see https://github.com/ToadAid/mirror-runtime/blob/main/docs/ARCHITECTURE.md
  */
-export const MIRROR_BOUNDARY_ENABLED = Deno.env.get("MIRROR_BOUNDARY") === "1";
+export const MIRROR_BOUNDARY_ENABLED = envGet("MIRROR_BOUNDARY") === "1";
 
 /**
  * Checks if the boundary is enabled.
@@ -40,7 +59,11 @@ export function isDisabled(): boolean {
  * This function does NOT modify any state or output.
  * It only emits structured logs for audit purposes.
  */
-export function logToolContext(ctx: ToolHandlerContext, toolName: string, toolCallId: string): void {
+export function logToolContext(
+  ctx: ToolHandlerContext,
+  toolName: string,
+  toolCallId: string,
+): void {
   if (!isEnabled()) {
     return;
   }
@@ -65,7 +88,5 @@ export function validateToolResult(
     return;
   }
 
-  ctx.log.debug(
-    `MIRROR_BOUNDARY: tool_result_check tool=${toolName} result_type=${typeof result}`,
-  );
+  ctx.log.debug(`MIRROR_BOUNDARY: tool_result_check tool=${toolName} result_type=${typeof result}`);
 }
