@@ -20,6 +20,7 @@ import {
 import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
 import { buildToolMutationState, isSameToolMutationAction } from "./tool-mutation.js";
 import { normalizeToolName } from "./tool-policy.js";
+import { validateToolResult, logToolContext } from "../../mirror/cadence_guard/index.js";
 
 /** Track tool execution start times and args for after_tool_call hook */
 const toolStartData = new Map<string, { startTime: number; args: unknown }>();
@@ -344,6 +345,9 @@ export async function handleToolExecutionEnd(
   if (pendingText) {
     ctx.state.pendingMessagingTexts.delete(toolCallId);
     if (!isToolError) {
+      // Mirror boundary hook: log tool context before committing
+      logToolContext(ctx, toolName, toolCallId);
+      validateToolResult(ctx, toolName, result);
       ctx.state.messagingToolSentTexts.push(pendingText);
       ctx.state.messagingToolSentTextsNormalized.push(normalizeTextForComparison(pendingText));
       ctx.log.debug(`Committed messaging text: tool=${toolName} len=${pendingText.length}`);
