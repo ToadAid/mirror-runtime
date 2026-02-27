@@ -8,7 +8,7 @@
  * @module mirror/cadence_guard
  */
 
-import type { ToolHandlerContext } from "../src/agents/pi-embedded-subscribe.handlers.types.js";
+import type { ToolHandlerContext } from "../../agents/pi-embedded-subscribe.handlers.types.js";
 
 /**
  * Cross-runtime environment getter.
