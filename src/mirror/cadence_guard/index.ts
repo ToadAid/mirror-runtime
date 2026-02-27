@@ -8,7 +8,7 @@
  * @module mirror/cadence_guard
  */
 
-import type { ToolHandlerContext } from "../src/agents/pi-embedded-subscribe.handlers.types.js";
+import type { ToolHandlerContext } from "../../agents/pi-embedded-subscribe.handlers.types.js";
 
 /**
  * Cross-runtime environment getter.
@@ -68,7 +68,7 @@ export function logToolContext(
     return;
   }
 
-  ctx.log.info(
+  ctx.log.warn(
     `MIRROR_BOUNDARY: tool=${toolName} toolCallId=${toolCallId} runId=${ctx.params.runId}`,
   );
 }
