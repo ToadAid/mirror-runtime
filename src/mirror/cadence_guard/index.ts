@@ -68,7 +68,7 @@ export function logToolContext(
     return;
   }
 
-  ctx.log.info(
+  ctx.log.debug(
     `MIRROR_BOUNDARY: tool=${toolName} toolCallId=${toolCallId} runId=${ctx.params.runId}`,
   );
 }

@@ -5,7 +5,8 @@
  */
 
 import type { ToolHandlerContext } from "../agents/pi-embedded-subscribe.handlers.types.js";
-import { lore_forge } from "../plugin-sdk/mirror/lore_forge/index.js";
+import { createJsonlBundle } from "../plugin-sdk/mirror/lore_forge/bundle.js";
+import { scoreCandidate } from "../plugin-sdk/mirror/lore_forge/scoring.js";
 import type { LoreCandidate } from "../plugin-sdk/mirror/lore_forge/types.js";
 
 /**
@@ -46,7 +47,7 @@ export async function maybeForgeLoreCandidate(
     };
 
     // Score the candidate (threshold 0.5)
-    const scored = await lore_forge.scoreCandidate(candidate, {
+    const scored = scoreCandidate(candidate, {
       minScore: 0.5,
     });
 
@@ -57,7 +58,7 @@ export async function maybeForgeLoreCandidate(
         outputPath: process.env.LORE_FORGE_OUT || "./.mirror/lore_forge_candidates.jsonl",
       };
 
-      await lore_forge.bundle([scored.candidate], config);
+      createJsonlBundle([scored], config);
     }
   } catch (error) {
     // Swallow error, log single line (never throw)
