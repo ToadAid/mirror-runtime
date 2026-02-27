@@ -9,7 +9,7 @@ import {
   createJsonBundle,
   createJsonlBundle,
   createMarkdownBundle,
-} from "../src/plugin-sdk/mirror/lore_forge/index";
+} from "../src/plugin-sdk/mirror/lore_forge/index.ts";
 
 const testCandidates = [
   {
