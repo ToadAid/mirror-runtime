@@ -4,8 +4,8 @@
  * @see docs/LORE_FORGE_PIPELINE.md
  */
 
-export * from './types';
-export * from './scoring';
-export * from './bundle';
+export * from './types.js';
+export * from './scoring.js';
+export * from './bundle.js';
 
 // Library-only: No runtime hooks, no behavior change

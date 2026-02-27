@@ -3,17 +3,16 @@
  * @description Provides bundle generation utilities for lore candidates.
  */
 
-import type { LoreCandidate, BundleConfig } from './types';
-
 /**
  * Create a JSON bundle from scored candidates
  * @param scored - Array of scored candidates
  * @param config - Bundle configuration
  * @returns JSON string bundle
  */
+/* eslint-disable no-explicit-any */
 export function createJsonBundle(
   scored: any[],
-  config: BundleConfig
+  config: { format: string; outputPath: string }
 ): string {
   return JSON.stringify(scored, null, 2);
 }
@@ -26,7 +25,7 @@ export function createJsonBundle(
  */
 export function createJsonlBundle(
   scored: any[],
-  config: BundleConfig
+  config: { format: string; outputPath: string }
 ): string {
   return scored.map((item) => JSON.stringify(item)).join('\n');
 }
@@ -39,7 +38,7 @@ export function createJsonlBundle(
  */
 export function createMarkdownBundle(
   scored: any[],
-  config: BundleConfig
+  config: { format: string; outputPath: string }
 ): string {
   const header = `# Lore Forge Bundle\n\nGenerated: ${new Date().toISOString()}\n\n`;
   const items = scored
@@ -52,5 +51,6 @@ export function createMarkdownBundle(
     .join('\n\n---\n\n');
   return header + items;
 }
+/* eslint-enable no-explicit-any */
 
 // Library-only: No runtime hooks, no behavior change

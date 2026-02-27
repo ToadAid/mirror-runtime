@@ -3,7 +3,7 @@
  * @description Provides scoring utilities for lore candidates. No runtime hooks, no behavior change.
  */
 
-import type { LoreCandidate, ScoredCandidate, ScoringParams } from './types';
+import type { LoreCandidate, ScoredCandidate, ScoringParams } from './types.js';
 
 /**
  * Basic scoring utility for lore candidates
