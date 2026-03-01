@@ -2,7 +2,12 @@
 
 ## Overview
 
-The Lore Forge is a non-invasive overlay for the Mirror Runtime that automatically detects lore-like signals in user input and creates candidate draft bundles for human/DAO review.
+The Lore Forge is designed as a two-layer system:
+
+1. **Library Layer**: Pure, library-only candidate pipeline for lore generation (PR#4)
+2. **Runtime Overlay**: Optional, feature-flagged hook point for runtime behavior (PR#3)
+
+This document merges both perspectives into a single coherent spec.
 
 ## Key Principles
 
@@ -10,8 +15,87 @@ The Lore Forge is a non-invasive overlay for the Mirror Runtime that automatical
 - **Draft Format**: Candidates are written in minimal "candidate scroll" format.
 - **Review Gate**: A candidate is "accepted" only if a maintainer manually moves it into `lore-scrolls/`.
 - **Feature Flagged**: Default disabled. Requires explicit activation.
+- **Library-First**: Core logic is pure library; runtime integration is gated and opt-in.
 
-## Architecture
+## Layer 1: Library-Only Candidate Pipeline (PR#4)
+
+### Scope
+
+The `lore_forge` library provides:
+
+- `src/plugin-sdk/mirror/lore_forge/` directory with library modules
+- `tools/test-lore-forge.ts` local test harness
+- Scoring and bundling utilities without runtime hooks
+
+This library does NOT:
+
+- Wire lore_forge into runtime hooks
+- Modify runtime behavior
+- Add feature flags
+- Change existing imports or exports
+
+### Module Structure
+
+### `src/plugin-sdk/mirror/lore_forge/index.ts`
+
+- Entry point for lore_forge library
+- Exports: types, scoring, bundle functions
+
+### `src/plugin-sdk/mirror/lore_forge/types.ts`
+
+- Type definitions for LoreCandidate, ScoredCandidate, ScoringParams, BundleConfig
+
+### `src/plugin-sdk/mirror/lore_forge/scoring.ts`
+
+- `scoreCandidate(candidate, params)` — Score a single candidate
+- `scoreCandidates(candidates, params)` — Batch scoring
+- No runtime hooks, no behavior change
+
+### `src/plugin-sdk/mirror/lore_forge/bundle.ts`
+
+- `createJsonBundle(scored, config)` — JSON bundle generation
+- `createJsonlBundle(scored, config)` — JSONL bundle generation
+- `createMarkdownBundle(scored, config)` — Markdown bundle generation
+
+### `tools/test-lore-forge.ts`
+
+- Local test harness to validate library functions
+- Runs without runtime hooks
+
+### Usage (Library-Only)
+
+```typescript
+import {
+  scoreCandidate,
+  scoreCandidates,
+  createJsonBundle,
+  createJsonlBundle,
+  createMarkdownBundle,
+} from "src/plugin-sdk/mirror/lore_forge";
+
+// Score a candidate
+const scored = scoreCandidate(
+  {
+    id: "test",
+    content: "Lore content",
+    tags: ["example"],
+  },
+  { includeReason: true },
+);
+
+// Create a bundle
+const bundle = createJsonBundle(scored, { format: "json" });
+```
+
+### Build Proof
+
+```bash
+pnpm -w test tools/test-lore-forge.ts
+```
+
+## Layer 2: Runtime Overlay (PR#3)
+
+### Architecture
 
 ### Module Structure
 
@@ -31,14 +115,14 @@ src/plugin-sdk/mirror/lore_forge/
 | `MIRROR_LORE_FORGE_THRESHOLD` | `0.72`  | Minimum combined score to create candidate    |
 | `MIRROR_LORE_LANG_AUTODETECT` | `1`     | Enable automatic language detection           |
 
-## Workflow
+### Workflow
 
-### 1. Text Observation
+#### 1. Text Observation
 
 When enabled, the lore forge observes inbound user text in the tools handler.
 It does NOT modify state or output — only logs and creates candidates.
 
-### 2. Scoring
+#### 2. Scoring
 
 The text is scored on:
 
@@ -47,11 +131,11 @@ The text is scored on:
 - **Impact** (0-1): How much impact this could have
 - **Confidence** (0-1): Source reliability (based on recency)
 
-### 3. Candidate Creation
+#### 3. Candidate Creation
 
 If the combined score exceeds the threshold, a candidate bundle is created.
 
-### 4. File Output
+#### 4. File Output
 
 Files are written to `candidates/<candidate-id>/`:
 
@@ -60,13 +144,13 @@ Files are written to `candidates/<candidate-id>/`:
 - `ZH.md` — Chinese draft (basic translation for MVP)
 - `README.md` — Reviewer instructions and status
 
-### 5. Review Gate
+#### 5. Review Gate
 
 - **Accepted**: Maintainer moves folder to `lore-scrolls/` with proper TOBY_L numbering
 - **Rejected**: Maintainer deletes the folder
 - **Under Review**: Maintainer marks in README
 
-## Candidate Scroll Format
+### Candidate Scroll Format
 
 ```markdown
 # CANDIDATE — <short title>
@@ -124,20 +208,6 @@ The lore forge hook is called in:
 
 The hook is guarded and log-only unless explicitly enabled.
 
-## Testing
-
-Run the test script:
-
-```bash
-pnpm -w test tools/test-lore-forge.ts
-```
-
-Or build first:
-
-```bash
-pnpm -w build
-```
-
 ## Migration
 
 To enable lore forge:
@@ -151,6 +221,20 @@ To change threshold:
 ```bash
 MIRROR_LORE_FORGE=1 MIRROR_LORE_FORGE_THRESHOLD=0.8 npm run dev
 ```
+
+## Testing
+
+Run the test script:
+
+```bash
+pnpm -w test tools/test-lore-forge.ts
+```
+
+## Status Summary
+
+- **Library candidate pipeline**: Exists, tested, green build (PR#4) ✅
+- **Runtime endpoints**: Not implemented yet (PR#3 docs only) ⏳
+- **Forge UI contracts**: Tracked separately in RUNTIME_ROADMAP.md 📋
 
 ## Limitations (MVP)
 
