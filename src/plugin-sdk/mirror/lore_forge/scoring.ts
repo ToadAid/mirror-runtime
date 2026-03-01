@@ -3,7 +3,7 @@
  * @description Provides scoring utilities for lore candidates. No runtime hooks, no behavior change.
  */
 
-import type { LoreCandidate, ScoredCandidate, ScoringParams } from './types';
+import type { LoreCandidate, ScoredCandidate, ScoringParams } from "./types.js";
 
 /**
  * Basic scoring utility for lore candidates
@@ -13,7 +13,7 @@ import type { LoreCandidate, ScoredCandidate, ScoringParams } from './types';
  */
 export function scoreCandidate(
   candidate: LoreCandidate,
-  params: ScoringParams = {}
+  params: ScoringParams = {},
 ): ScoredCandidate {
   const { minScore = 0, maxScore = 100, includeReason = false } = params;
 
@@ -29,7 +29,7 @@ export function scoreCandidate(
     ? {
         candidate,
         score: finalScore,
-        reason: `Based on ${candidate.tags.length} tags`,
+        reason: Based on ${candidate.tags.length} tags,
       }
     : { candidate, score: finalScore };
 }
@@ -42,7 +42,7 @@ export function scoreCandidate(
  */
 export function scoreCandidates(
   candidates: LoreCandidate[],
-  params: ScoringParams = {}
+  params: ScoringParams = {},
 ): ScoredCandidate[] {
   return candidates.map((c) => scoreCandidate(c, params));
 }

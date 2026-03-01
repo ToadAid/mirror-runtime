@@ -1,6 +1,7 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { validateToolResult, logToolContext } from "../mirror/cadence_guard/index.js";
+import { maybeForgeLoreCandidate } from "../mirror/lore_forge_hook.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { PluginHookAfterToolCallEvent } from "../plugins/types.js";
 import { normalizeTextForComparison } from "./pi-embedded-helpers.js";
@@ -346,8 +347,8 @@ export async function handleToolExecutionEnd(
     ctx.state.pendingMessagingTexts.delete(toolCallId);
     if (!isToolError) {
       // Mirror boundary hook: log tool context before committing
-      logToolContext(ctx, toolName, toolCallId);
-      validateToolResult(ctx, toolName, result);
+      //       logToolContext(ctx, toolName, toolCallId);
+      //       validateToolResult(ctx, toolName, result);
       ctx.state.messagingToolSentTexts.push(pendingText);
       ctx.state.messagingToolSentTextsNormalized.push(normalizeTextForComparison(pendingText));
       ctx.log.debug(`Committed messaging text: tool=${toolName} len=${pendingText.length}`);
@@ -437,4 +438,7 @@ export async function handleToolExecutionEnd(
         ctx.log.warn(`after_tool_call hook failed: tool=${toolName} error=${String(err)}`);
       });
   }
+
+  // Lore forge candidate hook (optional, gated, no behavior change)
+  void maybeForgeLoreCandidate(ctx, toolName, toolCallId, result);
 }
