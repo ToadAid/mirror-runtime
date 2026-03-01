@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { emitAgentEvent } from "../infra/agent-events.js";
+import { validateToolResult, logToolContext } from "../mirror/cadence_guard/index.js";
 import { maybeForgeLoreCandidate } from "../mirror/lore_forge_hook.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { PluginHookAfterToolCallEvent } from "../plugins/types.js";

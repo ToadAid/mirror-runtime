@@ -10,11 +10,11 @@ This system is intentionally gated and log-only by default.
 
 The pipeline performs:
 
-1. Signal detection  
-2. Scoring  
-3. Candidate bundle creation  
-4. File output  
-5. Manual review gate  
+1. Signal detection
+2. Scoring
+3. Candidate bundle creation
+4. File output
+5. Manual review gate
 
 It does NOT modify canon directly.
 
@@ -24,10 +24,10 @@ It does NOT modify canon directly.
 
 Each candidate is evaluated across multiple dimensions:
 
-- Lore Likeness (0–1): Presence of lore keywords and symbols  
-- Novelty (0–1): How new or non-duplicate the idea is  
-- Impact (0–1): Potential long-term narrative impact  
-- Confidence (0–1): Source reliability / recency  
+- Lore Likeness (0–1): Presence of lore keywords and symbols
+- Novelty (0–1): How new or non-duplicate the idea is
+- Impact (0–1): Potential long-term narrative impact
+- Confidence (0–1): Source reliability / recency
 
 If the combined weighted score exceeds the configured threshold, a candidate bundle is generated.
 
@@ -41,10 +41,10 @@ candidates/<candidate-id>/
 
 Each bundle contains:
 
-- meta.json — Metadata and scoring details  
-- EN.md — English draft scroll  
-- ZH.md — Chinese draft (MVP-level translation)  
-- README.md — Review instructions + status  
+- meta.json — Metadata and scoring details
+- EN.md — English draft scroll
+- ZH.md — Chinese draft (MVP-level translation)
+- README.md — Review instructions + status
 
 These bundles remain untrusted until manually reviewed.
 
@@ -68,33 +68,67 @@ These bundles remain untrusted until manually reviewed.
 
 ## Reviewer Notes
 ...
-
 ---
 
-## Layer 2: Runtime Overlay (PR#3)
+## Layer 1: Library Candidate Pipeline (PR#4)
 
-### Architecture
+PR#4 adds the library-only candidate pipeline (no runtime wiring).
 
-The runtime overlay connects the forge pipeline to the Mirror runtime.
+### Scope
 
-It is guarded by feature flags and does not execute by default.
+This PR adds ONLY:
+
+- src/plugin-sdk/mirror/lore_forge/ directory with library modules
+- tools/test-lore-forge.ts local test harness
+- docs/LORE_FORGE_PIPELINE.md documentation
+
+This PR does NOT:
+
+- Wire lore_forge into runtime hooks
+- Modify runtime behavior
+- Enable feature flags by default
+- Change canon directly
 
 ### Module Structure
 
 src/plugin-sdk/mirror/lore_forge/
-├── index.ts           # Entry point, feature flags, hook function
-├── types.ts           # TypeScript definitions for bundles and metadata
-├── scoring.ts         # Lore-likeness, novelty, impact scoring
-└── bundle.ts          # Bundle creation, file writing, translation
+├── index.ts           # Entry point, exports types + helpers
+├── types.ts           # TypeScript definitions
+├── scoring.ts         # Candidate scoring functions
+└── bundle.ts          # Bundle creation helpers (json/jsonl/md)
+### Usage (Library-Only)
+
+import {
+  scoreCandidate,
+  scoreCandidates,
+  createJsonBundle,
+  createJsonlBundle,
+  createMarkdownBundle,
+} from "src/plugin-sdk/mirror/lore_forge";
+
+const scored = scoreCandidate(
+  { id: "test", content: "Lore content", tags: ["example"] },
+  { includeReason: true }
+);
+
+const bundle = createJsonBundle(scored, { format: "json" });
+### Build Proof
+
+cd ~/mirror-runtime
+pnpm -w build
+node tools/test-lore-forge.ts
+Expected: build passes; tests run; no runtime behavior changes.
 
 ---
 
 ## Migration
 
-To enable lore forge:
+To enable lore forge (when runtime overlay is wired):
 
 MIRROR_LORE_FORGE=1 npm run dev
+To change threshold:
 
+MIRROR_LORE_FORGE=1 MIRROR_LORE_FORGE_THRESHOLD=0.8 npm run dev
 ---
 
 ## Testing
@@ -102,30 +136,24 @@ MIRROR_LORE_FORGE=1 npm run dev
 Run the test script:
 
 pnpm -w test tools/test-lore-forge.ts
+Or build first:
 
----
-
-## Status Summary
-
-- Library candidate pipeline: Exists, tested, green build (PR#4) ✅  
-- Runtime endpoints: Not implemented yet (PR#3 docs only) ⏳  
-- Forge UI contracts: Tracked separately in RUNTIME_ROADMAP.md 📋  
-
+pnpm -w build
 ---
 
 ## Limitations (MVP)
 
-- Basic dictionary-based translation (not production-grade)  
-- Simple heuristic scoring (no embeddings)  
-- No automatic deduplication  
-- No UI for review workflow  
+- Basic dictionary-based translation (not production-grade)
+- Simple heuristic scoring (no embeddings)
+- No automatic deduplication
+- No UI for review workflow
 
 ---
 
 ## Future Improvements
 
-- Real translation API integration  
-- Embedding-based scoring  
-- Automatic deduplication  
-- Web UI for review workflow  
+- Real translation API integration
+- Embedding-based scoring
+- Automatic deduplication
+- Web UI for review workflow
 - Database-backed candidate tracking
