@@ -68,6 +68,7 @@ These bundles remain untrusted until manually reviewed.
 
 ## Reviewer Notes
 ...
+
 ---
 
 ## Layer 1: Library Candidate Pipeline (PR#4)
@@ -89,21 +90,24 @@ This PR does NOT:
 - Enable feature flags by default
 - Change canon directly
 
+---
+
 ### Module Structure
 
 src/plugin-sdk/mirror/lore_forge/
-├── index.ts           # Entry point, exports types + helpers
-├── types.ts           # TypeScript definitions
-├── scoring.ts         # Candidate scoring functions
-└── bundle.ts          # Bundle creation helpers (json/jsonl/md)
+├── index.ts
+├── types.ts
+├── scoring.ts
+└── bundle.ts
+
+---
+
 ### Usage (Library-Only)
 
+`ts
 import {
   scoreCandidate,
-  scoreCandidates,
   createJsonBundle,
-  createJsonlBundle,
-  createMarkdownBundle,
 } from "src/plugin-sdk/mirror/lore_forge";
 
 const scored = scoreCandidate(
@@ -112,48 +116,3 @@ const scored = scoreCandidate(
 );
 
 const bundle = createJsonBundle(scored, { format: "json" });
-### Build Proof
-
-cd ~/mirror-runtime
-pnpm -w build
-node tools/test-lore-forge.ts
-Expected: build passes; tests run; no runtime behavior changes.
-
----
-
-## Migration
-
-To enable lore forge (when runtime overlay is wired):
-
-MIRROR_LORE_FORGE=1 npm run dev
-To change threshold:
-
-MIRROR_LORE_FORGE=1 MIRROR_LORE_FORGE_THRESHOLD=0.8 npm run dev
----
-
-## Testing
-
-Run the test script:
-
-pnpm -w test tools/test-lore-forge.ts
-Or build first:
-
-pnpm -w build
----
-
-## Limitations (MVP)
-
-- Basic dictionary-based translation (not production-grade)
-- Simple heuristic scoring (no embeddings)
-- No automatic deduplication
-- No UI for review workflow
-
----
-
-## Future Improvements
-
-- Real translation API integration
-- Embedding-based scoring
-- Automatic deduplication
-- Web UI for review workflow
-- Database-backed candidate tracking
