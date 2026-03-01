@@ -58,7 +58,7 @@ export async function maybeForgeLoreCandidate(
         outputPath: process.env.LORE_FORGE_OUT || "./.mirror/lore_forge_candidates.jsonl",
       };
 
-      createJsonlBundle([scored], config);
+createJsonlBundle([scored], config);
     }
   } catch (error) {
     // Swallow error, log single line (never throw)

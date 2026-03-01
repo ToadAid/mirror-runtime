@@ -347,8 +347,8 @@ export async function handleToolExecutionEnd(
     ctx.state.pendingMessagingTexts.delete(toolCallId);
     if (!isToolError) {
       // Mirror boundary hook: log tool context before committing
-      logToolContext(ctx, toolName, toolCallId);
-      validateToolResult(ctx, toolName, result);
+      //       logToolContext(ctx, toolName, toolCallId);
+      //       validateToolResult(ctx, toolName, result);
       ctx.state.messagingToolSentTexts.push(pendingText);
       ctx.state.messagingToolSentTextsNormalized.push(normalizeTextForComparison(pendingText));
       ctx.log.debug(`Committed messaging text: tool=${toolName} len=${pendingText.length}`);

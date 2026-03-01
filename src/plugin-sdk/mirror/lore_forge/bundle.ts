@@ -8,7 +8,7 @@ import type { BundleConfig, ScoredCandidate } from "./types.js";
 /**
  * Create a JSON bundle from scored candidates
  * @param scored - Array of scored candidates
- * @param _config - Bundle configuration (unused)
+ * @param _config - Bundle configuration (reserved for future)
  * @returns JSON string bundle
  */
 export function createJsonBundle(scored: ScoredCandidate[], _config: BundleConfig): string {
@@ -18,7 +18,7 @@ export function createJsonBundle(scored: ScoredCandidate[], _config: BundleConfi
 /**
  * Create a JSONL bundle from scored candidates
  * @param scored - Array of scored candidates
- * @param _config - Bundle configuration (unused)
+ * @param _config - Bundle configuration (reserved for future)
  * @returns JSONL string bundle
  */
 export function createJsonlBundle(scored: ScoredCandidate[], _config: BundleConfig): string {
@@ -28,22 +28,21 @@ export function createJsonlBundle(scored: ScoredCandidate[], _config: BundleConf
 /**
  * Create a markdown bundle from scored candidates
  * @param scored - Array of scored candidates
- * @param _config - Bundle configuration (unused)
+ * @param _config - Bundle configuration (reserved for future)
  * @returns Markdown string bundle
  */
 export function createMarkdownBundle(scored: ScoredCandidate[], _config: BundleConfig): string {
-  const header = `# Lore Forge Bundle\n\nGenerated: ${new Date().toISOString()}\n\n`;
+  const header = # Lore Forge Bundle\n\nGenerated: ${new Date().toISOString()}\n\n;
+
   const items = scored
     .map((item, index) => {
-      const i = item as unknown as Record<string, unknown>;
-      const scoreStr = JSON.stringify(i.score ?? "");
-      const reasonStr = i.reason ? JSON.stringify(i.reason) : "";
-      const content = JSON.stringify((i.candidate as Record<string, unknown>).content ?? "");
-      return `## Candidate ${index + 1}\n\n**Score:** ${scoreStr}\n\n${
-        reasonStr ? `**Reason:** ${reasonStr}\n\n` : ""
-      }${content}`;
+      const scoreLine = **Score:** ${item.score}\n\n;
+      const reasonLine = item.reason ? **Reason:** ${item.reason}\n\n : "";
+      const content = item.candidate?.content ?? "";
+      return ## Candidate ${index + 1}\n\n${scoreLine}${reasonLine}${content};
     })
     .join("\n\n---\n\n");
+
   return header + items;
 }
 
