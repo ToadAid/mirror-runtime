@@ -1,168 +1,118 @@
-# Lore Forge Candidate Pipeline
+# Lore Forge Pipeline
+
+The Lore Forge is a candidate-generation system that observes user input and produces draft scroll bundles for review.
+
+This system is intentionally gated and log-only by default.
+
+---
 
 ## Overview
 
-The Lore Forge is a non-invasive overlay for the Mirror Runtime that automatically detects lore-like signals in user input and creates candidate draft bundles for human/DAO review.
+The pipeline performs:
 
-## Key Principles
+1. Signal detection
+2. Scoring
+3. Candidate bundle creation
+4. File output
+5. Manual review gate
 
-- **Proposal Only**: Never auto-canonize. Never auto-mint. Always propose.
-- **Draft Format**: Candidates are written in minimal "candidate scroll" format.
-- **Review Gate**: A candidate is "accepted" only if a maintainer manually moves it into `lore-scrolls/`.
-- **Feature Flagged**: Default disabled. Requires explicit activation.
+It does NOT modify canon directly.
 
-## Architecture
+---
 
-### Module Structure
+## Scoring Dimensions
 
-```
-src/plugin-sdk/mirror/lore_forge/
-├── index.ts           # Main entry point, feature flags, hook function
-├── types.ts           # TypeScript definitions for bundles and metadata
-├── scoring.ts         # Lore-likeness, novelty, impact scoring
-└── bundle.ts          # Bundle creation, file writing, translation
-```
+Each candidate is evaluated across multiple dimensions:
 
-### Feature Flags
+- Lore Likeness (0–1): Presence of lore keywords and symbols
+- Novelty (0–1): How new or non-duplicate the idea is
+- Impact (0–1): Potential long-term narrative impact
+- Confidence (0–1): Source reliability / recency
 
-| Flag                          | Default | Description                                   |
-| ----------------------------- | ------- | --------------------------------------------- |
-| `MIRROR_LORE_FORGE`           | `0`     | Enable/disable lore forge (default: disabled) |
-| `MIRROR_LORE_FORGE_THRESHOLD` | `0.72`  | Minimum combined score to create candidate    |
-| `MIRROR_LORE_LANG_AUTODETECT` | `1`     | Enable automatic language detection           |
+If the combined weighted score exceeds the configured threshold, a candidate bundle is generated.
 
-## Workflow
+---
 
-### 1. Text Observation
+## Candidate Creation
 
-When enabled, the lore forge observes inbound user text in the tools handler.
-It does NOT modify state or output — only logs and creates candidates.
+When the score threshold is met, a candidate folder is created under:
 
-### 2. Scoring
+candidates/<candidate-id>/
 
-The text is scored on:
+Each bundle contains:
 
-- **Lore Likeness** (0-1): Presence of lore keywords and symbols
-- **Novelty** (0-1): How novel or new this is (simplified for MVP)
-- **Impact** (0-1): How much impact this could have
-- **Confidence** (0-1): Source reliability (based on recency)
+- meta.json — Metadata and scoring details
+- EN.md — English draft scroll
+- ZH.md — Chinese draft (MVP-level translation)
+- README.md — Review instructions + status
 
-### 3. Candidate Creation
+These bundles remain untrusted until manually reviewed.
 
-If the combined score exceeds the threshold, a candidate bundle is created.
-
-### 4. File Output
-
-Files are written to `candidates/<candidate-id>/`:
-
-- `meta.json` — Metadata and scores
-- `EN.md` — English draft
-- `ZH.md` — Chinese draft (basic translation for MVP)
-- `README.md` — Reviewer instructions and status
-
-### 5. Review Gate
-
-- **Accepted**: Maintainer moves folder to `lore-scrolls/` with proper TOBY_L numbering
-- **Rejected**: Maintainer deletes the folder
-- **Under Review**: Maintainer marks in README
+---
 
 ## Candidate Scroll Format
 
-```markdown
 # CANDIDATE — <short title>
 
 ## Source Summary
-
 ...
 
 ## Detected Symbols
-
 ...
 
 ## Why It Might Matter
-
 ...
 
 ## Draft Narrative
-
 ...
 
 ## Reviewer Notes
-
 ...
-```
 
-### Do NOT
+---
 
-- Assign final TOBY_L numbers
-- Touch existing lore-scrolls
-- Edit final canon directly
+## Layer 1: Library Candidate Pipeline (PR#4)
 
-### Do
+PR#4 adds the library-only candidate pipeline (no runtime wiring).
 
-- Create minimal drafts for review
-- Mark as "Under Review"
-- Leave status for maintainer to complete
+### Scope
 
-## File Structure
+This PR adds ONLY:
 
-```
-candidates/
-├── candidate-1735234567-abc123/
-│   ├── meta.json
-│   ├── EN.md
-│   ├── ZH.md
-│   └── README.md
-└── ...
-```
+- src/plugin-sdk/mirror/lore_forge/ directory with library modules
+- tools/test-lore-forge.ts local test harness
+- docs/LORE_FORGE_PIPELINE.md documentation
 
-## Hook Point
+This PR does NOT:
 
-The lore forge hook is called in:
-**File**: `src/agents/pi-embedded-subscribe.handlers.tools.ts`
-**Function**: `observeUserText()` is called after user text is received but before processing
+- Wire lore_forge into runtime hooks
+- Modify runtime behavior
+- Enable feature flags by default
+- Change canon directly
 
-The hook is guarded and log-only unless explicitly enabled.
+---
 
-## Testing
+### Module Structure
 
-Run the test script:
+src/plugin-sdk/mirror/lore_forge/
+├── index.ts
+├── types.ts
+├── scoring.ts
+└── bundle.ts
 
-```bash
-pnpm -w test tools/test-lore-forge.ts
-```
+---
 
-Or build first:
+### Usage (Library-Only)
 
-```bash
-pnpm -w build
-```
+`ts
+import {
+  scoreCandidate,
+  createJsonBundle,
+} from "src/plugin-sdk/mirror/lore_forge";
 
-## Migration
+const scored = scoreCandidate(
+  { id: "test", content: "Lore content", tags: ["example"] },
+  { includeReason: true }
+);
 
-To enable lore forge:
-
-```bash
-MIRROR_LORE_FORGE=1 npm run dev
-```
-
-To change threshold:
-
-```bash
-MIRROR_LORE_FORGE=1 MIRROR_LORE_FORGE_THRESHOLD=0.8 npm run dev
-```
-
-## Limitations (MVP)
-
-- Basic dictionary-based translation (not production-grade)
-- Simple heuristic scoring (no embeddings)
-- No automatic deduplication
-- No UI for review workflow
-
-Future improvements could include:
-
-- Real translation API integration
-- Embedding-based scoring
-- Automatic deduplication
-- Web UI for review workflow
-- Database-backed candidate tracking
+const bundle = createJsonBundle(scored, { format: "json" });
