@@ -93,6 +93,8 @@ const bundle = createJsonBundle(scored, { format: "json" });
 pnpm -w test tools/test-lore-forge.ts
 ```
 
+The library-only pipeline exists, tested, and builds successfully (PR#4) ✅
+
 ## Layer 2: Runtime Overlay (PR#3)
 
 ### Architecture
@@ -230,11 +232,11 @@ Run the test script:
 pnpm -w test tools/test-lore-forge.ts
 ```
 
-## Status Summary
+Or build first:
 
-- **Library candidate pipeline**: Exists, tested, green build (PR#4) ✅
-- **Runtime endpoints**: Not implemented yet (PR#3 docs only) ⏳
-- **Forge UI contracts**: Tracked separately in RUNTIME_ROADMAP.md 📋
+```bash
+pnpm -w build
+```
 
 ## Limitations (MVP)
 
