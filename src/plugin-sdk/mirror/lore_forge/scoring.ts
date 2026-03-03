@@ -14,7 +14,7 @@ export function scoreCandidate(candidate: LoreForgeCandidate): LoreForgeScored {
   const tagCount = Array.isArray(candidate.tags) ? candidate.tags.length : 0;
   const score = 50 + Math.min(50, tagCount * 10);
 
-  return {
+return {
     candidate,
     score,
     reason: `Based on ${tagCount} tags`,
