@@ -5,7 +5,7 @@
  */
 
 import type { ToolHandlerContext } from "../agents/pi-embedded-subscribe.handlers.types.js";
-import { createJsonlBundle } from "../plugin-sdk/mirror/lore_forge/bundle.js";
+import { toJsonlBundle } from "../plugin-sdk/mirror/lore_forge/bundle.js";
 import { scoreCandidate } from "../plugin-sdk/mirror/lore_forge/scoring.js";
 import type { LoreCandidate } from "../plugin-sdk/mirror/lore_forge/types.js";
 
@@ -47,18 +47,11 @@ export async function maybeForgeLoreCandidate(
     };
 
     // Score the candidate (threshold 0.5)
-    const scored = scoreCandidate(candidate, {
-      minScore: 0.5,
-    });
+    const scored = scoreCandidate(candidate);
 
     // If score meets threshold, bundle to JSONL
     if (scored.score >= 0.5) {
-      const config = {
-        format: "jsonl" as const,
-        outputPath: process.env.LORE_FORGE_OUT || "./.mirror/lore_forge_candidates.jsonl",
-      };
-
-createJsonlBundle([scored], config);
+      toJsonlBundle([scored]);
     }
   } catch (error) {
     // Swallow error, log single line (never throw)
