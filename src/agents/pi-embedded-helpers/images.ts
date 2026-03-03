@@ -21,11 +21,16 @@ export function isEmptyAssistantMessageContent(
     if (!block || typeof block !== "object") {
       return true;
     }
-    const rec = block as { type?: unknown; text?: unknown };
-    if (rec.type !== "text") {
-      return false;
+    const rec = block as { type?: unknown; text?: unknown; reasoning?: unknown; thinking?: unknown };
+    // Handle text blocks
+    if (rec.type === "text") {
+      return typeof rec.text !== "string" || rec.text.trim().length === 0;
     }
-    return typeof rec.text !== "string" || rec.text.trim().length === 0;
+    // Handle reasoning blocks (Ollama GLM uses reasoning/thinking for output)
+    if (rec.type === "thinking" || rec.type === "reasoning") {
+      return typeof rec.thinking !== "string" || rec.thinking.trim().length === 0;
+    }
+    return false;
   });
 }
 

@@ -182,6 +182,8 @@ interface OllamaChatResponse {
     role: "assistant";
     content: string;
     reasoning?: string;
+    reasoning_content?: string;
+    reasoning_text?: string;
     tool_calls?: OllamaToolCall[];
   };
   done: boolean;
@@ -319,10 +321,13 @@ export function buildAssistantMessage(
 ): AssistantMessage {
   const content: (TextContent | ToolCall)[] = [];
 
-  // Qwen 3 (and potentially other reasoning models) may return their final
-  // answer in a `reasoning` field with an empty `content`. Fall back to
-  // `reasoning` so the response isn't silently dropped.
-  const text = response.message.content || response.message.reasoning || "";
+  // Ollama GLM and other reasoning models may return output in reasoning fields.
+  // Check: content, reasoning, reasoning_content, reasoning_text (fallback chain)
+  const text = response.message.content ||
+               response.message.reasoning ||
+               (response.message as any).reasoning_content ||
+               (response.message as any).reasoning_text ||
+               "";
   if (text) {
     content.push({ type: "text", text });
   }
@@ -474,11 +479,20 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         let finalResponse: OllamaChatResponse | undefined;
 
         for await (const chunk of parseNdjsonStream(reader)) {
+          // Ollama GLM: accumulate content if present
           if (chunk.message?.content) {
             accumulatedContent += chunk.message.content;
-          } else if (chunk.message?.reasoning) {
-            // Qwen 3 reasoning mode: content may be empty, output in reasoning
+          }
+          // Ollama GLM: accumulate reasoning if present
+          else if (chunk.message?.reasoning) {
             accumulatedContent += chunk.message.reasoning;
+          }
+          // Additional fallback fields for GLM models
+          else if (chunk.message?.reasoning_content) {
+            accumulatedContent += chunk.message.reasoning_content;
+          }
+          else if (chunk.message?.reasoning_text) {
+            accumulatedContent += chunk.message.reasoning_text;
           }
 
           // Ollama sends tool_calls in intermediate (done:false) chunks,
@@ -497,6 +511,7 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           throw new Error("Ollama API stream ended without a final response");
         }
 
+        // Ensure final response content reflects accumulated reasoning/text
         finalResponse.message.content = accumulatedContent;
         if (accumulatedToolCalls.length > 0) {
           finalResponse.message.tool_calls = accumulatedToolCalls;
