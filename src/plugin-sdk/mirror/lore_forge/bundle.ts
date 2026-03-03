@@ -32,14 +32,18 @@ export function createJsonlBundle(scored: ScoredCandidate[], _config: BundleConf
  * @returns Markdown string bundle
  */
 export function createMarkdownBundle(scored: ScoredCandidate[], _config: BundleConfig): string {
-  const header = # Lore Forge Bundle\n\nGenerated: ${new Date().toISOString()}\n\n;
+  const header = `# Lore Forge Bundle
+
+Generated: ${new Date().toISOString()}
+
+`;
 
   const items = scored
     .map((item, index) => {
-      const scoreLine = **Score:** ${item.score}\n\n;
-      const reasonLine = item.reason ? **Reason:** ${item.reason}\n\n : "";
+      const scoreLine = `**Score:** ${item.score}\n\n`;
+      const reasonLine = item.reason ? `**Reason:** ${item.reason}\n\n` : "";
       const content = item.candidate?.content ?? "";
-      return ## Candidate ${index + 1}\n\n${scoreLine}${reasonLine}${content};
+      return `## Candidate ${index + 1}\n\n${scoreLine}${reasonLine}${content}`;
     })
     .join("\n\n---\n\n");
 

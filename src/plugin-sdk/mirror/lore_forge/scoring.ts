@@ -29,7 +29,7 @@ export function scoreCandidate(
     ? {
         candidate,
         score: finalScore,
-        reason: Based on ${candidate.tags.length} tags,
+        reason: `Based on ${candidate.tags.length} tags`,
       }
     : { candidate, score: finalScore };
 }
