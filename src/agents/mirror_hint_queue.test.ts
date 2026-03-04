@@ -128,6 +128,7 @@ function createLifecycleContext(
 describe("mirror hint compatibility", () => {
   const originalEnabled = process.env.MIRROR_LEDGER_ENABLED;
   const originalHintsEnabled = process.env.MIRROR_HINTS_ENABLED;
+  const originalNudgeFooterEnabled = process.env.MIRROR_NUDGE_FOOTER;
 
   afterEach(() => {
     if (originalEnabled === undefined) {
@@ -139,6 +140,11 @@ describe("mirror hint compatibility", () => {
       delete process.env.MIRROR_HINTS_ENABLED;
     } else {
       process.env.MIRROR_HINTS_ENABLED = originalHintsEnabled;
+    }
+    if (originalNudgeFooterEnabled === undefined) {
+      delete process.env.MIRROR_NUDGE_FOOTER;
+    } else {
+      process.env.MIRROR_NUDGE_FOOTER = originalNudgeFooterEnabled;
     }
   });
 
@@ -171,6 +177,7 @@ describe("mirror hint compatibility", () => {
   it("emits mirror_hints once at run end and drains hints", () => {
     process.env.MIRROR_LEDGER_ENABLED = "1";
     delete process.env.MIRROR_HINTS_ENABLED;
+    delete process.env.MIRROR_NUDGE_FOOTER;
     const onAgentEvent = vi.fn();
     const ctx = createLifecycleContext(onAgentEvent);
     const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
@@ -206,6 +213,7 @@ describe("mirror hint compatibility", () => {
   it("emits mirror_nudge only when MIRROR_HINTS_ENABLED=1", () => {
     process.env.MIRROR_LEDGER_ENABLED = "1";
     process.env.MIRROR_HINTS_ENABLED = "1";
+    delete process.env.MIRROR_NUDGE_FOOTER;
     const onAgentEvent = vi.fn();
     const ctx = createLifecycleContext(onAgentEvent);
     const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
@@ -237,6 +245,8 @@ describe("mirror hint compatibility", () => {
 
   it("does not emit mirror_hints when hints are missing or empty", () => {
     process.env.MIRROR_LEDGER_ENABLED = "1";
+    delete process.env.MIRROR_HINTS_ENABLED;
+    delete process.env.MIRROR_NUDGE_FOOTER;
     const onAgentEvent = vi.fn();
     const ctx = createLifecycleContext(onAgentEvent);
     const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {

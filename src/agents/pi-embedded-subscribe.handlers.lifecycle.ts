@@ -1,6 +1,7 @@
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { consumeMirrorHints } from "../mirror/hints/consumer.js";
+import { formatMirrorNudgeFooter } from "../mirror/hints/nudge_surface.js";
 import { formatAssistantErrorText } from "./pi-embedded-helpers.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { isAssistantMessage } from "./pi-embedded-utils.js";
@@ -112,6 +113,7 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
           onAgentEvent: ctx.params.onAgentEvent,
         });
         if (nudges.length > 0) {
+          ctx.log.warn(`[mirror_nudge] runId=${ctx.params.runId} nudges=${nudges.length}`);
           void ctx.params.onAgentEvent?.({
             stream: "mirror_nudge",
             data: {
@@ -119,6 +121,19 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
               nudges,
             },
           });
+          if (process.env.MIRROR_NUDGE_FOOTER === "1") {
+            const footer = formatMirrorNudgeFooter(nudges);
+            if (footer) {
+              const stateWithFooter = ctx.state as EmbeddedPiSubscribeContext["state"] & {
+                mirrorNudgeFooter?: string;
+                assistantTexts?: string[];
+              };
+              stateWithFooter.mirrorNudgeFooter = footer;
+              if (Array.isArray(stateWithFooter.assistantTexts)) {
+                stateWithFooter.assistantTexts.push(footer);
+              }
+            }
+          }
         }
       }
     }
