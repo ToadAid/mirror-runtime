@@ -2,18 +2,17 @@
  * Memory / Mistake Ledger v1 — SQLite Schema
  */
 
-import Database from "better-sqlite3";
+import type { Database as BetterSqliteDatabase } from "better-sqlite3";
 
 const SCHEMA_VERSION = 1;
 const TABLE_NAME = "ledger_events";
 
-export function initSchema(db: Database.Database): void {
-  // Check if table exists and version matches
-  const tableExists = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-    )
-    .get(TABLE_NAME) !== undefined;
+type SqliteDb = Pick<BetterSqliteDatabase, "prepare" | "exec" | "pragma">;
+
+export function initSchema(db: SqliteDb): void {
+  const tableExists =
+    db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(TABLE_NAME) !==
+    undefined;
 
   if (!tableExists) {
     db.exec(`
@@ -36,26 +35,24 @@ export function initSchema(db: Database.Database): void {
       );
     `);
 
-    // Create indexes
     db.exec(`
       CREATE INDEX idx_ledger_ts ON ${TABLE_NAME}(ts);
       CREATE INDEX idx_ledger_kind_ts ON ${TABLE_NAME}(kind, ts);
       CREATE INDEX idx_ledger_runid_ts ON ${TABLE_NAME}(run_id, ts);
     `);
 
-    // Set schema version
-    db.pragma("user_version = " + SCHEMA_VERSION);
-  } else {
-    // Check and upgrade schema if needed
-    const version = db.pragma("user_version", { simple: true }) as number;
-    if (version !== SCHEMA_VERSION) {
-      console.warn(
-        `[MistakeLedger] Schema version mismatch: current=${version}, expected=${SCHEMA_VERSION}`,
-      );
-    }
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    return;
+  }
+
+  const version = db.pragma("user_version", { simple: true }) as number;
+  if (version !== SCHEMA_VERSION) {
+    console.warn(
+      `[MistakeLedger] Schema version mismatch: current=${version}, expected=${SCHEMA_VERSION}`,
+    );
   }
 }
 
-export function getSchemaVersion(db: Database.Database): number {
+export function getSchemaVersion(db: SqliteDb): number {
   return db.pragma("user_version", { simple: true }) as number;
 }
