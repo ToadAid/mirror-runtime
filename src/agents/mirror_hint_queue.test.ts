@@ -1,11 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createInlineCodeState } from "../markdown/code-spans.js";
 import { makeErrorSignature } from "../mirror/mistake_ledger/repeat_detector.js";
 import type { LedgerEventRow } from "../mirror/mistake_ledger/types.js";
+import { handleAgentEnd } from "./pi-embedded-subscribe.handlers.lifecycle.js";
+import { handleToolExecutionEnd } from "./pi-embedded-subscribe.handlers.tools.js";
+import type {
+  EmbeddedPiSubscribeContext,
+  ToolHandlerContext,
+} from "./pi-embedded-subscribe.handlers.types.js";
 
 const { mockRecordMistake, mockInitLedgerOnce, mockQuery } = vi.hoisted(() => ({
   mockRecordMistake: vi.fn(),
   mockInitLedgerOnce: vi.fn(),
   mockQuery: vi.fn<() => LedgerEventRow[]>(),
+}));
+
+vi.mock("../infra/agent-events.js", () => ({
+  emitAgentEvent: vi.fn(),
 }));
 
 vi.mock("../mirror/ledger/accessor.js", () => ({
@@ -14,17 +25,22 @@ vi.mock("../mirror/ledger/accessor.js", () => ({
 }));
 
 vi.mock("../mirror/mistake_ledger/ledger.js", () => ({
-  getLedger: () => ({
-    query: mockQuery,
-  }),
+  getLedger: () => ({ query: mockQuery }),
 }));
 
 vi.mock("../mirror/lore_forge_hook.js", () => ({
   maybeForgeLoreCandidate: vi.fn(),
 }));
 
-import { handleToolExecutionEnd } from "./pi-embedded-subscribe.handlers.tools.js";
-import type { ToolHandlerContext } from "./pi-embedded-subscribe.handlers.types.js";
+type MirrorHint = {
+  type: "mirror_hint";
+  ts: number;
+  runId?: string;
+  toolName: string;
+  signature: string;
+  repeats: number;
+  hint: string;
+};
 
 function createRow(signature: string): LedgerEventRow {
   return {
@@ -46,15 +62,71 @@ function createRow(signature: string): LedgerEventRow {
   };
 }
 
-describe("mirror hint queue", () => {
-  const originalEnabled = process.env.MIRROR_LEDGER_ENABLED;
+function createToolContext(onAgentEvent: (event: unknown) => void): ToolHandlerContext {
+  return {
+    params: {
+      runId: "run-repeat",
+      onBlockReplyFlush: undefined,
+      onAgentEvent,
+      onToolResult: undefined,
+    },
+    state: {
+      toolMetaById: new Map(),
+      toolMetas: [],
+      toolSummaryById: new Set(),
+      pendingMessagingTargets: new Map(),
+      pendingMessagingTexts: new Map(),
+      pendingMessagingMediaUrls: new Map(),
+      messagingToolSentTexts: [],
+      messagingToolSentTextsNormalized: [],
+      messagingToolSentMediaUrls: [],
+      messagingToolSentTargets: [],
+      successfulCronAdds: 0,
+    },
+    log: {
+      debug: vi.fn(),
+      warn: vi.fn(),
+    },
+    flushBlockReplyBuffer: vi.fn(),
+    shouldEmitToolResult: () => false,
+    shouldEmitToolOutput: () => false,
+    emitToolSummary: vi.fn(),
+    emitToolOutput: vi.fn(),
+    trimMessagingToolSent: vi.fn(),
+  };
+}
 
-  beforeEach(() => {
-    process.env.MIRROR_LEDGER_ENABLED = "1";
-    mockRecordMistake.mockReset();
-    mockInitLedgerOnce.mockReset();
-    mockQuery.mockReset();
-  });
+function createLifecycleContext(
+  onAgentEvent: (event: unknown) => void,
+): EmbeddedPiSubscribeContext {
+  return {
+    params: {
+      runId: "run-1",
+      config: {},
+      sessionKey: "agent:main:main",
+      onAgentEvent,
+    },
+    state: {
+      lastAssistant: undefined,
+      pendingCompactionRetry: 0,
+      blockState: {
+        thinking: true,
+        final: true,
+        inlineCode: createInlineCodeState(),
+      },
+    },
+    log: {
+      debug: vi.fn(),
+      warn: vi.fn(),
+    },
+    flushBlockReplyBuffer: vi.fn(),
+    resolveCompactionRetry: vi.fn(),
+    maybeResolveCompactionWait: vi.fn(),
+  } as unknown as EmbeddedPiSubscribeContext;
+}
+
+describe("mirror hint compatibility", () => {
+  const originalEnabled = process.env.MIRROR_LEDGER_ENABLED;
 
   afterEach(() => {
     if (originalEnabled === undefined) {
@@ -64,43 +136,13 @@ describe("mirror hint queue", () => {
     }
   });
 
-  it("queues mirror hint and emits mirror_hint event when repeats cross threshold", async () => {
+  it("emits immediate mirror_hint on repeated tool_error and queues hint", async () => {
+    process.env.MIRROR_LEDGER_ENABLED = "1";
     const signature = makeErrorSignature({ toolName: "exec", error: "Repeated failure" });
     mockQuery.mockReturnValue([createRow(signature), createRow(signature), createRow(signature)]);
 
     const onAgentEvent = vi.fn();
-
-    const ctx = {
-      params: {
-        runId: "run-repeat",
-        onBlockReplyFlush: undefined,
-        onAgentEvent,
-        onToolResult: undefined,
-      },
-      state: {
-        toolMetaById: new Map(),
-        toolMetas: [],
-        toolSummaryById: new Set(),
-        pendingMessagingTargets: new Map(),
-        pendingMessagingTexts: new Map(),
-        pendingMessagingMediaUrls: new Map(),
-        messagingToolSentTexts: [],
-        messagingToolSentTextsNormalized: [],
-        messagingToolSentMediaUrls: [],
-        messagingToolSentTargets: [],
-        successfulCronAdds: 0,
-      },
-      log: {
-        debug: vi.fn(),
-        warn: vi.fn(),
-      },
-      flushBlockReplyBuffer: vi.fn(),
-      shouldEmitToolResult: () => false,
-      shouldEmitToolOutput: () => false,
-      emitToolSummary: vi.fn(),
-      emitToolOutput: vi.fn(),
-      trimMessagingToolSent: vi.fn(),
-    } satisfies ToolHandlerContext;
+    const ctx = createToolContext(onAgentEvent);
 
     await handleToolExecutionEnd(ctx, {
       type: "tool_execution_end",
@@ -111,18 +153,59 @@ describe("mirror hint queue", () => {
     });
 
     const stateWithHints = ctx.state as ToolHandlerContext["state"] & {
-      mirrorHints?: Array<Record<string, unknown>>;
+      mirrorHints?: MirrorHint[];
     };
 
     expect(stateWithHints.mirrorHints?.length).toBe(1);
-    expect(stateWithHints.mirrorHints?.[0]).toMatchObject({
-      type: "mirror_hint",
-      toolName: "exec",
-      repeats: 3,
-    });
-
     expect(onAgentEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "mirror_hint", toolName: "exec", repeats: 3 }),
     );
+  });
+
+  it("emits mirror_hints once at run end and drains hints", () => {
+    process.env.MIRROR_LEDGER_ENABLED = "1";
+    const onAgentEvent = vi.fn();
+    const ctx = createLifecycleContext(onAgentEvent);
+    const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
+      mirrorHints?: MirrorHint[];
+    };
+    stateWithHints.mirrorHints = [
+      {
+        type: "mirror_hint",
+        ts: Date.now(),
+        runId: "run-1",
+        toolName: "exec",
+        signature: "tool:exec|err:test",
+        repeats: 3,
+        hint: "Repeated tool_error detected; consider changing strategy or inputs.",
+      },
+    ];
+
+    handleAgentEnd(ctx);
+
+    const hintCalls = onAgentEvent.mock.calls.filter((call) => call[0]?.stream === "mirror_hints");
+    expect(hintCalls).toHaveLength(1);
+    expect(hintCalls[0]?.[0]).toMatchObject({
+      stream: "mirror_hints",
+      data: {
+        runId: "run-1",
+      },
+    });
+    expect(stateWithHints.mirrorHints).toEqual([]);
+  });
+
+  it("does not emit mirror_hints when hints are missing or empty", () => {
+    process.env.MIRROR_LEDGER_ENABLED = "1";
+    const onAgentEvent = vi.fn();
+    const ctx = createLifecycleContext(onAgentEvent);
+    const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
+      mirrorHints?: MirrorHint[];
+    };
+    stateWithHints.mirrorHints = [];
+
+    handleAgentEnd(ctx);
+
+    const hintCalls = onAgentEvent.mock.calls.filter((call) => call[0]?.stream === "mirror_hints");
+    expect(hintCalls).toHaveLength(0);
   });
 });

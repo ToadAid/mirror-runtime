@@ -9,6 +9,25 @@ export {
   handleAutoCompactionStart,
 } from "./pi-embedded-subscribe.handlers.compaction.js";
 
+type MirrorHint = {
+  type: "mirror_hint";
+  ts: number;
+  runId?: string;
+  toolName: string;
+  signature: string;
+  repeats: number;
+  hint: string;
+};
+
+function drainMirrorHints(state: EmbeddedPiSubscribeContext["state"]): MirrorHint[] {
+  const stateWithHints = state as EmbeddedPiSubscribeContext["state"] & {
+    mirrorHints?: MirrorHint[];
+  };
+  const hints = Array.isArray(stateWithHints.mirrorHints) ? [...stateWithHints.mirrorHints] : [];
+  stateWithHints.mirrorHints = [];
+  return hints;
+}
+
 export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
   ctx.log.debug(`embedded run agent start: runId=${ctx.params.runId}`);
   emitAgentEvent({
@@ -73,6 +92,19 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
   }
 
   ctx.flushBlockReplyBuffer();
+
+  if (process.env.MIRROR_LEDGER_ENABLED === "1") {
+    const hints = drainMirrorHints(ctx.state);
+    if (hints.length > 0) {
+      void ctx.params.onAgentEvent?.({
+        stream: "mirror_hints",
+        data: {
+          runId: ctx.params.runId,
+          hints,
+        },
+      });
+    }
+  }
 
   ctx.state.blockState.thinking = false;
   ctx.state.blockState.final = false;
