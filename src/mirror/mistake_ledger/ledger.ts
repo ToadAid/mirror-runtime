@@ -3,18 +3,10 @@
  * Provides methods to record events and query the ledger.
  */
 
-import { createHash } from "node:crypto";
-import Database from "better-sqlite3";
-import {
-  LedgerEventInput,
-  LedgerEventRow,
-  LedgerQuery,
-  LedgerKind,
-  LedgerSeverity,
-  LedgerSource,
-} from "./types.js";
-import { openLedgerDb, withTx, healthCheck } from "./db.js";
+import { createHash, randomUUID } from "node:crypto";
+import { createSqliteBackend, type LedgerBackend } from "./db.js";
 import { redact } from "./redact.js";
+import type { LedgerEventInput, LedgerEventRow, LedgerQuery } from "./types.js";
 
 const DEFAULT_LIMIT = 50;
 
@@ -24,47 +16,42 @@ export interface LedgerOptions {
   redact?: boolean;
 }
 
-export class Ledger {
-  private db: Database.Database;
-  private enabled: boolean;
-  private redact: boolean;
+export interface LedgerDeps {
+  createBackend?: (options: LedgerOptions) => LedgerBackend;
+}
 
-  constructor(options: LedgerOptions = {}) {
-    this.enabled = options.enabled !== false; // default true
-    this.redact = options.redact !== false; // default true
-    this.db = openLedgerDb(options);
+export class Ledger {
+  private readonly backend: LedgerBackend;
+  private readonly isEnabled: boolean;
+  private readonly shouldRedact: boolean;
+
+  constructor(options: LedgerOptions = {}, deps: LedgerDeps = {}) {
+    this.isEnabled = options.enabled !== false;
+    this.shouldRedact = options.redact !== false;
+    this.backend = (deps.createBackend ?? createSqliteBackend)(options);
   }
 
   enabled(): boolean {
-    return this.enabled;
+    return this.isEnabled;
   }
 
-  /**
-   * Normalize and hash the detail object for deduplication
-   */
   private normalizeDetail(detail: Record<string, unknown>): string {
-    // Stable JSON stringification (sorted keys)
-    const sortedKeys = Object.keys(detail).sort();
-    const normalized = sortedKeys.reduce((acc, key) => {
+    const sortedKeys = Object.keys(detail).toSorted();
+    const normalized = sortedKeys.reduce<Record<string, unknown>>((acc, key) => {
       acc[key] = detail[key];
       return acc;
-    }, {} as Record<string, unknown>);
+    }, {});
     return JSON.stringify(normalized);
   }
 
-  /**
-   * Record an event in the ledger
-   */
   record(input: LedgerEventInput): { id: string } | null {
-    if (!this.enabled) {
+    if (!this.isEnabled) {
       return null;
     }
 
-    const normalizedDetail = this.normalizeDetail(input.detail);
-    const hash = createHash("sha256").update(normalizedDetail).digest("hex");
-
-    const event = {
-      id: crypto.randomUUID(),
+    const hash = createHash("sha256").update(this.normalizeDetail(input.detail)).digest("hex");
+    const event: LedgerEventRow = {
+      id: randomUUID(),
       ts: Date.now(),
       kind: input.kind,
       run_id: input.runId ?? null,
@@ -74,78 +61,24 @@ export class Ledger {
       session_id: input.sessionId ?? null,
       severity: input.severity ?? "info",
       title: input.title,
-      detail_json: JSON.stringify(redact(input.detail, { enabled: this.redact })),
+      detail_json: JSON.stringify(redact(input.detail, { enabled: this.shouldRedact })),
       tags_json: input.tags ? JSON.stringify(input.tags) : null,
       source: input.source ?? "agent",
       related_id: input.relatedId ?? null,
       hash,
     };
 
-    const stmt = this.db.prepare(
-      `INSERT INTO ledger_events (
-        id, ts, kind, run_id, tool_name, agent_id, user_id, session_id,
-        severity, title, detail_json, tags_json, source, related_id, hash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    stmt.run(
-      event.id,
-      event.ts,
-      event.kind,
-      event.run_id,
-      event.tool_name,
-      event.agent_id,
-      event.user_id,
-      event.session_id,
-      event.severity,
-      event.title,
-      event.detail_json,
-      event.tags_json,
-      event.source,
-      event.related_id,
-      event.hash,
-    );
-
+    this.backend.insert(event);
     return { id: event.id };
   }
 
-  /**
-   * Query events from the ledger
-   */
-  query(query: LedgerQuery): LedgerEventRow[] {
-    if (!this.enabled) {
+  query(query: LedgerQuery = {}): LedgerEventRow[] {
+    if (!this.isEnabled) {
       return [];
     }
-
-    const q = query.limit ?? DEFAULT_LIMIT;
-    const sql = `
-      SELECT * FROM ledger_events
-      WHERE 1=1
-      ${query.kind ? "AND kind = ?" : ""}
-      ${query.runId ? "AND run_id = ?" : ""}
-      ${query.toolName ? "AND tool_name = ?" : ""}
-      ${query.sinceTs ? "AND ts >= ?" : ""}
-      ${query.untilTs ? "AND ts <= ?" : ""}
-      ORDER BY ts DESC
-      LIMIT ?
-    `;
-
-    const stmt = this.db.prepare(sql);
-    const params = [
-      query.kind,
-      query.runId,
-      query.toolName,
-      query.sinceTs,
-      query.untilTs,
-      q,
-    ].filter(Boolean);
-
-    return stmt.all(...params) as LedgerEventRow[];
+    return this.backend.query({ ...query, limit: query.limit ?? DEFAULT_LIMIT });
   }
 
-  /**
-   * Get ledger health status
-   */
   health(): {
     enabled: boolean;
     path: string;
@@ -153,18 +86,14 @@ export class Ledger {
     ok: boolean;
     error?: string;
   } {
-    return healthCheck(this.db);
+    return { enabled: this.isEnabled, ...this.backend.health() };
   }
 
-  /**
-   * Close the database connection
-   */
   close(): void {
-    this.db.close();
+    this.backend.close();
   }
 }
 
-// Singleton instance
 let ledgerInstance: Ledger | null = null;
 
 export function getLedger(options?: LedgerOptions): Ledger {

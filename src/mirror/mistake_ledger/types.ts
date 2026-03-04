@@ -12,7 +12,6 @@ export interface LedgerEventInput {
   title: string;
   severity?: LedgerSeverity;
   source?: LedgerSource;
-  // context (optional)
   runId?: string;
   toolName?: string;
   agentId?: string;
@@ -20,7 +19,7 @@ export interface LedgerEventInput {
   sessionId?: string;
   tags?: string[];
   relatedId?: string;
-  detail: Record<string, unknown>; // gets JSON.stringify’d
+  detail: Record<string, unknown>;
 }
 
 export interface LedgerEventRow {
@@ -45,7 +44,8 @@ export interface LedgerQuery {
   kind?: LedgerKind;
   runId?: string;
   toolName?: string;
+  source?: LedgerSource;
   sinceTs?: number;
   untilTs?: number;
-  limit?: number; // default 50
+  limit?: number;
 }
