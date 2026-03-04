@@ -31,6 +31,24 @@ import { normalizeToolName } from "./tool-policy.js";
 /** Track tool execution start times and args for after_tool_call hook */
 const toolStartData = new Map<string, { startTime: number; args: unknown }>();
 
+type MirrorHint = {
+  type: "mirror_hint";
+  ts: number;
+  runId?: string;
+  toolName: string;
+  signature: string;
+  repeats: number;
+  hint: string;
+};
+
+function getMirrorHints(state: ToolHandlerContext["state"]): MirrorHint[] {
+  const stateWithHints = state as ToolHandlerContext["state"] & { mirrorHints?: MirrorHint[] };
+  if (!Array.isArray(stateWithHints.mirrorHints)) {
+    stateWithHints.mirrorHints = [];
+  }
+  return stateWithHints.mirrorHints;
+}
+
 // Initialize ledger once per process (env-gated)
 initLedgerOnce();
 
@@ -356,9 +374,23 @@ export async function handleToolExecutionEnd(
           .filter((row) => row.title === "tool_error");
         const repeats = countSignatureMatches(rows, signature);
         if (repeats >= THRESHOLD) {
+          const hint: MirrorHint = {
+            type: "mirror_hint",
+            ts: now,
+            runId: ctx.params.runId,
+            toolName,
+            signature,
+            repeats,
+            hint: "Repeated tool_error detected; consider changing strategy or inputs.",
+          };
+          getMirrorHints(ctx.state).push(hint);
           ctx.log.warn(
             `[MIRROR_LEDGER] repeated tool_error tool=${toolName} repeats=${repeats} signature=${signature}`,
           );
+          const emitMirrorHint = ctx.params.onAgentEvent as
+            | ((evt: { type: "mirror_hint"; [key: string]: unknown }) => void | Promise<void>)
+            | undefined;
+          void emitMirrorHint?.(hint);
           void ctx.params.onAgentEvent?.({
             stream: "mirror_ledger_repeat",
             data: {
