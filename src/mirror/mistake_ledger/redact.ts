@@ -3,49 +3,46 @@
  * Prevents secrets from leaking into the ledger database.
  */
 
-export function redact(obj: any, options: { enabled?: boolean } = {}): any {
-  const { enabled = true } = options;
+type JsonLike = null | boolean | number | string | JsonLike[] | { [key: string]: JsonLike };
 
+const SENSITIVE_PATTERNS = [
+  /secret/i,
+  /token/i,
+  /apikey/i,
+  /api_key/i,
+  /password/i,
+  /private/i,
+  /mnemonic/i,
+  /seed/i,
+];
+
+function redactRecursive(value: JsonLike): JsonLike {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactRecursive(entry));
+  }
+
+  const result: { [key: string]: JsonLike } = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (SENSITIVE_PATTERNS.some((pattern) => pattern.test(key))) {
+      result[key] = "[REDACTED]";
+      continue;
+    }
+    result[key] = redactRecursive(entry);
+  }
+  return result;
+}
+
+export function redact<T extends Record<string, unknown>>(
+  obj: T,
+  options: { enabled?: boolean } = {},
+): T {
+  const { enabled = true } = options;
   if (!enabled) {
     return obj;
   }
-
-  // Redact keys matching sensitive patterns
-  const sensitivePatterns = [
-    /secret/i,
-    /token/i,
-    /apikey/i,
-    /api_key/i,
-    /password/i,
-    /private/i,
-    /mnemonic/i,
-    /seed/i,
-  ];
-
-  function redactRecursive(val: any): any {
-    if (val === null || typeof val !== "object") {
-      return val;
-    }
-
-    if (Array.isArray(val)) {
-      return val.map(redactRecursive);
-    }
-
-    const result: any = {};
-    for (const key of Object.keys(val)) {
-      const shouldRedact = sensitivePatterns.some((pattern) => pattern.test(key));
-
-      if (shouldRedact) {
-        result[key] = "[REDACTED]";
-      } else if (typeof val[key] === "object") {
-        result[key] = redactRecursive(val[key]);
-      } else {
-        result[key] = val[key];
-      }
-    }
-
-    return result;
-  }
-
-  return redactRecursive(obj);
+  return redactRecursive(obj as JsonLike) as T;
 }
