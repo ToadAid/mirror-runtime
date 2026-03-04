@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { emitAgentEvent } from "../infra/agent-events.js";
+import { initLedgerOnce, recordMistake } from "../mirror/ledger/accessor.js";
 import { maybeForgeLoreCandidate } from "../mirror/lore_forge_hook.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { PluginHookAfterToolCallEvent } from "../plugins/types.js";
@@ -24,6 +25,9 @@ import { normalizeToolName } from "./tool-policy.js";
 
 /** Track tool execution start times and args for after_tool_call hook */
 const toolStartData = new Map<string, { startTime: number; args: unknown }>();
+
+// Initialize ledger once per process (env-gated)
+initLedgerOnce();
 
 function isCronAddAction(args: unknown): boolean {
   if (!args || typeof args !== "object") {
@@ -315,6 +319,20 @@ export async function handleToolExecutionEnd(
   ctx.state.toolSummaryById.delete(toolCallId);
   if (isToolError) {
     const errorMessage = extractToolErrorMessage(sanitizedResult);
+    const maybeStack =
+      sanitizedResult && typeof sanitizedResult === "object"
+        ? (sanitizedResult as { stack?: unknown }).stack
+        : undefined;
+    recordMistake({
+      kind: "tool_error",
+      message: errorMessage,
+      runId: ctx.params.runId,
+      toolName,
+      meta: {
+        toolCallId,
+        stack: typeof maybeStack === "string" ? maybeStack : undefined,
+      },
+    });
     ctx.state.lastToolError = {
       toolName,
       meta,
