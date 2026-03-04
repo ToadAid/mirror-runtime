@@ -2,6 +2,11 @@ import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { initLedgerOnce, recordMistake } from "../mirror/ledger/accessor.js";
 import { maybeForgeLoreCandidate } from "../mirror/lore_forge_hook.js";
+import { getLedger } from "../mirror/mistake_ledger/ledger.js";
+import {
+  countSignatureMatches,
+  makeErrorSignature,
+} from "../mirror/mistake_ledger/repeat_detector.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { PluginHookAfterToolCallEvent } from "../plugins/types.js";
 import { normalizeTextForComparison } from "./pi-embedded-helpers.js";
@@ -318,7 +323,9 @@ export async function handleToolExecutionEnd(
   ctx.state.toolMetaById.delete(toolCallId);
   ctx.state.toolSummaryById.delete(toolCallId);
   if (isToolError) {
+    const now = Date.now();
     const errorMessage = extractToolErrorMessage(sanitizedResult);
+    const signature = makeErrorSignature({ toolName, error: errorMessage });
     const maybeStack =
       sanitizedResult && typeof sanitizedResult === "object"
         ? (sanitizedResult as { stack?: unknown }).stack
@@ -330,9 +337,44 @@ export async function handleToolExecutionEnd(
       toolName,
       meta: {
         toolCallId,
+        signature,
         stack: typeof maybeStack === "string" ? maybeStack : undefined,
       },
     });
+    if (process.env.MIRROR_LEDGER_ENABLED === "1") {
+      const WINDOW_SEC = 3600;
+      const LIMIT = 25;
+      const THRESHOLD = 3;
+      try {
+        const rows = getLedger()
+          .query({
+            kind: "mistake",
+            toolName,
+            sinceTs: now - WINDOW_SEC * 1000,
+            limit: LIMIT,
+          })
+          .filter((row) => row.title === "tool_error");
+        const repeats = countSignatureMatches(rows, signature);
+        if (repeats >= THRESHOLD) {
+          ctx.log.warn(
+            `[MIRROR_LEDGER] repeated tool_error tool=${toolName} repeats=${repeats} signature=${signature}`,
+          );
+          void ctx.params.onAgentEvent?.({
+            stream: "mirror_ledger_repeat",
+            data: {
+              runId: ctx.params.runId,
+              toolName,
+              repeats,
+              windowSec: WINDOW_SEC,
+              signature,
+              lastTs: now,
+            },
+          });
+        }
+      } catch {
+        // Never break tool handling due to repeat detection failure.
+      }
+    }
     ctx.state.lastToolError = {
       toolName,
       meta,
