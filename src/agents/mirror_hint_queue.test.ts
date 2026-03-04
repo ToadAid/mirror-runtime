@@ -129,6 +129,7 @@ describe("mirror hint compatibility", () => {
   const originalEnabled = process.env.MIRROR_LEDGER_ENABLED;
   const originalHintsEnabled = process.env.MIRROR_HINTS_ENABLED;
   const originalNudgeFooterEnabled = process.env.MIRROR_NUDGE_FOOTER;
+  const originalTelemetryEnabled = process.env.MIRROR_TELEMETRY_ENABLED;
 
   afterEach(() => {
     if (originalEnabled === undefined) {
@@ -145,6 +146,11 @@ describe("mirror hint compatibility", () => {
       delete process.env.MIRROR_NUDGE_FOOTER;
     } else {
       process.env.MIRROR_NUDGE_FOOTER = originalNudgeFooterEnabled;
+    }
+    if (originalTelemetryEnabled === undefined) {
+      delete process.env.MIRROR_TELEMETRY_ENABLED;
+    } else {
+      process.env.MIRROR_TELEMETRY_ENABLED = originalTelemetryEnabled;
     }
   });
 
@@ -214,6 +220,7 @@ describe("mirror hint compatibility", () => {
     process.env.MIRROR_LEDGER_ENABLED = "1";
     process.env.MIRROR_HINTS_ENABLED = "1";
     delete process.env.MIRROR_NUDGE_FOOTER;
+    delete process.env.MIRROR_TELEMETRY_ENABLED;
     const onAgentEvent = vi.fn();
     const ctx = createLifecycleContext(onAgentEvent);
     const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
@@ -241,6 +248,49 @@ describe("mirror hint compatibility", () => {
         runId: "run-1",
       },
     });
+    const telemetryCalls = onAgentEvent.mock.calls.filter(
+      (call) => call[0]?.stream === "telemetry",
+    );
+    expect(telemetryCalls).toHaveLength(0);
+  });
+
+  it("emits telemetry only when MIRROR_TELEMETRY_ENABLED=1", () => {
+    process.env.MIRROR_LEDGER_ENABLED = "1";
+    process.env.MIRROR_HINTS_ENABLED = "1";
+    process.env.MIRROR_TELEMETRY_ENABLED = "1";
+    delete process.env.MIRROR_NUDGE_FOOTER;
+    const onAgentEvent = vi.fn();
+    const ctx = createLifecycleContext(onAgentEvent);
+    const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
+      mirrorHints?: MirrorHint[];
+    };
+    stateWithHints.mirrorHints = [
+      {
+        type: "mirror_hint",
+        ts: Date.now(),
+        runId: "run-1",
+        toolName: "exec",
+        signature: "tool:exec|err:test",
+        repeats: 5,
+        hint: "Repeated tool_error detected; consider changing strategy or inputs.",
+      },
+    ];
+
+    handleAgentEnd(ctx);
+
+    const telemetryCalls = onAgentEvent.mock.calls.filter(
+      (call) => call[0]?.stream === "telemetry",
+    );
+    expect(telemetryCalls).toHaveLength(1);
+    expect(telemetryCalls[0]?.[0]).toMatchObject({
+      stream: "telemetry",
+      data: {
+        type: "mirror.nudge",
+        runId: "run-1",
+      },
+    });
+    expect(Array.isArray(telemetryCalls[0]?.[0]?.data?.nudges)).toBe(true);
+    expect(typeof telemetryCalls[0]?.[0]?.data?.ts).toBe("number");
   });
 
   it("does not emit mirror_hints when hints are missing or empty", () => {
