@@ -127,12 +127,18 @@ function createLifecycleContext(
 
 describe("mirror hint compatibility", () => {
   const originalEnabled = process.env.MIRROR_LEDGER_ENABLED;
+  const originalHintsEnabled = process.env.MIRROR_HINTS_ENABLED;
 
   afterEach(() => {
     if (originalEnabled === undefined) {
       delete process.env.MIRROR_LEDGER_ENABLED;
     } else {
       process.env.MIRROR_LEDGER_ENABLED = originalEnabled;
+    }
+    if (originalHintsEnabled === undefined) {
+      delete process.env.MIRROR_HINTS_ENABLED;
+    } else {
+      process.env.MIRROR_HINTS_ENABLED = originalHintsEnabled;
     }
   });
 
@@ -164,6 +170,7 @@ describe("mirror hint compatibility", () => {
 
   it("emits mirror_hints once at run end and drains hints", () => {
     process.env.MIRROR_LEDGER_ENABLED = "1";
+    delete process.env.MIRROR_HINTS_ENABLED;
     const onAgentEvent = vi.fn();
     const ctx = createLifecycleContext(onAgentEvent);
     const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
@@ -191,7 +198,41 @@ describe("mirror hint compatibility", () => {
         runId: "run-1",
       },
     });
+    const nudgeCalls = onAgentEvent.mock.calls.filter((call) => call[0]?.stream === "mirror_nudge");
+    expect(nudgeCalls).toHaveLength(0);
     expect(stateWithHints.mirrorHints).toEqual([]);
+  });
+
+  it("emits mirror_nudge only when MIRROR_HINTS_ENABLED=1", () => {
+    process.env.MIRROR_LEDGER_ENABLED = "1";
+    process.env.MIRROR_HINTS_ENABLED = "1";
+    const onAgentEvent = vi.fn();
+    const ctx = createLifecycleContext(onAgentEvent);
+    const stateWithHints = ctx.state as EmbeddedPiSubscribeContext["state"] & {
+      mirrorHints?: MirrorHint[];
+    };
+    stateWithHints.mirrorHints = [
+      {
+        type: "mirror_hint",
+        ts: Date.now(),
+        runId: "run-1",
+        toolName: "exec",
+        signature: "tool:exec|err:test",
+        repeats: 5,
+        hint: "Repeated tool_error detected; consider changing strategy or inputs.",
+      },
+    ];
+
+    handleAgentEnd(ctx);
+
+    const nudgeCalls = onAgentEvent.mock.calls.filter((call) => call[0]?.stream === "mirror_nudge");
+    expect(nudgeCalls).toHaveLength(1);
+    expect(nudgeCalls[0]?.[0]).toMatchObject({
+      stream: "mirror_nudge",
+      data: {
+        runId: "run-1",
+      },
+    });
   });
 
   it("does not emit mirror_hints when hints are missing or empty", () => {
