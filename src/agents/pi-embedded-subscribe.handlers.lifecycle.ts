@@ -2,6 +2,7 @@ import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { consumeMirrorHints } from "../mirror/hints/consumer.js";
 import { formatMirrorNudgeFooter } from "../mirror/hints/nudge_surface.js";
+import { buildMirrorPassportTelemetryEvent } from "../mirror/passport/index.js";
 import { buildMirrorNudgeTelemetryEvent } from "../mirror/telemetry/mirror_telemetry.js";
 import { writeTelemetryEventIfEnabled } from "../mirror/telemetry_sinks/runtime_sink.js";
 import { formatAssistantErrorText } from "./pi-embedded-helpers.js";
@@ -96,6 +97,42 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
   }
 
   ctx.flushBlockReplyBuffer();
+
+  const passportTelemetry = buildMirrorPassportTelemetryEvent({
+    runId: ctx.params.runId,
+    agentId: (
+      ctx.params as EmbeddedPiSubscribeContext["params"] & { agentId?: string }
+    ).agentId?.trim()
+      ? (
+          ctx.params as EmbeddedPiSubscribeContext["params"] & {
+            agentId?: string;
+          }
+        ).agentId
+      : (ctx.state as EmbeddedPiSubscribeContext["state"] & { agentId?: string }).agentId,
+    boundary: "pond",
+    telemetry: {
+      sinkEnabled: process.env.MIRROR_TELEMETRY_SINK_ENABLED === "1",
+      sinkPath: process.env.MIRROR_TELEMETRY_SINK_PATH ?? "./db/mirror-telemetry.ndjson",
+      indexDbPath: process.env.MIRROR_TELEMETRY_INDEX_DB_PATH ?? "./db/mirror-telemetry.sqlite",
+    },
+  });
+  (
+    ctx.state as EmbeddedPiSubscribeContext["state"] & {
+      mirrorPassport?: Record<string, unknown>;
+    }
+  ).mirrorPassport = passportTelemetry as unknown as Record<string, unknown>;
+
+  if (
+    process.env.MIRROR_TELEMETRY_ENABLED === "1" &&
+    process.env.MIRROR_PASSPORT_TELEMETRY_ENABLED === "1"
+  ) {
+    const telemetryEvent = {
+      stream: "telemetry" as const,
+      data: passportTelemetry as unknown as Record<string, unknown>,
+    };
+    writeTelemetryEventIfEnabled(telemetryEvent);
+    void ctx.params.onAgentEvent?.(telemetryEvent);
+  }
 
   if (process.env.MIRROR_LEDGER_ENABLED === "1") {
     const hints = drainMirrorHints(ctx.state);
