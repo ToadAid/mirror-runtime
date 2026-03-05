@@ -74,6 +74,15 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "mirror",
+    description: "Mirror diagnostics and telemetry tools",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../mirror-cli.js");
+      mod.registerMirrorCli(program);
+    },
+  },
+  {
     name: "system",
     description: "System events, heartbeat, and presence",
     hasSubcommands: true,
