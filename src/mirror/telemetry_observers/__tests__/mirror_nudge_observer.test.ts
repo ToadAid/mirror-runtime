@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { processMirrorTelemetryObserverLine } from "../cli.js";
 import { formatMirrorNudgeTelemetry, isMirrorNudgeTelemetry } from "../mirror_nudge_observer.js";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
 
 describe("mirror_nudge_observer", () => {
   it("filters mirror.nudge telemetry events", () => {
@@ -57,5 +67,43 @@ describe("mirror_nudge_observer", () => {
     expect(output).toContain("- first nudge");
     expect(output).toContain("- second nudge");
     expect(output.endsWith("\n\n")).toBe(true);
+  });
+
+  it("writes sink file when enabled while processing a single line", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-telemetry-observer-"));
+    tempDirs.push(tempDir);
+    const sinkPath = path.join(tempDir, "mirror-telemetry.ndjson");
+
+    const line = JSON.stringify({
+      stream: "telemetry",
+      data: {
+        type: "mirror.nudge",
+        runId: " run-abc ",
+        nudges: ["  first   nudge\nwith spaces  "],
+        ts: 123,
+      },
+    });
+
+    await processMirrorTelemetryObserverLine(line, {
+      env: {
+        MIRROR_TELEMETRY_SINK_ENABLED: "1",
+        MIRROR_TELEMETRY_SINK_PATH: sinkPath,
+      },
+      stdoutWrite: () => {},
+      stdoutLine: () => {},
+      warn: () => {},
+    });
+
+    const content = await fs.readFile(sinkPath, "utf8");
+    const parsed = JSON.parse(content.trim()) as {
+      type: string;
+      runId?: string;
+      nudges?: string[];
+      ts?: number;
+    };
+    expect(parsed.type).toBe("mirror.nudge");
+    expect(parsed.runId).toBe("run-abc");
+    expect(parsed.nudges).toEqual(["first nudge with spaces"]);
+    expect(parsed.ts).toBe(123);
   });
 });
