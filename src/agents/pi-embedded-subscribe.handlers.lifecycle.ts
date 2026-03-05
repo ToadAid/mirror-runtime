@@ -3,6 +3,7 @@ import { createInlineCodeState } from "../markdown/code-spans.js";
 import { consumeMirrorHints } from "../mirror/hints/consumer.js";
 import { formatMirrorNudgeFooter } from "../mirror/hints/nudge_surface.js";
 import { buildMirrorNudgeTelemetryEvent } from "../mirror/telemetry/mirror_telemetry.js";
+import { writeTelemetryEventIfEnabled } from "../mirror/telemetry_sinks/runtime_sink.js";
 import { formatAssistantErrorText } from "./pi-embedded-helpers.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { isAssistantMessage } from "./pi-embedded-utils.js";
@@ -128,10 +129,12 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
               nudges,
             });
             if (telemetry.nudges.length > 0) {
-              void ctx.params.onAgentEvent?.({
-                stream: "telemetry",
+              const telemetryEvent = {
+                stream: "telemetry" as const,
                 data: telemetry as unknown as Record<string, unknown>,
-              });
+              };
+              writeTelemetryEventIfEnabled(telemetryEvent);
+              void ctx.params.onAgentEvent?.(telemetryEvent);
             }
           }
           if (process.env.MIRROR_NUDGE_FOOTER === "1") {
