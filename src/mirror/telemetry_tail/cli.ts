@@ -9,6 +9,7 @@ import {
   formatMirrorNudgeTelemetry,
   isMirrorNudgeTelemetry,
 } from "../telemetry_observers/mirror_nudge_observer.js";
+import { formatReflectSummary, summarizeReflectEvents } from "../telemetry_reflect/index.js";
 import {
   replayTelemetry,
   summarizeMirrorNudges,
@@ -44,6 +45,15 @@ export type MirrorTelemetryIndexCliOptions = {
 };
 
 export type MirrorTelemetryQueryCliOptions = {
+  type?: string;
+  runId?: string;
+  sinceMinutes?: number;
+  limit?: number;
+  json?: boolean;
+  db?: string;
+};
+
+export type MirrorTelemetryReflectCliOptions = {
   type?: string;
   runId?: string;
   sinceMinutes?: number;
@@ -217,6 +227,50 @@ export async function runMirrorTelemetryQueryCli(
   }
 }
 
+export async function runMirrorTelemetryReflectCli(
+  opts: MirrorTelemetryReflectCliOptions,
+): Promise<void> {
+  const dbPath = opts.db ?? resolveMirrorTelemetryIndexDbPath(process.env);
+  const sinceMinutes =
+    typeof opts.sinceMinutes === "number" && Number.isFinite(opts.sinceMinutes)
+      ? opts.sinceMinutes
+      : 60;
+  const limit =
+    typeof opts.limit === "number" && Number.isFinite(opts.limit) && opts.limit > 0
+      ? Math.floor(opts.limit)
+      : 200;
+  const type = opts.type?.trim() || "mirror.nudge";
+  const sinceTs = Date.now() - sinceMinutes * 60_000;
+
+  const rows = queryTelemetryEvents(
+    {
+      type,
+      runId: opts.runId,
+      sinceTs,
+      limit,
+    },
+    dbPath,
+  );
+
+  const events = rows
+    .map((row) => parseIndexedPayload(row))
+    .filter((evt): evt is NonNullable<typeof evt> => evt !== null);
+
+  const summary = summarizeReflectEvents(events, {
+    windowMinutes: sinceMinutes,
+    runId: opts.runId,
+    type,
+    limit,
+  });
+
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(summary)}\n`);
+    return;
+  }
+
+  process.stdout.write(formatReflectSummary(summary));
+}
+
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
@@ -306,6 +360,35 @@ export function registerMirrorTelemetryCli(program: Command): void {
           runId: opts.runId,
           sinceMinutes: opts.since,
           limit: opts.limit,
+          json: opts.json === true,
+          db: opts.db,
+        });
+      },
+    );
+
+  telemetry
+    .command("reflect")
+    .description("Summarize telemetry patterns from SQLite index")
+    .option("--since <minutes>", "Include events newer than N minutes", parseSinceMinutes, 60)
+    .option("--limit <n>", "Maximum events to scan", parseLimit, 200)
+    .option("--run-id <runId>", "Run ID filter")
+    .option("--type <eventType>", "Event type filter", "mirror.nudge")
+    .option("--json", "Output structured summary JSON", false)
+    .option("--db <sqlite>", "SQLite index path (overrides env/default)")
+    .action(
+      async (opts: {
+        since?: number;
+        limit?: number;
+        runId?: string;
+        type?: string;
+        json?: boolean;
+        db?: string;
+      }) => {
+        await runMirrorTelemetryReflectCli({
+          sinceMinutes: opts.since,
+          limit: opts.limit,
+          runId: opts.runId,
+          type: opts.type,
           json: opts.json === true,
           db: opts.db,
         });
