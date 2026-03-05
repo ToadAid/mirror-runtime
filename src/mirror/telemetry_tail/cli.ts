@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { indexTelemetryFile, resolveMirrorTelemetryIndexDbPath } from "../telemetry_index/index.js";
 import {
   formatMirrorNudgeTelemetry,
   isMirrorNudgeTelemetry,
@@ -29,6 +30,12 @@ export type MirrorTelemetryReplayCliOptions = {
   sinceMinutes?: number;
   grep?: string;
   type?: string;
+};
+
+export type MirrorTelemetryIndexCliOptions = {
+  path?: string;
+  db?: string;
+  rebuild?: boolean;
 };
 
 function parseLimit(raw: string): number {
@@ -132,6 +139,19 @@ export async function runMirrorTelemetryReplayCli(
   }
 }
 
+export async function runMirrorTelemetryIndexCli(
+  opts: MirrorTelemetryIndexCliOptions,
+): Promise<void> {
+  const sourcePath = opts.path ?? resolveMirrorTelemetrySinkPath(process.env);
+  const dbPath = opts.db ?? resolveMirrorTelemetryIndexDbPath(process.env);
+  const count = await indexTelemetryFile({
+    sourcePath,
+    dbPath,
+    rebuild: opts.rebuild === true,
+  });
+  process.stdout.write(`Indexed ${count} events\n`);
+}
+
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
@@ -183,4 +203,18 @@ export function registerMirrorTelemetryCli(program: Command): void {
         });
       },
     );
+
+  telemetry
+    .command("index")
+    .description("Index telemetry NDJSON into SQLite for fast queries")
+    .option("--path <ndjson>", "Telemetry source NDJSON path (overrides env/default)")
+    .option("--db <sqlite>", "SQLite index path (overrides env/default)")
+    .option("--rebuild", "Drop and recreate events table before indexing", false)
+    .action(async (opts: { path?: string; db?: string; rebuild?: boolean }) => {
+      await runMirrorTelemetryIndexCli({
+        path: opts.path,
+        db: opts.db,
+        rebuild: opts.rebuild === true,
+      });
+    });
 }
