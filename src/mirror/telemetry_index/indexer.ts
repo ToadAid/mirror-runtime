@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import readline from "node:readline";
+import { isMirrorPrivacyBoundaryEnabled, sanitizeTelemetryEvent } from "../privacy/index.js";
 import { openTelemetryIndexDb } from "./db.js";
 
 export type IndexTelemetryFileOptions = {
@@ -51,11 +52,14 @@ function parseIndexedEvent(rawLine: string): ParsedIndexedEvent | null {
   }
 
   const runId = typeof data.runId === "string" ? data.runId : undefined;
+  const payloadSource = isMirrorPrivacyBoundaryEnabled(process.env)
+    ? sanitizeTelemetryEvent(parsed)
+    : parsed;
   return {
     ts,
     type,
     runId,
-    payloadJson: JSON.stringify(parsed),
+    payloadJson: JSON.stringify(payloadSource),
   };
 }
 

@@ -5,8 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { appendTelemetrySinkEvent } from "../ndjson_sink.js";
 
 const tempDirs: string[] = [];
+const previousPrivacyBoundaryFlag = process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED;
 
 afterEach(async () => {
+  if (previousPrivacyBoundaryFlag === undefined) {
+    delete process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED;
+  } else {
+    process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED = previousPrivacyBoundaryFlag;
+  }
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -52,6 +58,36 @@ describe("ndjson_sink", () => {
       runId: "run-2",
       nudges: ["second nudge"],
       ts: 2,
+    });
+  });
+
+  it("removes human-identifiable fields when privacy boundary is enabled", async () => {
+    process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED = "1";
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-telemetry-sink-privacy-"));
+    tempDirs.push(tempDir);
+    const filePath = path.join(tempDir, "sink.ndjson");
+
+    await appendTelemetrySinkEvent({
+      filePath,
+      event: {
+        type: "mirror.nudge",
+        runId: "run-privacy",
+        nudges: ["hello"],
+        ts: 99,
+        humanName: "Tommy",
+      } as unknown as Parameters<typeof appendTelemetrySinkEvent>[0]["event"],
+      rotateBytes: 1_000_000,
+    });
+
+    const content = await fs.readFile(filePath, "utf8");
+    expect(content).not.toContain("Tommy");
+    const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty("humanName");
+    expect(parsed).toMatchObject({
+      type: "mirror.nudge",
+      runId: "run-privacy",
+      nudges: ["hello"],
+      ts: 99,
     });
   });
 });

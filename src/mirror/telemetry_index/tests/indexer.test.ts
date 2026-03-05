@@ -12,8 +12,14 @@ import {
 } from "../query.js";
 
 const tempDirs: string[] = [];
+const previousPrivacyBoundaryFlag = process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED;
 
 afterEach(async () => {
+  if (previousPrivacyBoundaryFlag === undefined) {
+    delete process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED;
+  } else {
+    process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED = previousPrivacyBoundaryFlag;
+  }
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -123,5 +129,32 @@ describe("telemetry sqlite indexer", () => {
 
     const last = getLastEvent(dbPath);
     expect(last?.ts).toBe(300);
+  });
+
+  it("removes human-identifiable fields from payload_json when privacy boundary is enabled", async () => {
+    process.env.MIRROR_PRIVACY_BOUNDARY_ENABLED = "1";
+    const { sourcePath, dbPath } = await createFixture([
+      JSON.stringify({
+        stream: "telemetry",
+        data: {
+          type: "mirror.nudge",
+          ts: 101,
+          runId: "run-privacy",
+          humanName: "Tommy",
+          nudges: ["safe"],
+        },
+      }),
+    ]);
+
+    await indexTelemetryFile({ sourcePath, dbPath, rebuild: true });
+
+    const rows = getRecentEvents(1, dbPath);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.payload_json).not.toContain("Tommy");
+    const payload = JSON.parse(rows[0]?.payload_json ?? "{}") as {
+      data?: Record<string, unknown>;
+    };
+    expect(payload.data).toBeDefined();
+    expect(payload.data).not.toHaveProperty("humanName");
   });
 });
