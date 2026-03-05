@@ -69,6 +69,7 @@ describe("tailMirrorTelemetry", () => {
       warn: () => {},
     });
 
+    await new Promise((resolve) => setTimeout(resolve, 40));
     await fs.appendFile(
       filePath,
       `${JSON.stringify({ type: "mirror.nudge", runId: "run-follow", nudges: ["hello"], ts: 7 })}\n`,
