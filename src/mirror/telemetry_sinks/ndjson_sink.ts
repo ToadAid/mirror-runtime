@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { isMirrorPrivacyBoundaryEnabled, sanitizeTelemetryEvent } from "../privacy/index.js";
 import { acquireSinkLock } from "./lock.js";
 import { rotateIfNeeded } from "./rotate.js";
 import { sanitizeTelemetrySinkEvent } from "./sanitize.js";
@@ -87,12 +88,16 @@ export async function appendTelemetrySinkEvent(params: {
   filePath: string;
   rotateBytes?: number;
   rotateKeep?: number;
+  privacyBoundaryEnabled?: boolean;
   lockEnabled?: boolean;
   lockPath?: string;
   lockTimeoutMs?: number;
   lockPollMs?: number;
 }): Promise<void> {
-  const sanitized = sanitizeTelemetrySinkEvent(params.event);
+  const privacyBoundaryEnabled =
+    params.privacyBoundaryEnabled ?? isMirrorPrivacyBoundaryEnabled(process.env);
+  const eventForSink = privacyBoundaryEnabled ? sanitizeTelemetryEvent(params.event) : params.event;
+  const sanitized = sanitizeTelemetrySinkEvent(eventForSink);
   const rotateBytes = params.rotateBytes ?? DEFAULT_MIRROR_TELEMETRY_SINK_ROTATE_BYTES;
   const rotateKeep = params.rotateKeep ?? DEFAULT_MIRROR_TELEMETRY_SINK_ROTATE_KEEP;
   const lockEnabled = params.lockEnabled ?? DEFAULT_MIRROR_TELEMETRY_SINK_LOCK_ENABLED;
@@ -135,6 +140,7 @@ export async function appendTelemetrySinkEventFromEnv(
     filePath,
     rotateBytes: resolveMirrorTelemetrySinkRotateBytes(env),
     rotateKeep: resolveMirrorTelemetrySinkRotateKeep(env),
+    privacyBoundaryEnabled: isMirrorPrivacyBoundaryEnabled(env),
     lockEnabled: resolveMirrorTelemetrySinkLockEnabled(env),
     lockPath: resolveMirrorTelemetrySinkLockPath({ filePath, env }),
     lockTimeoutMs: resolveMirrorTelemetrySinkLockTimeoutMs(env),
