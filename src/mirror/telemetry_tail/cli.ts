@@ -1,5 +1,10 @@
 import type { Command } from "commander";
-import { indexTelemetryFile, resolveMirrorTelemetryIndexDbPath } from "../telemetry_index/index.js";
+import {
+  indexTelemetryFile,
+  parseIndexedPayload,
+  queryTelemetryEvents,
+  resolveMirrorTelemetryIndexDbPath,
+} from "../telemetry_index/index.js";
 import {
   formatMirrorNudgeTelemetry,
   isMirrorNudgeTelemetry,
@@ -36,6 +41,15 @@ export type MirrorTelemetryIndexCliOptions = {
   path?: string;
   db?: string;
   rebuild?: boolean;
+};
+
+export type MirrorTelemetryQueryCliOptions = {
+  type?: string;
+  runId?: string;
+  sinceMinutes?: number;
+  limit?: number;
+  json?: boolean;
+  db?: string;
 };
 
 function parseLimit(raw: string): number {
@@ -152,6 +166,57 @@ export async function runMirrorTelemetryIndexCli(
   process.stdout.write(`Indexed ${count} events\n`);
 }
 
+export async function runMirrorTelemetryQueryCli(
+  opts: MirrorTelemetryQueryCliOptions,
+): Promise<void> {
+  const dbPath = opts.db ?? resolveMirrorTelemetryIndexDbPath(process.env);
+  const sinceTs =
+    typeof opts.sinceMinutes === "number" && Number.isFinite(opts.sinceMinutes)
+      ? Date.now() - opts.sinceMinutes * 60_000
+      : undefined;
+
+  const rows = queryTelemetryEvents(
+    {
+      type: opts.type?.trim() || "mirror.nudge",
+      runId: opts.runId,
+      sinceTs,
+      limit: opts.limit ?? 50,
+    },
+    dbPath,
+  );
+
+  for (const row of rows) {
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(row)}\n`);
+      continue;
+    }
+
+    const parsed = parseIndexedPayload(row);
+    if (!parsed) {
+      continue;
+    }
+
+    if (isMirrorNudgeTelemetry(parsed)) {
+      process.stdout.write(formatMirrorNudgeTelemetry(parsed));
+      continue;
+    }
+
+    const runId = row.run_id?.trim() ? row.run_id : "-";
+    const tsIso = formatIso(row.ts);
+    const nudges = Array.isArray(parsed.data.nudges)
+      ? parsed.data.nudges.filter((nudge): nudge is string => typeof nudge === "string")
+      : [];
+    const lines = [
+      `🪞 ${row.type}`,
+      `runId: ${runId}`,
+      `ts: ${tsIso}`,
+      ...nudges.map((nudge) => `- ${nudge}`),
+      "",
+    ];
+    process.stdout.write(`${lines.join("\n")}\n`);
+  }
+}
+
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
@@ -217,4 +282,33 @@ export function registerMirrorTelemetryCli(program: Command): void {
         rebuild: opts.rebuild === true,
       });
     });
+
+  telemetry
+    .command("query")
+    .description("Query telemetry events from SQLite index")
+    .option("--type <eventType>", "Event type filter", "mirror.nudge")
+    .option("--run-id <runId>", "Run ID filter")
+    .option("--since <minutes>", "Include events newer than N minutes", parseSinceMinutes)
+    .option("--limit <n>", "Maximum events to return", parseLimit, 50)
+    .option("--json", "Output raw rows as JSON lines", false)
+    .option("--db <sqlite>", "SQLite index path (overrides env/default)")
+    .action(
+      async (opts: {
+        type?: string;
+        runId?: string;
+        since?: number;
+        limit?: number;
+        json?: boolean;
+        db?: string;
+      }) => {
+        await runMirrorTelemetryQueryCli({
+          type: opts.type,
+          runId: opts.runId,
+          sinceMinutes: opts.since,
+          limit: opts.limit,
+          json: opts.json === true,
+          db: opts.db,
+        });
+      },
+    );
 }

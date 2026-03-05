@@ -11,6 +11,9 @@ export {
   getEventsSince,
   getLastEvent,
   getRecentEvents,
+  parseIndexedPayload,
+  queryTelemetryEvents,
 } from "./query.js";
 export type { IndexedEventRow } from "./query.js";
 export type { IndexTelemetryFileOptions } from "./indexer.js";
+export type { ParsedTelemetryEnvelope, TelemetryQueryOptions } from "./query.js";
