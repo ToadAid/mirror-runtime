@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
 import {
   indexTelemetryFile,
   parseIndexedPayload,
@@ -60,6 +61,11 @@ export type MirrorTelemetryReflectCliOptions = {
   limit?: number;
   json?: boolean;
   db?: string;
+};
+
+export type MirrorPassportCliOptions = {
+  json?: boolean;
+  includeLocal?: boolean;
 };
 
 function parseLimit(raw: string): number {
@@ -271,9 +277,34 @@ export async function runMirrorTelemetryReflectCli(
   process.stdout.write(formatReflectSummary(summary));
 }
 
+export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Promise<void> {
+  const passport = buildMirrorPassport({
+    includeLocal: opts.includeLocal === true,
+  });
+
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(passport)}\n`);
+    return;
+  }
+
+  process.stdout.write(formatMirrorPassport(passport));
+}
+
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
+
+  mirror
+    .command("passport")
+    .description("Print local mirror passport (agent identity)")
+    .option("--json", "Output machine-readable JSON", false)
+    .option("--include-local", "Include local-only traveler fields", false)
+    .action(async (opts: { json?: boolean; includeLocal?: boolean }) => {
+      await runMirrorPassportCli({
+        json: opts.json === true,
+        includeLocal: opts.includeLocal === true,
+      });
+    });
 
   telemetry
     .command("tail")
