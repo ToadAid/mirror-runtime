@@ -81,7 +81,6 @@ export type MirrorDoctorCliOptions = {
   ndjsonPath?: string;
   db?: string;
 };
-
 function parseLimit(raw: string): number {
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value) || value < 0) {
@@ -304,7 +303,6 @@ export async function runMirrorStatusCli(opts: MirrorStatusCliOptions): Promise<
 
   process.stdout.write(formatMirrorStatusHuman(status));
 }
-
 export async function runMirrorDoctorCli(opts: MirrorDoctorCliOptions): Promise<void> {
   const report = await runMirrorDoctor({
     ndjsonPath: opts.ndjsonPath,
@@ -312,13 +310,12 @@ export async function runMirrorDoctorCli(opts: MirrorDoctorCliOptions): Promise<
   });
 
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify(report)}\n`);
+    process.stdout.write(${JSON.stringify(report)}\n);
     return;
   }
 
   process.stdout.write(formatMirrorDoctorHuman(report));
 }
-
 export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Promise<void> {
   const passport = buildMirrorPassport({
     includeLocal: opts.includeLocal === true,
@@ -337,7 +334,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
 
   mirror
-    .command("doctor")
+.command("doctor")
     .description("Run read-only mirror runtime health checks")
     .option("--json", "Output machine-readable JSON", false)
     .option("--ndjson-path <path>", "Telemetry sink path (overrides env/default)")
