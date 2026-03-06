@@ -313,7 +313,7 @@ export async function runMirrorDoctorCli(opts: MirrorDoctorCliOptions): Promise<
   });
 
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify(report)}\n`);
+process.stdout.write(${JSON.stringify(report)}\n);
     return;
   }
 
@@ -338,7 +338,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
 
   mirror
-    .command("doctor")
+.command("doctor")
     .description("Run read-only mirror runtime health checks")
     .option("--json", "Output machine-readable JSON", false)
     .option("--ndjson-path <path>", "Telemetry sink path (overrides env/default)")
