@@ -3,9 +3,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { initLedger, isLedgerEnabled, getLedgerStats } from "./db.js";
-import { addMemoryEvent, listMemoryEvents, addMistakeEvent, listMistakeEvents, resolveMistake } from "./api.js";
-import { applySchema } from "./schema.js";
+import {
+  addMemoryEvent,
+  listMemoryEvents,
+  addMistakeEvent,
+  listMistakeEvents,
+  resolveMistake,
+} from "../api.js";
+import { initLedger, isLedgerEnabled, getLedgerStats } from "../db.js";
 
 describe("Memory / Mistake Ledger v1 — Schema", () => {
   it("should create tables", () => {
