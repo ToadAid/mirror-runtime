@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
 import { formatMirrorStatusHuman, getMirrorStatus } from "../status/index.js";
 import {
@@ -75,6 +76,11 @@ export type MirrorStatusCliOptions = {
   db?: string;
 };
 
+export type MirrorDoctorCliOptions = {
+  json?: boolean;
+  ndjsonPath?: string;
+  db?: string;
+};
 function parseLimit(raw: string): number {
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value) || value < 0) {
@@ -297,6 +303,19 @@ export async function runMirrorStatusCli(opts: MirrorStatusCliOptions): Promise<
 
   process.stdout.write(formatMirrorStatusHuman(status));
 }
+export async function runMirrorDoctorCli(opts: MirrorDoctorCliOptions): Promise<void> {
+  const report = await runMirrorDoctor({
+    ndjsonPath: opts.ndjsonPath,
+    dbPath: opts.db,
+  });
+
+  if (opts.json) {
+    process.stdout.write(${JSON.stringify(report)}\n);
+    return;
+  }
+
+  process.stdout.write(formatMirrorDoctorHuman(report));
+}
 export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Promise<void> {
   const passport = buildMirrorPassport({
     includeLocal: opts.includeLocal === true,
@@ -313,6 +332,20 @@ export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Prom
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
+
+  mirror
+.command("doctor")
+    .description("Run read-only mirror runtime health checks")
+    .option("--json", "Output machine-readable JSON", false)
+    .option("--ndjson-path <path>", "Telemetry sink path (overrides env/default)")
+    .option("--db <path>", "SQLite index path (overrides env/default)")
+    .action(async (opts: { json?: boolean; ndjsonPath?: string; db?: string }) => {
+      await runMirrorDoctorCli({
+        json: opts.json === true,
+        ndjsonPath: opts.ndjsonPath,
+        db: opts.db,
+      });
+    });
 
   mirror
     .command("status")
