@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
+import { formatMirrorStatusHuman, getMirrorStatus } from "../status/index.js";
 import {
   indexTelemetryFile,
   parseIndexedPayload,
@@ -66,6 +67,12 @@ export type MirrorTelemetryReflectCliOptions = {
 export type MirrorPassportCliOptions = {
   json?: boolean;
   includeLocal?: boolean;
+};
+
+export type MirrorStatusCliOptions = {
+  json?: boolean;
+  ndjsonPath?: string;
+  db?: string;
 };
 
 function parseLimit(raw: string): number {
@@ -277,6 +284,19 @@ export async function runMirrorTelemetryReflectCli(
   process.stdout.write(formatReflectSummary(summary));
 }
 
+export async function runMirrorStatusCli(opts: MirrorStatusCliOptions): Promise<void> {
+  const status = await getMirrorStatus({
+    ndjsonPath: opts.ndjsonPath,
+    dbPath: opts.db,
+  });
+
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(status)}\n`);
+    return;
+  }
+
+  process.stdout.write(formatMirrorStatusHuman(status));
+}
 export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Promise<void> {
   const passport = buildMirrorPassport({
     includeLocal: opts.includeLocal === true,
@@ -294,6 +314,19 @@ export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
 
+  mirror
+    .command("status")
+    .description("Print mirror runtime status snapshot")
+    .option("--json", "Output machine-readable JSON", false)
+    .option("--ndjson-path <path>", "Telemetry sink path (overrides env/default)")
+    .option("--db <path>", "SQLite index path (overrides env/default)")
+    .action(async (opts: { json?: boolean; ndjsonPath?: string; db?: string }) => {
+      await runMirrorStatusCli({
+        json: opts.json === true,
+        ndjsonPath: opts.ndjsonPath,
+        db: opts.db,
+      });
+    });
   mirror
     .command("passport")
     .description("Print local mirror passport (agent identity)")
