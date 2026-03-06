@@ -297,6 +297,11 @@ export async function runMirrorStatusCli(opts: MirrorStatusCliOptions): Promise<
 
   process.stdout.write(formatMirrorStatusHuman(status));
 }
+
+export async function runMirrorDoctorCli(opts: { json?: boolean }): Promise<void> {
+  await runMirrorStatusCli({ json: opts.json === true });
+}
+
 export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Promise<void> {
   const passport = buildMirrorPassport({
     includeLocal: opts.includeLocal === true,
@@ -313,6 +318,16 @@ export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Prom
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
+
+  mirror
+    .command("doctor")
+    .description("Run mirror diagnostics")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(async (opts: { json?: boolean }) => {
+      await runMirrorDoctorCli({
+        json: opts.json === true,
+      });
+    });
 
   mirror
     .command("status")
