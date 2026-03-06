@@ -1,3 +1,4 @@
+// Active source of truth for `openclaw mirror ...` subcommands.
 import type { Command } from "commander";
 import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";

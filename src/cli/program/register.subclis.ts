@@ -78,6 +78,7 @@ const entries: SubCliEntry[] = [
     description: "Mirror diagnostics and telemetry tools",
     hasSubcommands: true,
     register: async (program) => {
+      // Keep mirror command wiring pointed to the consolidated source of truth.
       const mod = await import("../../mirror/telemetry_tail/cli.js");
       mod.registerMirrorTelemetryCli(program);
     },
