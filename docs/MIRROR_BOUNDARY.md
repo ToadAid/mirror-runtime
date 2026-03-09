@@ -13,12 +13,14 @@ export MIRROR_BOUNDARY=1
 ```
 
 **Behavior:**
+
 - When enabled, the boundary logs tool executions and tool results for audit purposes.
 - Does NOT modify output, state, or behavior.
 - Fully reversible (disabled by default).
 - Safe to enable during development and debugging.
 
 **Scope:**
+
 - Affects `mirror/cadence_guard` module only.
 - No changes to engine behavior when disabled.
 - No changes to engine behavior when enabled (log-only).

@@ -14,25 +14,26 @@ A lightweight SQLite ledger for recording memory events, mistakes, and decisions
 
 Table: `ledger_events`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | TEXT | UUID primary key |
-| ts | INTEGER | Unix timestamp (ms) |
-| kind | TEXT | `"memory"` \| `"mistake"` \| `"decision"` |
-| run_id | TEXT | Run context (if available) |
-| tool_name | TEXT | Tool name (if applicable) |
-| agent_id | TEXT | Agent ID (if available) |
-| user_id | TEXT | User ID (if available) |
-| session_id | TEXT | Session ID (if available) |
-| severity | TEXT | `"info"` \| `"warn"` \| `"error"` |
-| title | TEXT | Event title |
-| detail_json | TEXT | JSON string of event details |
-| tags_json | TEXT | JSON string of tags array |
-| source | TEXT | `"user"` \| `"agent"` \| `"system"` |
-| related_id | TEXT | Linked event ID |
-| hash | TEXT | SHA256 hash of `detail_json` (normalized) |
+| Column      | Type    | Description                               |
+| ----------- | ------- | ----------------------------------------- |
+| id          | TEXT    | UUID primary key                          |
+| ts          | INTEGER | Unix timestamp (ms)                       |
+| kind        | TEXT    | `"memory"` \| `"mistake"` \| `"decision"` |
+| run_id      | TEXT    | Run context (if available)                |
+| tool_name   | TEXT    | Tool name (if applicable)                 |
+| agent_id    | TEXT    | Agent ID (if available)                   |
+| user_id     | TEXT    | User ID (if available)                    |
+| session_id  | TEXT    | Session ID (if available)                 |
+| severity    | TEXT    | `"info"` \| `"warn"` \| `"error"`         |
+| title       | TEXT    | Event title                               |
+| detail_json | TEXT    | JSON string of event details              |
+| tags_json   | TEXT    | JSON string of tags array                 |
+| source      | TEXT    | `"user"` \| `"agent"` \| `"system"`       |
+| related_id  | TEXT    | Linked event ID                           |
+| hash        | TEXT    | SHA256 hash of `detail_json` (normalized) |
 
 Indexes:
+
 - `idx_ledger_ts` on `ts`
 - `idx_ledger_kind_ts` on `(kind, ts)`
 - `idx_ledger_runid_ts` on `(run_id, ts)`

@@ -16,6 +16,7 @@ deno run --allow-net src/main.ts --tool-read /etc/passwd
 ```
 
 **Expected Behavior:**
+
 - Tool execution completes normally
 - No logs prefixed with `MIRROR_BOUNDARY:` appear
 - Output is identical to running without the boundary module
@@ -28,6 +29,7 @@ MIRROR_BOUNDARY=1 deno run --allow-net src/main.ts --tool-read /etc/passwd
 ```
 
 **Expected Behavior:**
+
 - Tool execution completes normally
 - No output mutations (same text, same order)
 - Additional logs appear at `INFO` and `DEBUG` levels:
@@ -63,6 +65,7 @@ export function validateToolResult(...): void {
 **Lines:** After line that commits `pendingMessagingTexts` (around line 250)
 
 **Hooks Applied:**
+
 1. `logToolContext(ctx, toolName, toolCallId)` — Line ~252
 2. `validateToolResult(ctx, toolName, result)` — Line ~253
 

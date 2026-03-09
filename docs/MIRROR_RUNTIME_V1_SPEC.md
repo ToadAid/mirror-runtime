@@ -1,4 +1,3 @@
-
 # Mirror Runtime v1 Spec — Two-Brain Architecture
 
 ## Purpose
@@ -243,6 +242,7 @@ This Two-Brain design delivers three tangible benefits for Toadgang:
 **Status:** Phase 1 Complete
 **Keeper:** Keeper Zero
 =======
+
 # Mirror Runtime V1 Specification
 
 ## Overview

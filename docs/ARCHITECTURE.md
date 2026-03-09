@@ -1,9 +1,11 @@
 # Architecture (1-page)
 
 ## Goal
+
 MirrorAI runtime = OpenClaw engine + Mirror boundary overlay.
 
 ## Layers
+
 1. Engine (Upstream OpenClaw)
    - Core agent loop, gateway, skills, tool routing.
 
@@ -18,5 +20,6 @@ MirrorAI runtime = OpenClaw engine + Mirror boundary overlay.
    - Future: sandbox exec (disabled by default)
 
 ## Change Policy
+
 - Prefer configuration + overlays.
 - Any engine patch must be minimal, isolated, and upstream-friendly.

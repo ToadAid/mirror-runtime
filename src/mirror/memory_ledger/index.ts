@@ -13,5 +13,18 @@ export type {
   AddMistakeEventResult,
 } from "./types.js";
 
-export { initLedger, getLedgerDb, isLedgerEnabled, getLedgerPath, closeLedger, getLedgerStats } from "./db.js";
-export { addMemoryEvent, listMemoryEvents, addMistakeEvent, listMistakeEvents, resolveMistake } from "./api.js";
+export {
+  initLedger,
+  getLedgerDb,
+  isLedgerEnabled,
+  getLedgerPath,
+  closeLedger,
+  getLedgerStats,
+} from "./db.js";
+export {
+  addMemoryEvent,
+  listMemoryEvents,
+  addMistakeEvent,
+  listMistakeEvents,
+  resolveMistake,
+} from "./api.js";
