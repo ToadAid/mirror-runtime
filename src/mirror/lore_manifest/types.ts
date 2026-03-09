@@ -35,3 +35,28 @@ export type RunVerifyLoreCliOptions = {
   readFile?: (path: string, encoding: "utf8") => Promise<string>;
   write?: (text: string) => void;
 };
+
+export type MirrorLoreSignatureVerificationResult = {
+  ok: boolean;
+  reason?: string;
+};
+
+export type VerifyManifestSignatureOptions = {
+  manifestPath: string;
+  signaturePath?: string;
+  publicKeyPem: string;
+  readFile?: (path: string) => Promise<Buffer>;
+};
+
+export type LoadManifestAndSignatureOptions = {
+  manifestPath: string;
+  signaturePath?: string;
+  readFile?: (path: string) => Promise<Buffer>;
+};
+
+export type LoadedManifestAndSignature = {
+  manifestPath: string;
+  signaturePath: string;
+  manifestBytes: Buffer;
+  signatureBytes: Buffer;
+};
