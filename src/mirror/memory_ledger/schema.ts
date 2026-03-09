@@ -2,9 +2,9 @@
  * Memory / Mistake Ledger v1 — Schema Application
  */
 
-import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import Database from "better-sqlite3";
 
 /**
  * Apply the schema to the database

@@ -2,9 +2,9 @@
  * Memory / Mistake Ledger v1 — Database Initialization
  */
 
-import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import Database from "better-sqlite3";
 import { applySchema } from "./schema.js";
 
 let dbInstance: Database.Database | null = null;
@@ -18,7 +18,10 @@ export function initLedger(config: { path?: string } = {}): Database {
     return dbInstance;
   }
 
-  const basePath = config.path ?? process.env.MIRROR_LEDGER_PATH ?? path.resolve(process.env.HOME || process.cwd(), ".mirror/ledger.sqlite");
+  const basePath =
+    config.path ??
+    process.env.MIRROR_LEDGER_PATH ??
+    path.resolve(process.env.HOME || process.cwd(), ".mirror/ledger.sqlite");
   const resolvedPath = path.resolve(basePath);
 
   // Ensure directory exists
@@ -83,9 +86,17 @@ export function getLedgerStats(): {
 } {
   const db = getLedgerDb();
 
-  const memoryCount = (db.prepare("SELECT COUNT(*) as count FROM memory_events").get() as { count: number }).count;
-  const mistakeCount = (db.prepare("SELECT COUNT(*) as count FROM mistake_events").get() as { count: number }).count;
-  const unresolvedMistakes = (db.prepare("SELECT COUNT(*) as count FROM mistake_events WHERE resolved = 0").get() as { count: number }).count;
+  const memoryCount = (
+    db.prepare("SELECT COUNT(*) as count FROM memory_events").get() as { count: number }
+  ).count;
+  const mistakeCount = (
+    db.prepare("SELECT COUNT(*) as count FROM mistake_events").get() as { count: number }
+  ).count;
+  const unresolvedMistakes = (
+    db.prepare("SELECT COUNT(*) as count FROM mistake_events WHERE resolved = 0").get() as {
+      count: number;
+    }
+  ).count;
 
   return {
     memory_count: memoryCount,

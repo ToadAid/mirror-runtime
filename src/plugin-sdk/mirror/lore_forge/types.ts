@@ -23,7 +23,7 @@ export interface ScoringParams {
 }
 
 export interface BundleConfig {
-  format: 'json' | 'jsonl' | 'markdown';
+  format: "json" | "jsonl" | "markdown";
   outputPath?: string;
 }
 

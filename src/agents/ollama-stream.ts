@@ -323,11 +323,12 @@ export function buildAssistantMessage(
 
   // Ollama GLM and other reasoning models may return output in reasoning fields.
   // Check: content, reasoning, reasoning_content, reasoning_text (fallback chain)
-  const text = response.message.content ||
-               response.message.reasoning ||
-               (response.message as any).reasoning_content ||
-               (response.message as any).reasoning_text ||
-               "";
+  const text =
+    response.message.content ||
+    response.message.reasoning ||
+    (response.message as any).reasoning_content ||
+    (response.message as any).reasoning_text ||
+    "";
   if (text) {
     content.push({ type: "text", text });
   }
@@ -490,8 +491,7 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           // Additional fallback fields for GLM models
           else if (chunk.message?.reasoning_content) {
             accumulatedContent += chunk.message.reasoning_content;
-          }
-          else if (chunk.message?.reasoning_text) {
+          } else if (chunk.message?.reasoning_text) {
             accumulatedContent += chunk.message.reasoning_text;
           }
 
