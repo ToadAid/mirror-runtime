@@ -1,4 +1,11 @@
-export * from "./types.js";
-export * from "./hash.js";
-export * from "./verify.js";
-export * from "./cli.js";
+export type {
+  MirrorLoreManifest,
+  MirrorLoreManifestEntry,
+  MirrorLoreManifestMismatch,
+  MirrorLoreManifestVerificationReport,
+  VerifyLoreManifestOptions,
+} from "./types.js";
+
+export { sha256File } from "./hash.js";
+export { verifyLoreManifest } from "./verify.js";
+export { runVerifyLoreCli } from "./cli.js";

@@ -3,17 +3,10 @@ export type MirrorLoreManifestEntry = {
   sha256: string;
 };
 
-export type LoreManifestEntry = MirrorLoreManifestEntry;
-
 export type MirrorLoreManifest = {
   version: string;
   canonicalDir: string;
   scrolls: MirrorLoreManifestEntry[];
-};
-
-export type LoreManifest = {
-  version: number;
-  files: LoreManifestEntry[];
 };
 
 export type MirrorLoreManifestMismatch = {
@@ -28,13 +21,6 @@ export type MirrorLoreManifestVerificationReport = {
   matched: number;
   missing: string[];
   mismatched: MirrorLoreManifestMismatch[];
-};
-
-export type LoreVerifyResult = {
-  checked: number;
-  matched: number;
-  missing: string[];
-  mismatched: string[];
 };
 
 export type VerifyLoreManifestOptions = {
