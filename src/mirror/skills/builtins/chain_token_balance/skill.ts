@@ -10,10 +10,10 @@ function validateInput(input: Record<string, unknown>): ChainTokenBalanceInput {
   const rpcUrl = input.rpcUrl;
 
   if (typeof tokenAddress !== "string" || !ETH_ADDRESS_REGEX.test(tokenAddress)) {
-    throw new TypeError("mirror.chain.token_balance requires a valid tokenAddress");
+    throw new TypeError("mirror.chain.token_balance requires a valid EVM token address");
   }
   if (typeof walletAddress !== "string" || !ETH_ADDRESS_REGEX.test(walletAddress)) {
-    throw new TypeError("mirror.chain.token_balance requires a valid walletAddress");
+    throw new TypeError("mirror.chain.token_balance requires a valid EVM wallet address");
   }
   if (typeof rpcUrl !== "string" || rpcUrl.trim().length === 0) {
     throw new TypeError("mirror.chain.token_balance requires input.rpcUrl");
@@ -42,7 +42,7 @@ async function runChainTokenBalance(
 export const mirrorChainTokenBalanceSkill: MirrorSkill = {
   meta: {
     name: "mirror.chain.token_balance",
-    description: "Fetches the ERC-20 token balance of a wallet using JSON-RPC.",
+    description: "Fetches the ERC-20 token balance of a wallet using JSON-RPC",
     version: "1.0.0",
     inputs: ["tokenAddress", "walletAddress", "rpcUrl"],
     outputs: ["tokenAddress", "walletAddress", "balance"],

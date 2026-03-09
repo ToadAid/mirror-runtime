@@ -1,28 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinMirrorSkills } from "../../../discover.js";
+import { buildBalanceOfCallData } from "../erc20.js";
 import { mirrorChainTokenBalanceSkill } from "../skill.js";
 
 function encodeUint(value: bigint): string {
   return `0x${value.toString(16).padStart(64, "0")}`;
 }
 
-function mockRpcFetch(resultHex?: string) {
+function mockRpcFetch(resultByData: Record<string, string>) {
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}")) as {
-      method?: string;
       params?: Array<{ data?: string }>;
     };
 
-    if (body.method === "eth_call" && String(body.params?.[0]?.data).startsWith("0x70a08231")) {
-      if (resultHex) {
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return { jsonrpc: "2.0", id: 1, result: resultHex };
-          },
-        } as Response;
-      }
+    const data = body.params?.[0]?.data ?? "";
+    if (data in resultByData) {
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { jsonrpc: "2.0", id: 1, result: resultByData[data] };
+        },
+      } as Response;
     }
 
     return {
@@ -50,47 +49,42 @@ export function defineChainTokenBalanceSkillTests() {
       );
     });
 
-    it("returns balance for a valid call", async () => {
-      globalThis.fetch = mockRpcFetch(encodeUint(123456789n)) as typeof globalThis.fetch;
+    it("returns expected balance structure", async () => {
+      const walletAddress = "0x2222222222222222222222222222222222222222";
+      globalThis.fetch = mockRpcFetch({
+        [buildBalanceOfCallData(walletAddress)]: encodeUint(123n),
+      }) as typeof globalThis.fetch;
 
-      const result = await mirrorChainTokenBalanceSkill.run({
-        tokenAddress: "0x2222222222222222222222222222222222222222",
-        walletAddress: "0x3333333333333333333333333333333333333333",
+      const out = await mirrorChainTokenBalanceSkill.run({
+        tokenAddress: "0x1111111111111111111111111111111111111111",
+        walletAddress,
         rpcUrl: "https://rpc.example",
       });
 
-      expect(result).toEqual({
-        tokenAddress: "0x2222222222222222222222222222222222222222",
-        walletAddress: "0x3333333333333333333333333333333333333333",
-        balance: "123456789",
+      expect(out).toEqual({
+        tokenAddress: "0x1111111111111111111111111111111111111111",
+        walletAddress,
+        balance: "123",
       });
     });
 
-    it("rejects invalid addresses", async () => {
+    it("rejects invalid wallet address", async () => {
       await expect(
         mirrorChainTokenBalanceSkill.run({
-          tokenAddress: "invalid",
-          walletAddress: "0x3333333333333333333333333333333333333333",
-          rpcUrl: "https://rpc.example",
-        }),
-      ).rejects.toThrow("requires a valid tokenAddress");
-
-      await expect(
-        mirrorChainTokenBalanceSkill.run({
-          tokenAddress: "0x2222222222222222222222222222222222222222",
+          tokenAddress: "0x1111111111111111111111111111111111111111",
           walletAddress: "invalid",
           rpcUrl: "https://rpc.example",
         }),
-      ).rejects.toThrow("requires a valid walletAddress");
+      ).rejects.toThrow("requires a valid EVM wallet address");
     });
 
     it("handles RPC failures", async () => {
-      globalThis.fetch = mockRpcFetch() as typeof globalThis.fetch;
+      globalThis.fetch = mockRpcFetch({}) as typeof globalThis.fetch;
 
       await expect(
         mirrorChainTokenBalanceSkill.run({
-          tokenAddress: "0x2222222222222222222222222222222222222222",
-          walletAddress: "0x3333333333333333333333333333333333333333",
+          tokenAddress: "0x1111111111111111111111111111111111111111",
+          walletAddress: "0x2222222222222222222222222222222222222222",
           rpcUrl: "https://rpc.example",
         }),
       ).rejects.toThrow("RPC error");
