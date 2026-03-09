@@ -27,3 +27,11 @@ export type VerifyLoreManifestOptions = {
   manifest: MirrorLoreManifest;
   baseDir: string;
 };
+
+export type RunVerifyLoreCliOptions = {
+  manifestPath?: string;
+  dir?: string;
+  json?: boolean;
+  readFile?: (path: string, encoding: "utf8") => Promise<string>;
+  write?: (text: string) => void;
+};
