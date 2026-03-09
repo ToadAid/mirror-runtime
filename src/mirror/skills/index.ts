@@ -4,6 +4,12 @@ export { createMirrorSkillRegistry } from "./registry.js";
 export { getBuiltinMirrorSkills } from "./discover.js";
 
 export type {
+  ChainTokenBalanceInput,
+  ChainTokenBalanceResult,
+} from "./builtins/chain_token_balance/types.js";
+export { mirrorChainTokenBalanceSkill } from "./builtins/chain_token_balance/skill.js";
+
+export type {
   ChainTokenStateInput,
   ChainTokenStateResult,
 } from "./builtins/chain_token_state/types.js";
