@@ -1,6 +1,7 @@
 // Active source of truth for `openclaw mirror ...` subcommands.
 import type { Command } from "commander";
 import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
+import { runVerifyLoreCli } from "../lore_manifest/index.js";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
 import { formatMirrorStatusHuman, getMirrorStatus } from "../status/index.js";
 import {
@@ -81,6 +82,12 @@ export type MirrorDoctorCliOptions = {
   json?: boolean;
   ndjsonPath?: string;
   db?: string;
+};
+
+export type MirrorVerifyLoreCliOptions = {
+  manifest?: string;
+  dir?: string;
+  json?: boolean;
 };
 
 function parseLimit(raw: string): number {
@@ -333,6 +340,14 @@ export async function runMirrorPassportCli(opts: MirrorPassportCliOptions): Prom
   process.stdout.write(formatMirrorPassport(passport));
 }
 
+export async function runMirrorVerifyLoreCli(opts: MirrorVerifyLoreCliOptions): Promise<void> {
+  await runVerifyLoreCli({
+    manifestPath: opts.manifest,
+    dir: opts.dir,
+    json: opts.json === true,
+  });
+}
+
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
@@ -373,6 +388,20 @@ export function registerMirrorTelemetryCli(program: Command): void {
       await runMirrorPassportCli({
         json: opts.json === true,
         includeLocal: opts.includeLocal === true,
+      });
+    });
+
+  mirror
+    .command("verify-lore")
+    .description("Verify canonical lore scrolls against a lore manifest")
+    .option("--manifest <path>", "Lore manifest path", "lore/manifest.json")
+    .option("--dir <path>", "Canonical lore directory", "lore/canonical")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(async (opts: { manifest?: string; dir?: string; json?: boolean }) => {
+      await runMirrorVerifyLoreCli({
+        manifest: opts.manifest,
+        dir: opts.dir,
+        json: opts.json === true,
       });
     });
 

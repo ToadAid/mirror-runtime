@@ -5,5 +5,7 @@ export type {
   MirrorLoreManifestVerificationReport,
   VerifyLoreManifestOptions,
 } from "./types.js";
+
 export { sha256File } from "./hash.js";
 export { verifyLoreManifest } from "./verify.js";
+export { runVerifyLoreCli } from "./cli.js";
