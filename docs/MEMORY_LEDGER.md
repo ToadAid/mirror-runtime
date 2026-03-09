@@ -10,6 +10,7 @@ The ledger tracks two types of events:
 2. **Mistake events** — When the system was wrong, or conflicts appeared (e.g., "tool API timeout")
 
 The ledger is:
+
 - **Append-only** — Events can only be added, never deleted or modified
 - **Feature-flagged** — Disabled by default (`MIRROR_LEDGER=0`)
 - **Privacy-first** — Never stores secrets, tokens, or private keys
@@ -21,57 +22,57 @@ The ledger is:
 
 Stores user memories and forgetting decisions.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | TEXT (PK) | Unique UUID |
-| ts | INTEGER | Timestamp (ms since epoch) |
-| user_id | TEXT (optional) | User identifier |
-| session_id | TEXT (optional) | Session identifier |
-| kind | TEXT | `memory` or `forget` |
-| key | TEXT | Human-readable key |
-| value_json | TEXT | JSON string of value |
-| source | TEXT | `agent0`, `runtime`, `user`, or `tool` |
-| confidence | INTEGER | 0-100 confidence score |
-| tags_json | TEXT | JSON array of tags |
-| UNIQUE(ts, key) | | Prevents duplicates by timestamp + key |
+| Column          | Type            | Description                            |
+| --------------- | --------------- | -------------------------------------- |
+| id              | TEXT (PK)       | Unique UUID                            |
+| ts              | INTEGER         | Timestamp (ms since epoch)             |
+| user_id         | TEXT (optional) | User identifier                        |
+| session_id      | TEXT (optional) | Session identifier                     |
+| kind            | TEXT            | `memory` or `forget`                   |
+| key             | TEXT            | Human-readable key                     |
+| value_json      | TEXT            | JSON string of value                   |
+| source          | TEXT            | `agent0`, `runtime`, `user`, or `tool` |
+| confidence      | INTEGER         | 0-100 confidence score                 |
+| tags_json       | TEXT            | JSON array of tags                     |
+| UNIQUE(ts, key) |                 | Prevents duplicates by timestamp + key |
 
 ### mistake_events
 
 Stores system mistakes and errors.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | TEXT (PK) | Unique UUID |
-| ts | INTEGER | Timestamp (ms since epoch) |
-| run_id | TEXT (optional) | Run identifier |
-| tool_name | TEXT (optional) | Tool name |
-| category | TEXT | One of: `tool_error`, `logic_error`, `context_mismatch`, `data_quality`, `config_error`, `unexpected_behavior` |
-| summary | TEXT | Short summary |
-| expected | TEXT (optional) | Expected behavior |
-| actual | TEXT (optional) | Actual behavior |
-| severity | TEXT | One of: `low`, `medium`, `high`, `critical` |
-| resolved | INTEGER | `0` (unresolved) or `1` (resolved) |
-| notes | TEXT (optional) | Additional notes |
-| UNIQUE(ts, summary) | | Prevents duplicates by timestamp + summary |
+| Column              | Type            | Description                                                                                                    |
+| ------------------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
+| id                  | TEXT (PK)       | Unique UUID                                                                                                    |
+| ts                  | INTEGER         | Timestamp (ms since epoch)                                                                                     |
+| run_id              | TEXT (optional) | Run identifier                                                                                                 |
+| tool_name           | TEXT (optional) | Tool name                                                                                                      |
+| category            | TEXT            | One of: `tool_error`, `logic_error`, `context_mismatch`, `data_quality`, `config_error`, `unexpected_behavior` |
+| summary             | TEXT            | Short summary                                                                                                  |
+| expected            | TEXT (optional) | Expected behavior                                                                                              |
+| actual              | TEXT (optional) | Actual behavior                                                                                                |
+| severity            | TEXT            | One of: `low`, `medium`, `high`, `critical`                                                                    |
+| resolved            | INTEGER         | `0` (unresolved) or `1` (resolved)                                                                             |
+| notes               | TEXT (optional) | Additional notes                                                                                               |
+| UNIQUE(ts, summary) |                 | Prevents duplicates by timestamp + summary                                                                     |
 
 ### meta
 
 Stores configuration and metadata.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| key | TEXT (PK) | Configuration key |
-| value | TEXT | Configuration value |
+| Column | Type      | Description         |
+| ------ | --------- | ------------------- |
+| key    | TEXT (PK) | Configuration key   |
+| value  | TEXT      | Configuration value |
 
 ## Enabling the Ledger
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MIRROR_LEDGER` | `0` | Enable ledger (`1` to enable) |
-| `MIRROR_LEDGER_PATH` | `~/.mirror/ledger.sqlite` | SQLite database path |
-| `MIRROR_LEDGER_LOG_ONLY` | `0` | Record events only (no behavioral impact) |
+| Variable                 | Default                   | Description                               |
+| ------------------------ | ------------------------- | ----------------------------------------- |
+| `MIRROR_LEDGER`          | `0`                       | Enable ledger (`1` to enable)             |
+| `MIRROR_LEDGER_PATH`     | `~/.mirror/ledger.sqlite` | SQLite database path                      |
+| `MIRROR_LEDGER_LOG_ONLY` | `0`                       | Record events only (no behavioral impact) |
 
 ### Example
 
@@ -155,7 +156,7 @@ const recent = listMemoryEvents(db, { limit: 10 });
 
 // Filter by tag (parse tags_json first)
 const tagged = listMemoryEvents(db, {});
-tagged.forEach(event => {
+tagged.forEach((event) => {
   const tags = JSON.parse(event.tags_json);
   if (tags.includes("prefers_dark_mode")) {
     // Use memory
@@ -259,6 +260,7 @@ SELECT * FROM memory_events;
 ### Log-Only Mode
 
 When `MIRROR_LEDGER_LOG_ONLY=1`:
+
 - Events are still recorded to database
 - Ledger does NOT influence system behavior (no memory lookups, no mistake corrections)
 - Useful for auditing without side effects
@@ -306,7 +308,9 @@ export function migrateToV2(db: Database): void {
   db.exec("ALTER TABLE memory_events ADD COLUMN favorite_color TEXT");
 
   // Migrate existing data
-  db.prepare("UPDATE memory_events SET favorite_color = 'unknown' WHERE favorite_color IS NULL").run();
+  db.prepare(
+    "UPDATE memory_events SET favorite_color = 'unknown' WHERE favorite_color IS NULL",
+  ).run();
 }
 ```
 

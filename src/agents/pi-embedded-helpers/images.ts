@@ -21,7 +21,12 @@ export function isEmptyAssistantMessageContent(
     if (!block || typeof block !== "object") {
       return true;
     }
-    const rec = block as { type?: unknown; text?: unknown; reasoning?: unknown; thinking?: unknown };
+    const rec = block as {
+      type?: unknown;
+      text?: unknown;
+      reasoning?: unknown;
+      thinking?: unknown;
+    };
     // Handle text blocks
     if (rec.type === "text") {
       return typeof rec.text !== "string" || rec.text.trim().length === 0;

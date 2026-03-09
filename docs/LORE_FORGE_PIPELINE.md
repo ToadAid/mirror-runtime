@@ -55,18 +55,23 @@ These bundles remain untrusted until manually reviewed.
 # CANDIDATE — <short title>
 
 ## Source Summary
+
 ...
 
 ## Detected Symbols
+
 ...
 
 ## Why It Might Matter
+
 ...
 
 ## Draft Narrative
+
 ...
 
 ## Reviewer Notes
+
 ...
 
 ---
@@ -106,13 +111,13 @@ src/plugin-sdk/mirror/lore_forge/
 
 `ts
 import {
-  scoreCandidate,
-  createJsonBundle,
+scoreCandidate,
+createJsonBundle,
 } from "src/plugin-sdk/mirror/lore_forge";
 
 const scored = scoreCandidate(
-  { id: "test", content: "Lore content", tags: ["example"] },
-  { includeReason: true }
+{ id: "test", content: "Lore content", tags: ["example"] },
+{ includeReason: true }
 );
 
 const bundle = createJsonBundle(scored, { format: "json" });

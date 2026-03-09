@@ -25,7 +25,9 @@ if (!isLedgerEnabled()) {
   const db = null; // will be initialized on first call
 
   function getDb(): Database {
-    if (db) {return db;}
+    if (db) {
+      return db;
+    }
     const { initLedger } = require("./db.js");
     return initLedger();
   }
@@ -46,7 +48,7 @@ if (!isLedgerEnabled()) {
 
     database
       .prepare(
-        "INSERT INTO memory_events (id, ts, user_id, session_id, kind, key, value_json, source, confidence, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO memory_events (id, ts, user_id, session_id, kind, key, value_json, source, confidence, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         id,
@@ -58,7 +60,7 @@ if (!isLedgerEnabled()) {
         JSON.stringify(event.value_json),
         event.source ?? null,
         event.confidence ?? null,
-        event.tags_json ?? null
+        event.tags_json ?? null,
       );
 
     return { event_id: id, is_duplicate: false };
@@ -120,7 +122,7 @@ if (!isLedgerEnabled()) {
           source: (row as { source: string | null }).source,
           confidence: (row as { confidence: number | null }).confidence,
           tags_json: JSON.parse((row as { tags_json: string }).tags_json),
-        } as {
+        }) as {
           id: string;
           ts: number;
           user_id: string | null;
@@ -131,7 +133,7 @@ if (!isLedgerEnabled()) {
           source: string | null;
           confidence: number | null;
           tags_json: string;
-        })
+        },
     );
   }
 
@@ -151,7 +153,7 @@ if (!isLedgerEnabled()) {
 
     database
       .prepare(
-        "INSERT INTO mistake_events (id, ts, run_id, tool_name, category, summary, expected, actual, severity, resolved, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO mistake_events (id, ts, run_id, tool_name, category, summary, expected, actual, severity, resolved, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         id,
@@ -164,7 +166,7 @@ if (!isLedgerEnabled()) {
         event.actual,
         event.severity,
         0,
-        event.notes
+        event.notes,
       );
 
     return { event_id: id, is_duplicate: false };
@@ -217,7 +219,7 @@ if (!isLedgerEnabled()) {
           severity: (row as { severity: string }).severity,
           resolved: (row as { resolved: number }).resolved,
           notes: (row as { notes: string | null }).notes,
-        } as {
+        }) as {
           id: string;
           ts: number;
           run_id: string | null;
@@ -229,12 +231,14 @@ if (!isLedgerEnabled()) {
           severity: string;
           resolved: number;
           notes: string | null;
-        })
+        },
     );
   }
 
   export function resolveMistake(id: string, notes?: string) {
     const database = getDb();
-    database.prepare("UPDATE mistake_events SET resolved = 1, notes = ? WHERE id = ?").run(notes ?? null, id);
+    database
+      .prepare("UPDATE mistake_events SET resolved = 1, notes = ? WHERE id = ?")
+      .run(notes ?? null, id);
   }
 }
