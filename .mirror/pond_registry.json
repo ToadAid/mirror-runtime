@@ -1,0 +1,16 @@
+{
+  "count": 1,
+  "ponds": [
+    {
+      "pond_id": "toadaid-main",
+      "name": "ToadAid Main",
+      "runtime": "openclaw-runtime",
+      "runtime_version": "unknown",
+      "ocean_protocol": "ocean-v0",
+      "federation_enabled": false,
+      "public": true,
+      "capabilities": ["pond-manifest", "pond-refresh", "ocean-registry", "ocean-trust-management"],
+      "agents": ["main"]
+    }
+  ]
+}

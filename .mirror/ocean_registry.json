@@ -1,0 +1,17 @@
+{
+  "ponds": [
+    {
+      "pond_id": "toadaid-main",
+      "name": "ToadAid Main",
+      "manifest_url": "http://127.0.0.1:18801/pond/manifest",
+      "trust_status": "known",
+      "runtime": "openclaw-runtime",
+      "runtime_version": "unknown",
+      "ocean_protocol": "ocean-v0",
+      "federation_enabled": false,
+      "public": true,
+      "capabilities": ["pond-manifest", "pond-refresh", "ocean-registry", "ocean-trust-management"],
+      "agents": ["main"]
+    }
+  ]
+}
