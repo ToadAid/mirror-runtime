@@ -101,4 +101,15 @@ describe("updateOceanPondTrust", () => {
       ).rejects.toThrow(/unknown pond_id/);
     });
   });
+
+  it("returns unknown pond_id instead of ENOENT when registry file is missing", async () => {
+    await withIsolatedRuntimeCwd(async () => {
+      await expect(
+        updateOceanPondTrust({
+          pondId: "toadaid-main",
+          trustStatus: "trusted",
+        }),
+      ).rejects.toThrow(/unknown pond_id/);
+    });
+  });
 });
