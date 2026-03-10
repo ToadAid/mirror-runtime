@@ -83,6 +83,15 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "mirror-daemon",
+    description: "Run standalone Mirror runtime daemon",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../mirror-daemon-cli.js");
+      mod.registerMirrorDaemonCli(program);
+    },
+  },
+  {
     name: "system",
     description: "System events, heartbeat, and presence",
     hasSubcommands: true,

@@ -1,5 +1,7 @@
 // Active source of truth for `openclaw mirror ...` subcommands.
 import type { Command } from "commander";
+import { registerMirrorApiCli } from "../../mirror-daemon/api-cli.js";
+import { readMirrorJournal } from "../../mirror-daemon/journal.js";
 import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
 import { runVerifyLoreCli } from "../lore_manifest/index.js";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
@@ -31,6 +33,12 @@ export type MirrorTelemetryTailCliOptions = {
   sinceMinutes?: number;
   grep?: string;
   type?: string;
+};
+
+export type MirrorJournalTailCliOptions = {
+  json?: boolean;
+  limit?: number;
+  path?: string;
 };
 
 export type MirrorTelemetryReplayCliOptions = {
@@ -348,9 +356,48 @@ export async function runMirrorVerifyLoreCli(opts: MirrorVerifyLoreCliOptions): 
   });
 }
 
+export async function runMirrorJournalTailCli(opts: MirrorJournalTailCliOptions): Promise<void> {
+  const entries = await readMirrorJournal({
+    limit: opts.limit ?? 20,
+    path: opts.path,
+  });
+  if (opts.json) {
+    for (const entry of entries) {
+      process.stdout.write(`${JSON.stringify(entry)}\n`);
+    }
+    return;
+  }
+  for (const entry of entries) {
+    const parts = [
+      entry.ts,
+      entry.event_type,
+      entry.tool_name ?? "-",
+      entry.trace_id,
+      entry.reason ?? "",
+    ].filter((value) => value && value.trim().length > 0);
+    process.stdout.write(`${parts.join(" | ")}\n`);
+  }
+}
+
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
+  registerMirrorApiCli(mirror);
+  mirror
+    .command("journal")
+    .description("Mirror journal commands")
+    .command("tail")
+    .description("Read local Mirror run journal")
+    .option("--json", "Output JSONL", false)
+    .option("--limit <n>", "Number of journal entries", parseLimit, 20)
+    .option("--path <path>", "Journal path (overrides env/default)")
+    .action(async (opts: { json?: boolean; limit?: number; path?: string }) => {
+      await runMirrorJournalTailCli({
+        json: opts.json === true,
+        limit: opts.limit,
+        path: opts.path,
+      });
+    });
 
   mirror
     .command("doctor")

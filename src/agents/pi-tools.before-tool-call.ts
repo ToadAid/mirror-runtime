@@ -1,6 +1,8 @@
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import type { SessionState } from "../logging/diagnostic-session-state.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { appendMirrorJournalEntry, hashJournalArgs } from "../mirror-daemon/journal.js";
+import { evaluateMirrorToolRunnerPolicy } from "../mirror/policy/runners.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { isPlainObject } from "../utils.js";
 import { normalizeToolName } from "./tool-policy.js";
@@ -71,6 +73,14 @@ async function recordLoopOutcome(args: {
   }
 }
 
+async function appendMirrorJournalSafe(entry: Parameters<typeof appendMirrorJournalEntry>[0]) {
+  try {
+    await appendMirrorJournalEntry(entry);
+  } catch (err) {
+    log.warn(`mirror journal write failed: event=${entry.event_type} error=${String(err)}`);
+  }
+}
+
 export async function runBeforeToolCallHook(args: {
   toolName: string;
   params: unknown;
@@ -79,6 +89,46 @@ export async function runBeforeToolCallHook(args: {
 }): Promise<HookOutcome> {
   const toolName = normalizeToolName(args.toolName || "tool");
   const params = args.params;
+  const traceId = args.toolCallId?.trim() || `tool-${Date.now()}`;
+  const callerAgent = args.ctx?.agentId;
+  const policy = evaluateMirrorToolRunnerPolicy({ toolName, callerAgent });
+  const argsHash = hashJournalArgs(params);
+
+  await appendMirrorJournalSafe({
+    event_type: "policy.decision",
+    trace_id: traceId,
+    caller_agent: callerAgent,
+    tool_name: toolName,
+    decision: policy.decision,
+    risk_tier: policy.risk_tier,
+    reason: policy.reason,
+    args_hash: argsHash,
+  });
+
+  if (policy.decision === "deny") {
+    return {
+      blocked: true,
+      reason: policy.reason ?? `tool denied by policy: ${toolName}`,
+    };
+  }
+
+  if (policy.decision === "require_approval") {
+    // v0 scope is exec-first: "require_approval" is centrally decided for all covered
+    // tools, but hard enforcement is guaranteed on the exec path first. Non-exec tools
+    // are currently policy-labeled + journaled here to keep behavior honest while
+    // broader enforcement is phased in later.
+    const enforcementScope =
+      toolName === "exec" ? "enforcement=exec-path" : "enforcement=advisory-only-non-exec-v0";
+    await appendMirrorJournalSafe({
+      event_type: "approval.requested",
+      trace_id: traceId,
+      caller_agent: callerAgent,
+      tool_name: toolName,
+      args_hash: argsHash,
+      reason: `${policy.reason}; ${enforcementScope}`,
+      approval_id: args.toolCallId?.trim() || undefined,
+    });
+  }
 
   if (args.ctx?.sessionKey) {
     const { getDiagnosticSessionState } = await import("../logging/diagnostic-session-state.js");

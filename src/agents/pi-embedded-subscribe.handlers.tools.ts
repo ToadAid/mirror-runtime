@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { emitAgentEvent } from "../infra/agent-events.js";
+import { appendMirrorJournalEntry, hashJournalArgs } from "../mirror-daemon/journal.js";
 import { initLedgerOnce, recordMistake } from "../mirror/ledger/accessor.js";
 import { maybeForgeLoreCandidate } from "../mirror/lore_forge_hook.js";
 import { getLedger } from "../mirror/mistake_ledger/ledger.js";
@@ -40,6 +41,14 @@ type MirrorHint = {
   repeats: number;
   hint: string;
 };
+
+async function appendMirrorJournalSafe(entry: Parameters<typeof appendMirrorJournalEntry>[0]) {
+  try {
+    await appendMirrorJournalEntry(entry);
+  } catch {
+    // Never break tool execution event handling on journal write failure.
+  }
+}
 
 function getMirrorHints(state: ToolHandlerContext["state"]): MirrorHint[] {
   const stateWithHints = state as ToolHandlerContext["state"] & { mirrorHints?: MirrorHint[] };
@@ -334,6 +343,7 @@ export async function handleToolExecutionEnd(
   const isToolError = isError || isToolResultError(result);
   const sanitizedResult = sanitizeToolResult(result);
   const startData = toolStartData.get(toolCallId);
+  const argsHash = hashJournalArgs(startData?.args ?? {});
   toolStartData.delete(toolCallId);
   const callSummary = ctx.state.toolMetaById.get(toolCallId);
   const meta = callSummary?.meta;
@@ -504,6 +514,16 @@ export async function handleToolExecutionEnd(
   ctx.log.debug(
     `embedded run tool end: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
   );
+
+  await appendMirrorJournalSafe({
+    event_type: isToolError ? "tool.failed" : "tool.executed",
+    trace_id: toolCallId,
+    caller_agent: ctx.params.runId,
+    tool_name: toolName,
+    args_hash: argsHash,
+    ok: !isToolError,
+    error: isToolError ? extractToolErrorMessage(sanitizedResult) : undefined,
+  });
 
   emitToolResultOutput({ ctx, toolName, meta, isToolError, result, sanitizedResult });
 

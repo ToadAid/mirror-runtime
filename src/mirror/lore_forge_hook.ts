@@ -5,9 +5,11 @@
  */
 
 import type { ToolHandlerContext } from "../agents/pi-embedded-subscribe.handlers.types.js";
+import { appendMirrorJournalEntry, hashJournalArgs } from "../mirror-daemon/journal.js";
 import { toJsonlBundle } from "../plugin-sdk/mirror/lore_forge/bundle.js";
 import { scoreCandidate } from "../plugin-sdk/mirror/lore_forge/scoring.js";
 import type { LoreCandidate } from "../plugin-sdk/mirror/lore_forge/types.js";
+import { evaluateMirrorForgeToolRunnerPolicy } from "./policy/runners.js";
 
 /**
  * Optional runtime hook for lore candidate generation.
@@ -34,6 +36,21 @@ export async function maybeForgeLoreCandidate(
   }
 
   try {
+    const policy = evaluateMirrorForgeToolRunnerPolicy({
+      toolName,
+      callerAgent: ctx.params.runId,
+    });
+    await appendMirrorJournalEntry({
+      event_type: "policy.decision",
+      trace_id: toolCallId,
+      caller_agent: ctx.params.runId,
+      tool_name: toolName,
+      decision: policy.decision,
+      risk_tier: policy.risk_tier,
+      reason: policy.reason,
+      args_hash: hashJournalArgs(result),
+    });
+
     // Create a basic candidate from tool context
     const candidate: LoreCandidate = {
       id: `${toolCallId}-${Date.now()}`,

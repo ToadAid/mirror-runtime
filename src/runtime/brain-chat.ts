@@ -12,8 +12,8 @@
  */
 
 import crypto from "node:crypto";
-import { createSubsystemLogger } from "../../logging/subsystem.js";
-import type { RuntimeEnv } from "../../runtime.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import type { RuntimeEnv } from "../runtime.js";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";

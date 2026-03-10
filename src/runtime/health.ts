@@ -9,7 +9,7 @@
  * - Returns only locally configured state
  */
 
-import type { RuntimeEnv } from "../../runtime.js";
+import type { RuntimeEnv } from "../runtime.js";
 
 interface HealthResponse {
   ok: boolean;

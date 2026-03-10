@@ -32,12 +32,14 @@ describe("mirror cli wiring", () => {
 
     const mirrorNames = mirror.commands.map((command) => command.name());
     expect(mirrorNames).toEqual(
-      expect.arrayContaining(["doctor", "status", "passport", "telemetry"]),
+      expect.arrayContaining(["doctor", "status", "passport", "telemetry", "api", "journal"]),
     );
 
     const telemetry = getSubcommand(mirror, "telemetry");
+    const journal = getSubcommand(mirror, "journal");
     expect(telemetry).toBeDefined();
-    if (!telemetry) {
+    expect(journal).toBeDefined();
+    if (!telemetry || !journal) {
       throw new Error("mirror telemetry command was not registered");
     }
 
@@ -45,24 +47,31 @@ describe("mirror cli wiring", () => {
     expect(telemetryNames).toEqual(
       expect.arrayContaining(["tail", "replay", "index", "query", "reflect"]),
     );
+    const journalNames = journal.commands.map((command) => command.name());
+    expect(journalNames).toEqual(expect.arrayContaining(["tail"]));
 
     const doctor = getSubcommand(mirror, "doctor");
     const status = getSubcommand(mirror, "status");
     const tail = getSubcommand(telemetry, "tail");
+    const journalTail = getSubcommand(journal, "tail");
     expect(doctor).toBeDefined();
     expect(status).toBeDefined();
     expect(tail).toBeDefined();
-    if (!doctor || !status || !tail) {
+    expect(journalTail).toBeDefined();
+    if (!doctor || !status || !tail || !journalTail) {
       throw new Error("expected mirror doctor/status/tail commands to be registered");
     }
 
     const doctorOptions = getLongOptionFlags(doctor);
     const statusOptions = getLongOptionFlags(status);
     const tailOptions = getLongOptionFlags(tail);
+    const journalTailOptions = getLongOptionFlags(journalTail);
 
     expect(doctorOptions.has("--json")).toBe(true);
     expect(statusOptions.has("--json")).toBe(true);
     expect(tailOptions.has("--json")).toBe(true);
     expect(tailOptions.has("--limit")).toBe(true);
+    expect(journalTailOptions.has("--json")).toBe(true);
+    expect(journalTailOptions.has("--limit")).toBe(true);
   });
 });

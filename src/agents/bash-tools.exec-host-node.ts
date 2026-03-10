@@ -215,7 +215,7 @@ export async function executeNodeHostCommand(
         // Some gateways may return a final decision inline during registration.
         // Only call waitDecision when registration did not already carry one.
         if (preResolvedDecision === undefined) {
-          decision = await waitForExecApprovalDecision(approvalId);
+          decision = await waitForExecApprovalDecision(approvalId, params.agentId);
         }
       } catch {
         emitExecSystemEvent(
