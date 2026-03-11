@@ -1,6 +1,7 @@
 import "./test-helpers.js";
 import fs from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
+import { createReplyBackendFromResolver } from "../auto-reply/reply/backend.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { installWebAutoReplyUnitTestHooks, makeSessionStore } from "./auto-reply.test-harness.js";
 import { buildMentionConfig } from "./auto-reply/mentions.js";
@@ -24,7 +25,7 @@ function makeReplyLogger() {
   } as unknown as Parameters<typeof createWebOnMessageHandler>[0]["replyLogger"];
 }
 
-function createHandlerForTest(opts: { cfg: OpenClawConfig; replyResolver: unknown }) {
+function createHandlerForTest(opts: { cfg: OpenClawConfig; replyBackend: unknown }) {
   const backgroundTasks = new Set<Promise<unknown>>();
   const handler = createWebOnMessageHandler({
     cfg: opts.cfg,
@@ -36,9 +37,9 @@ function createHandlerForTest(opts: { cfg: OpenClawConfig; replyResolver: unknow
     groupMemberNames: new Map(),
     echoTracker: createEchoTracker({ maxItems: 10 }),
     backgroundTasks,
-    replyResolver: opts.replyResolver as Parameters<
+    replyBackend: opts.replyBackend as Parameters<
       typeof createWebOnMessageHandler
-    >[0]["replyResolver"],
+    >[0]["replyBackend"],
     replyLogger: makeReplyLogger(),
     baseMentionConfig: buildMentionConfig(opts.cfg),
     account: {},
@@ -50,7 +51,10 @@ function createHandlerForTest(opts: { cfg: OpenClawConfig; replyResolver: unknow
 function createLastRouteHarness(storePath: string) {
   const replyResolver = vi.fn().mockResolvedValue(undefined);
   const cfg = makeCfg(storePath);
-  return createHandlerForTest({ cfg, replyResolver });
+  return createHandlerForTest({
+    cfg,
+    replyBackend: createReplyBackendFromResolver(replyResolver),
+  });
 }
 
 function buildInboundMessage(params: {

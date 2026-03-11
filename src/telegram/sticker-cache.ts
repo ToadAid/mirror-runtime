@@ -142,6 +142,8 @@ export function getCacheStats(): { count: number; oldestAt?: string; newestAt?: 
 
 const STICKER_DESCRIPTION_PROMPT =
   "Describe this sticker image in 1-2 sentences. Focus on what the sticker depicts (character, object, action, emotion). Be concise and objective.";
+const TELEGRAM_IMAGE_DESCRIPTION_PROMPT =
+  "Describe this image in 1-2 short factual sentences. Focus on visible subjects, symbols, text, colors, and layout. Do not interpret meaning or invent context.";
 const VISION_PROVIDERS = ["openai", "anthropic", "google", "minimax"] as const;
 
 export interface DescribeStickerParams {
@@ -151,14 +153,17 @@ export interface DescribeStickerParams {
   agentId?: string;
 }
 
-/**
- * Describe a sticker image using vision API.
- * Auto-detects an available vision provider based on configured API keys.
- * Returns null if no vision provider is available.
- */
-export async function describeStickerImage(params: DescribeStickerParams): Promise<string | null> {
-  const { imagePath, cfg, agentDir, agentId } = params;
+export interface DescribeTelegramImageParams extends DescribeStickerParams {
+  fileName?: string;
+  mimeType?: string;
+}
 
+async function resolveTelegramVisionModel(params: {
+  cfg: OpenClawConfig;
+  agentDir?: string;
+  agentId?: string;
+}): Promise<{ provider: string; model?: string } | null> {
+  const { cfg, agentDir, agentId } = params;
   const defaultModel = resolveDefaultModelForAgent({ cfg, agentId });
   let activeModel = undefined as { provider: string; model: string } | undefined;
   let catalog: ModelCatalogEntry[] = [];
@@ -232,33 +237,78 @@ export async function describeStickerImage(params: DescribeStickerParams): Promi
     });
   }
 
+  return resolved;
+}
+
+async function describeTelegramImageWithVision(params: {
+  imagePath: string;
+  fileName: string;
+  mimeType: string;
+  prompt: string;
+  cfg: OpenClawConfig;
+  agentDir?: string;
+  agentId?: string;
+  logLabel: string;
+}): Promise<string | null> {
+  const resolved = await resolveTelegramVisionModel(params);
   if (!resolved?.model) {
-    logVerbose("telegram: no vision provider available for sticker description");
+    logVerbose(`telegram: no vision provider available for ${params.logLabel} description`);
     return null;
   }
 
-  const { provider, model } = resolved;
-  logVerbose(`telegram: describing sticker with ${provider}/${model}`);
+  logVerbose(`telegram: describing ${params.logLabel} with ${resolved.provider}/${resolved.model}`);
 
   try {
-    const buffer = await fs.readFile(imagePath);
-    // Dynamic import to avoid circular dependency
+    const buffer = await fs.readFile(params.imagePath);
     const { describeImageWithModel } = await import("../media-understanding/providers/image.js");
     const result = await describeImageWithModel({
       buffer,
-      fileName: "sticker.webp",
-      mime: "image/webp",
-      prompt: STICKER_DESCRIPTION_PROMPT,
-      cfg,
-      agentDir: agentDir ?? "",
-      provider,
-      model,
+      fileName: params.fileName,
+      mime: params.mimeType,
+      prompt: params.prompt,
+      cfg: params.cfg,
+      agentDir: params.agentDir ?? "",
+      provider: resolved.provider,
+      model: resolved.model,
       maxTokens: 150,
       timeoutMs: 30000,
     });
     return result.text;
   } catch (err) {
-    logVerbose(`telegram: failed to describe sticker: ${String(err)}`);
+    logVerbose(`telegram: failed to describe ${params.logLabel}: ${String(err)}`);
     return null;
   }
+}
+
+/**
+ * Describe a sticker image using vision API.
+ * Auto-detects an available vision provider based on configured API keys.
+ * Returns null if no vision provider is available.
+ */
+export async function describeStickerImage(params: DescribeStickerParams): Promise<string | null> {
+  return await describeTelegramImageWithVision({
+    imagePath: params.imagePath,
+    fileName: "sticker.webp",
+    mimeType: "image/webp",
+    prompt: STICKER_DESCRIPTION_PROMPT,
+    cfg: params.cfg,
+    agentDir: params.agentDir,
+    agentId: params.agentId,
+    logLabel: "sticker",
+  });
+}
+
+export async function describeTelegramImage(
+  params: DescribeTelegramImageParams,
+): Promise<string | null> {
+  return await describeTelegramImageWithVision({
+    imagePath: params.imagePath,
+    fileName: params.fileName ?? "telegram-image.jpg",
+    mimeType: params.mimeType ?? "image/jpeg",
+    prompt: TELEGRAM_IMAGE_DESCRIPTION_PROMPT,
+    cfg: params.cfg,
+    agentDir: params.agentDir,
+    agentId: params.agentId,
+    logLabel: "image",
+  });
 }

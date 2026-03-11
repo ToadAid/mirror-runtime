@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectInboundContextContract } from "../../../../test/helpers/inbound-contract.js";
+import { createReplyBackendFromResolver } from "../../../auto-reply/reply/backend.js";
 
 let capturedCtx: unknown;
 let capturedDispatchParams: unknown;
@@ -25,6 +26,7 @@ function makeProcessMessageArgs(params: {
   routeSessionKey: string;
   groupHistoryKey: string;
   cfg?: unknown;
+  replyBackend?: ReturnType<typeof createReplyBackendFromResolver>;
   groupHistories?: Map<string, Array<{ sender: string; body: string }>>;
   groupHistory?: Array<{ sender: string; body: string }>;
   rememberSentText?: (text: string | undefined, opts: unknown) => void;
@@ -46,8 +48,7 @@ function makeProcessMessageArgs(params: {
     connectionId: "conn",
     verbose: false,
     maxMediaBytes: 1,
-    // oxlint-disable-next-line typescript/no-explicit-any
-    replyResolver: (async () => undefined) as any,
+    replyBackend: params.replyBackend ?? createReplyBackendFromResolver(async () => undefined),
     // oxlint-disable-next-line typescript/no-explicit-any
     replyLogger: defaultReplyLogger as any,
     backgroundTasks,
@@ -129,6 +130,29 @@ describe("web processMessage inbound contract", () => {
     expect(capturedCtx).toBeTruthy();
     // oxlint-disable-next-line typescript/no-explicit-any
     expectInboundContextContract(capturedCtx as any);
+  });
+
+  it("passes the reply backend through the shared dispatch seam", async () => {
+    const replyBackend = createReplyBackendFromResolver(async () => ({ text: "ok" }));
+
+    await processMessage(
+      makeProcessMessageArgs({
+        routeSessionKey: "agent:main:whatsapp:direct:+1000",
+        groupHistoryKey: "+1000",
+        replyBackend,
+        msg: {
+          id: "msg1",
+          from: "+1000",
+          to: "+2000",
+          chatType: "direct",
+          body: "hi",
+          senderE164: "+1000",
+        },
+      }),
+    );
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    expect((capturedDispatchParams as any)?.replyBackend).toBe(replyBackend);
   });
 
   it("falls back SenderId to SenderE164 when senderJid is empty", async () => {

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { MirrorRuntimeConfigSnapshot } from "../mirror-daemon/runtime-config.js";
 import { buildSignedPondManifest, fetchAndUpsertOceanPondManifest } from "./server.js";
 
 type OceanRegistry = {
@@ -73,6 +74,59 @@ afterEach(() => {
 });
 
 describe("ocean manifest signature verification and key pinning", () => {
+  it("prefers injected runtime config snapshot over process env for manifest identity and signing", async () => {
+    await withIsolatedWorkspace(async () => {
+      const snapshotKeys = generatePemPair();
+      const envKeys = generatePemPair();
+      process.env.MIRROR_POND_SIGNING_PRIVATE_KEY_PEM = envKeys.privateKeyPem;
+      process.env.MIRROR_POND_SIGNING_PUBLIC_KEY_PEM = envKeys.publicKeyPem;
+      process.env.MIRROR_POND_ID = "env-pond";
+      process.env.MIRROR_POND_NAME = "Env Pond";
+      process.env.MIRROR_POND_CONSULT_URL = "https://env.example/pond/consult";
+
+      const runtimeConfig: MirrorRuntimeConfigSnapshot = {
+        daemon: {
+          host: "127.0.0.1",
+          port: 8787,
+          token: null,
+          storeRoot: path.resolve(process.cwd(), ".mirror"),
+          journalPath: path.resolve(process.cwd(), ".mirror", "run_journal.jsonl"),
+        },
+        provider: { name: "brain-chat", model: "gpt-4o-mini" },
+        brain: {},
+        runtime: {
+          enabled: true,
+          mode: "lan",
+          name: "snapshot-runtime",
+          version: "2026.03.10",
+          commit: "snapshot-commit",
+        },
+        lore: {},
+        pond: {
+          id: "snapshot-pond",
+          name: "Snapshot Pond",
+          agents: ["main", "scribe"],
+          consultUrl: "https://snapshot.example/pond/consult",
+          signing: {
+            privateKeyPem: snapshotKeys.privateKeyPem,
+            publicKeyPem: snapshotKeys.publicKeyPem,
+          },
+        },
+      };
+
+      const manifest = await buildSignedPondManifest({
+        nowIso: "2026-03-10T00:00:00.000Z",
+        runtimeConfig,
+      });
+
+      expect(manifest.pond_id).toBe("snapshot-pond");
+      expect(manifest.name).toBe("Snapshot Pond");
+      expect(manifest.runtime).toBe("snapshot-runtime");
+      expect(manifest.runtime_version).toBe("2026.03.10");
+      expect(manifest.consult_url).toBe("https://snapshot.example/pond/consult");
+    });
+  });
+
   it("accepts valid signed manifest", async () => {
     await withIsolatedWorkspace(async ({ oceanRegistryPath }) => {
       const keys = generatePemPair();

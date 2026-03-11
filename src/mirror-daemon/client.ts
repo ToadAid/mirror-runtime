@@ -64,6 +64,145 @@ export type MirrorApiOceanStatusResponse = {
   };
 };
 
+export type MirrorApiRunStatus = "completed" | "failed" | "partial" | "pending";
+
+export type MirrorApiRunSummary = {
+  run_id: string;
+  trace_id: string;
+  caller_agent: string | null;
+  started_at: string;
+  ended_at: string;
+  tool_count: number;
+  approval_count: number;
+  status: MirrorApiRunStatus;
+  last_event_type: string;
+  [key: string]: unknown;
+};
+
+export type MirrorApiRunsListResponse = {
+  count: number;
+  total: number;
+  order: string;
+  runs: MirrorApiRunSummary[];
+};
+
+export type MirrorApiRunDetailResponse = {
+  summary: MirrorApiRunSummary;
+  order: string;
+  events: Array<Record<string, unknown>>;
+};
+
+export type MirrorApiOceanEvidenceResponse = {
+  pond_id: string;
+  name?: string;
+  manifest_url?: string;
+  trust_status?: MirrorDaemonTrustStatus;
+  pubkey_id?: string;
+  signature_ok?: boolean;
+  last_handshake_at?: string;
+  last_consult_at?: string;
+  last_consult_ok?: boolean;
+  remote_runtime?: string;
+  remote_ocean_protocol?: string;
+  last_error?: string;
+  [key: string]: unknown;
+};
+
+export type MirrorApiJournalEntry = {
+  ts: string;
+  event_type: string;
+  trace_id: string;
+  caller_agent?: string;
+  tool_name?: string;
+  decision?: string;
+  risk_tier?: string;
+  reason?: string;
+  args_hash?: string;
+  approval_id?: string;
+  ok?: boolean;
+  error?: string;
+  [key: string]: unknown;
+};
+
+export type MirrorApiJournalResponse = {
+  count: number;
+  order: string;
+  entries: MirrorApiJournalEntry[];
+};
+
+export type MirrorApiProviderStatusResponse = {
+  provider: string;
+  default_model: string;
+  source: {
+    runtime_snapshot: boolean;
+  };
+  provider_env: {
+    MIRROR_PROVIDER: string;
+    MIRROR_PROVIDER_MODEL: string;
+  };
+  adapter?: string;
+  invocation_summary?: {
+    last_invoked_at: string;
+    last_provider: string;
+    last_model: string;
+    last_outcome: "ok" | "error";
+    last_error?: string;
+  } | null;
+  recent_invocations?: Array<{
+    invoked_at: string;
+    provider: string;
+    model: string;
+    outcome: "ok" | "error";
+    error?: string;
+  }>;
+  evidence?: {
+    effective_provider: string;
+    effective_model: string;
+    alias_normalized_from?: string;
+    auth_source: "configured_token" | "resolved_credentials" | "none";
+    credential_resolution_attempted: boolean;
+    credential_resolution_ok?: boolean;
+    last_error?: string;
+  };
+  [key: string]: unknown;
+};
+
+export type MirrorApiProviderHealthResponse = {
+  provider: string;
+  model: string;
+  configured: boolean;
+  reachable: boolean;
+  ok: boolean;
+  error?: string;
+  source: {
+    runtime_snapshot: boolean;
+  };
+  invocation_summary?: {
+    last_invoked_at: string;
+    last_provider: string;
+    last_model: string;
+    last_outcome: "ok" | "error";
+    last_error?: string;
+  } | null;
+  recent_invocations?: Array<{
+    invoked_at: string;
+    provider: string;
+    model: string;
+    outcome: "ok" | "error";
+    error?: string;
+  }>;
+  evidence?: {
+    effective_provider: string;
+    effective_model: string;
+    alias_normalized_from?: string;
+    auth_source: "configured_token" | "resolved_credentials" | "none";
+    credential_resolution_attempted: boolean;
+    credential_resolution_ok?: boolean;
+    last_error?: string;
+  };
+  [key: string]: unknown;
+};
+
 type RequestOptions = {
   method?: "GET" | "POST";
   body?: unknown;
@@ -79,6 +218,25 @@ function resolveBaseUrl(baseUrl?: string): string {
   }
   const port = process.env.MIRROR_DAEMON_PORT?.trim() || "8787";
   return `http://127.0.0.1:${port}`;
+}
+
+function buildPathWithQuery(
+  pathname: string,
+  query: Record<string, string | number | undefined>,
+): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined) {
+      continue;
+    }
+    const text = typeof value === "number" ? String(value) : value;
+    if (text.trim().length === 0) {
+      continue;
+    }
+    params.set(key, text);
+  }
+  const encoded = params.toString();
+  return encoded.length > 0 ? `${pathname}?${encoded}` : pathname;
 }
 
 async function parseResponseBody(response: Response): Promise<unknown> {
@@ -253,4 +411,68 @@ export async function getOceanStatus(
   options: MirrorDaemonClientOptions = {},
 ): Promise<MirrorApiOceanStatusResponse> {
   return await requestJson<MirrorApiOceanStatusResponse>("/ocean/status", options);
+}
+
+export async function listMirrorRuns(
+  params: {
+    limit?: number;
+    callerAgent?: string;
+    status?: MirrorApiRunStatus;
+  } = {},
+  options: MirrorDaemonClientOptions = {},
+): Promise<MirrorApiRunsListResponse> {
+  const path = buildPathWithQuery("/mirror/runs", {
+    limit: params.limit,
+    caller_agent: params.callerAgent,
+    status: params.status,
+  });
+  return await requestJson<MirrorApiRunsListResponse>(path, options);
+}
+
+export async function getMirrorRun(
+  id: string,
+  options: MirrorDaemonClientOptions = {},
+): Promise<MirrorApiRunDetailResponse> {
+  return await requestJson<MirrorApiRunDetailResponse>(
+    `/mirror/runs/${encodeURIComponent(id)}`,
+    options,
+  );
+}
+
+export async function getOceanEvidence(
+  pondId: string,
+  options: MirrorDaemonClientOptions = {},
+): Promise<MirrorApiOceanEvidenceResponse> {
+  return await requestJson<MirrorApiOceanEvidenceResponse>(
+    `/ocean/ponds/${encodeURIComponent(pondId)}/evidence`,
+    options,
+  );
+}
+
+export async function listMirrorJournal(
+  params: {
+    limit?: number;
+    type?: string;
+    traceId?: string;
+  } = {},
+  options: MirrorDaemonClientOptions = {},
+): Promise<MirrorApiJournalResponse> {
+  const path = buildPathWithQuery("/mirror/journal", {
+    limit: params.limit,
+    type: params.type,
+    trace_id: params.traceId,
+  });
+  return await requestJson<MirrorApiJournalResponse>(path, options);
+}
+
+export async function getMirrorProviderStatus(
+  options: MirrorDaemonClientOptions = {},
+): Promise<MirrorApiProviderStatusResponse> {
+  return await requestJson<MirrorApiProviderStatusResponse>("/mirror/provider/status", options);
+}
+
+export async function getMirrorProviderHealth(
+  options: MirrorDaemonClientOptions = {},
+): Promise<MirrorApiProviderHealthResponse> {
+  return await requestJson<MirrorApiProviderHealthResponse>("/mirror/provider/health", options);
 }

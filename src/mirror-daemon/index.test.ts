@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNonExitingRuntime } from "../runtime.js";
 import { createMirrorDaemonApp, startMirrorDaemon } from "./index.js";
 import { getMirrorDaemonStatus, readMirrorDaemonPidFile } from "./lifecycle.js";
@@ -159,6 +159,105 @@ describe("MirrorDaemon", () => {
     }
   });
 
+  it("loads daemon token from optional .mirror/config.json", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-daemon-config-file-"));
+    tempDirs.push(tempDir);
+    const mirrorDir = path.join(tempDir, ".mirror");
+    await fs.mkdir(mirrorDir, { recursive: true });
+    await fs.writeFile(
+      path.join(mirrorDir, "config.json"),
+      JSON.stringify(
+        {
+          daemon: {
+            host: "127.0.0.1",
+            port: 0,
+            token: "file-config-token",
+          },
+          provider: {
+            name: "brain-chat",
+            model: "configured-model",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+
+    const handle = await startMirrorDaemon({
+      cwd: tempDir,
+      runtimeEnv: createNonExitingRuntime(),
+      pidFilePath: path.join(tempDir, "daemon.pid"),
+    });
+
+    try {
+      const protectedNoToken = await fetch(`http://127.0.0.1:${handle.port}/ocean/status`);
+      expect(protectedNoToken.status).toBe(401);
+
+      const protectedWithToken = await fetch(`http://127.0.0.1:${handle.port}/ocean/status`, {
+        headers: {
+          Authorization: "Bearer file-config-token",
+        },
+      });
+      expect(protectedWithToken.status).toBe(200);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("uses snapshot runtime metadata for /health over env defaults", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-daemon-health-config-"));
+    tempDirs.push(tempDir);
+    const mirrorDir = path.join(tempDir, ".mirror");
+    await fs.mkdir(mirrorDir, { recursive: true });
+    await fs.writeFile(
+      path.join(mirrorDir, "config.json"),
+      JSON.stringify(
+        {
+          daemon: {
+            host: "127.0.0.1",
+            port: 0,
+          },
+          runtime: {
+            enabled: true,
+            mode: "intranet",
+            version: "snapshot-version",
+            commit: "snapshot-commit",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+
+    const handle = await startMirrorDaemon({
+      cwd: tempDir,
+      env: {
+        MIRROR_RUNTIME_MODE: "lan",
+        MIRROR_RUNTIME_VERSION: "env-version",
+        MIRROR_RUNTIME_COMMIT: "env-commit",
+      } as NodeJS.ProcessEnv,
+      runtimeEnv: createNonExitingRuntime(),
+      pidFilePath: path.join(tempDir, "daemon.pid"),
+    });
+
+    try {
+      const healthResponse = await fetch(`http://127.0.0.1:${handle.port}/health`);
+      expect(healthResponse.status).toBe(200);
+      const health = (await healthResponse.json()) as {
+        mode: string;
+        version: string;
+        commit: string;
+      };
+      expect(health.mode).toBe("intranet");
+      expect(health.version).toBe("snapshot-version");
+      expect(health.commit).toBe("snapshot-commit");
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("status reports running and stale states from pid file", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-daemon-status-"));
     tempDirs.push(tempDir);
@@ -195,5 +294,38 @@ describe("MirrorDaemon", () => {
     const stale = await getMirrorDaemonStatus(pidFilePath);
     expect(stale.running).toBe(false);
     expect(stale.stale).toBe(true);
+  });
+
+  it("uses custom injected credential resolver in runtime provider status", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-daemon-provider-resolver-"));
+    tempDirs.push(tempDir);
+    const resolveProviderCredentials = vi.fn(async () => ({ apiKey: "resolved-api-key" }));
+
+    const handle = await startMirrorDaemon({
+      port: 0,
+      runtimeEnv: createNonExitingRuntime(),
+      pidFilePath: path.join(tempDir, "daemon.pid"),
+      resolveProviderCredentials,
+    });
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${handle.port}/mirror/provider/status`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        evidence?: {
+          auth_source?: string;
+          credential_resolution_attempted?: boolean;
+          credential_resolution_ok?: boolean;
+        };
+      };
+      expect(body.evidence).toMatchObject({
+        auth_source: "resolved_credentials",
+        credential_resolution_attempted: true,
+        credential_resolution_ok: true,
+      });
+      expect(resolveProviderCredentials).toHaveBeenCalledWith({ provider: "brain-chat" });
+    } finally {
+      await handle.close();
+    }
   });
 });

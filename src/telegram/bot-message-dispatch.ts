@@ -7,6 +7,7 @@ import {
 } from "../agents/model-catalog.js";
 import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
 import { resolveChunkMode } from "../auto-reply/chunk.js";
+import type { ReplyBackend } from "../auto-reply/reply/backend.js";
 import { clearHistoryEntriesIfEnabled } from "../auto-reply/reply/history.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import type { ReplyPayload } from "../auto-reply/types.js";
@@ -19,6 +20,7 @@ import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import type { OpenClawConfig, ReplyToMode, TelegramAccountConfig } from "../config/types.js";
 import { danger, logVerbose } from "../globals.js";
 import { getAgentScopedMediaLocalRoots } from "../media/local-roots.js";
+import { createConfiguredReplyBackend } from "../mirror-daemon/backend-selection.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { TelegramMessageContext } from "./bot-message-context.js";
 import type { TelegramBotOptions } from "./bot.js";
@@ -39,12 +41,74 @@ import {
   splitTelegramReasoningText,
 } from "./reasoning-lane-coordinator.js";
 import { editMessageTelegram } from "./send.js";
-import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
+import { cacheSticker, describeStickerImage, describeTelegramImage } from "./sticker-cache.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
+const MIRROR_IMAGE_ANALYSIS_FALLBACK =
+  "I received the image, but I couldn't analyze it yet. Please describe what you want me to examine.";
 
 /** Minimum chars before sending first streaming message (improves push notification UX) */
 const DRAFT_MIN_INITIAL_CHARS = 30;
+
+function wrapMirrorBackendWithTelegramTyping(params: {
+  backend: ReplyBackend;
+  enabled: boolean;
+}): ReplyBackend {
+  if (!params.enabled) {
+    return params.backend;
+  }
+
+  return {
+    resolveReply: async (replyParams) => {
+      await replyParams.replyOptions?.onReplyStart?.();
+      return await params.backend.resolveReply(replyParams);
+    },
+  };
+}
+
+function resolveMirrorImageAttachment(params: {
+  msg: TelegramMessageContext["msg"];
+  ctxPayload: TelegramMessageContext["ctxPayload"];
+}): { path: string; mimeType: string; fileName: string } | null {
+  if (params.ctxPayload.Sticker) {
+    return null;
+  }
+
+  const paths =
+    params.ctxPayload.MediaPaths ??
+    (params.ctxPayload.MediaPath ? [params.ctxPayload.MediaPath] : []);
+  if (paths.length === 0 || !paths[0]) {
+    return null;
+  }
+
+  if (Array.isArray(params.msg.photo) && params.msg.photo.length > 0) {
+    return {
+      path: paths[0],
+      mimeType: params.ctxPayload.MediaType ?? params.ctxPayload.MediaTypes?.[0] ?? "image/jpeg",
+      fileName: "telegram-photo.jpg",
+    };
+  }
+
+  const documentMime = params.msg.document?.mime_type;
+  if (documentMime?.startsWith("image/")) {
+    return {
+      path: paths[0],
+      mimeType: documentMime,
+      fileName: params.msg.document?.file_name ?? "telegram-image",
+    };
+  }
+
+  return null;
+}
+
+function buildMirrorImageRequestText(params: { description: string; userText?: string }): string {
+  const sections = ["User sent an image.", "", "Image description:", `"${params.description}"`];
+  const trimmedUserText = params.userText?.trim();
+  if (trimmedUserText) {
+    sections.push("", "User request:", trimmedUserText);
+  }
+  return sections.join("\n");
+}
 
 async function resolveStickerVisionSupport(cfg: OpenClawConfig, agentId: string) {
   try {
@@ -383,6 +447,58 @@ export const dispatchTelegramMessage = async ({
     }
     return result.delivered;
   };
+
+  if (process.env.MIRROR_RUNTIME_ENABLED === "1") {
+    const imageAttachment = resolveMirrorImageAttachment({ msg, ctxPayload });
+    if (imageAttachment) {
+      const agentDir = resolveAgentDir(cfg, route.agentId);
+      try {
+        await sendTyping();
+      } catch {
+        // Typing before image analysis is best-effort.
+      }
+      const description = await describeTelegramImage({
+        imagePath: imageAttachment.path,
+        mimeType: imageAttachment.mimeType,
+        fileName: imageAttachment.fileName,
+        cfg,
+        agentDir,
+        agentId: route.agentId,
+      });
+      if (!description) {
+        await sendPayload({ text: MIRROR_IMAGE_ANALYSIS_FALLBACK });
+        if (statusReactionController) {
+          void statusReactionController.setDone().catch((err) => {
+            logVerbose(`telegram: status reaction finalize failed: ${String(err)}`);
+          });
+        } else {
+          removeAckReactionAfterReply({
+            removeAfterReply: removeAckAfterReply,
+            ackReactionPromise,
+            ackReactionValue: ackReactionPromise ? "ack" : null,
+            remove: () => reactionApi?.(chatId, msg.message_id ?? 0, []) ?? Promise.resolve(),
+            onError: (err) => {
+              if (!msg.message_id) {
+                return;
+              }
+              logAckFailure({
+                log: logVerbose,
+                channel: "telegram",
+                target: `${chatId}/${msg.message_id}`,
+                error: err,
+              });
+            },
+          });
+        }
+        clearGroupHistory();
+        return;
+      }
+      ctxPayload.BodyForAgent = buildMirrorImageRequestText({
+        description,
+        userText: msg.text ?? msg.caption ?? undefined,
+      });
+    }
+  }
   const deliverLaneText = createLaneTextDeliverer({
     lanes,
     archivedAnswerPreviews,
@@ -431,9 +547,21 @@ export const dispatchTelegramMessage = async ({
   });
 
   try {
+    const replyBackend = wrapMirrorBackendWithTelegramTyping({
+      backend: createConfiguredReplyBackend({
+        routeMeta: {
+          agentId: route.agentId,
+          accountId: route.accountId,
+          surface: "telegram",
+        },
+      }),
+      enabled: process.env.MIRROR_RUNTIME_ENABLED === "1",
+    });
+
     ({ queuedFinal } = await dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg,
+      replyBackend,
       dispatcherOptions: {
         ...prefixOptions,
         typingCallbacks,

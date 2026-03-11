@@ -1,4 +1,4 @@
-import type { getReplyFromConfig } from "../../../auto-reply/reply.js";
+import type { ReplyBackend } from "../../../auto-reply/reply/backend.js";
 import type { MsgContext } from "../../../auto-reply/templating.js";
 import { loadConfig } from "../../../config/config.js";
 import { logVerbose } from "../../../globals.js";
@@ -25,7 +25,7 @@ export function createWebOnMessageHandler(params: {
   groupMemberNames: Map<string, Map<string, string>>;
   echoTracker: EchoTracker;
   backgroundTasks: Set<Promise<unknown>>;
-  replyResolver: typeof getReplyFromConfig;
+  replyBackend: ReplyBackend;
   replyLogger: ReturnType<(typeof import("../../../logging.js"))["getChildLogger"]>;
   baseMentionConfig: MentionConfig;
   account: { authDir?: string; accountId?: string };
@@ -49,7 +49,7 @@ export function createWebOnMessageHandler(params: {
       connectionId: params.connectionId,
       verbose: params.verbose,
       maxMediaBytes: params.maxMediaBytes,
-      replyResolver: params.replyResolver,
+      replyBackend: params.replyBackend,
       replyLogger: params.replyLogger,
       backgroundTasks: params.backgroundTasks,
       rememberSentText: params.echoTracker.rememberText,

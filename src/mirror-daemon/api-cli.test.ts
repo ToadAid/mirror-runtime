@@ -2,9 +2,32 @@ import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerMirrorApiCli } from "./api-cli.js";
 
-vi.mock("./client.js", () => ({
-  getPondManifest: vi.fn(async () => ({ pond_id: "toadaid-main" })),
-}));
+vi.mock("./client.js", async () => {
+  const actual = await vi.importActual<typeof import("./client.js")>("./client.js");
+  return {
+    ...actual,
+    getPondManifest: vi.fn(async () => ({ pond_id: "toadaid-main" })),
+    refreshPond: vi.fn(async () => ({ ok: true, path: "", pond: { pond_id: "toadaid-main" } })),
+    listOceanPonds: vi.fn(async () => ({ count: 0, ponds: [] })),
+    fetchOceanPond: vi.fn(async () => ({ success: true, pond: { pond_id: "toadaid-main" } })),
+    updateOceanTrust: vi.fn(async () => ({ pond_id: "toadaid-main", trust_status: "known" })),
+    consultOcean: vi.fn(async () => ({
+      source_pond: "toadaid-main",
+      source_url: "",
+      fetched_at: "",
+      signature_ok: true,
+      payload: {},
+    })),
+    getOceanStatus: vi.fn(async () => ({
+      local_pond_id: "toadaid-main",
+      known_ponds_count: 0,
+      trusted_ponds_count: 0,
+      blocked_ponds_count: 0,
+      handshakes: { successful_count: 0, last_success_at: null },
+      consults: { successful_count: 0, last_success_at: null },
+    })),
+  };
+});
 
 describe("registerMirrorApiCli", () => {
   afterEach(() => {
@@ -43,5 +66,23 @@ describe("registerMirrorApiCli", () => {
     } finally {
       writeSpy.mockRestore();
     }
+  });
+
+  it("normalizes daemon-unavailable errors with a recovery hint", async () => {
+    const mirror = new Command("mirror");
+    registerMirrorApiCli(mirror);
+    const clientMod = await import("./client.js");
+    vi.mocked(clientMod.getPondManifest).mockRejectedValueOnce(
+      new clientMod.MirrorDaemonClientError({
+        message: "connect ECONNREFUSED",
+        method: "GET",
+        url: "http://127.0.0.1:8787/pond/manifest",
+      }),
+    );
+    mirror.exitOverride();
+
+    await expect(async () => {
+      await mirror.parseAsync(["node", "mirror", "api", "pond", "manifest"]);
+    }).rejects.toThrow(/openclaw mirror-daemon start/);
   });
 });

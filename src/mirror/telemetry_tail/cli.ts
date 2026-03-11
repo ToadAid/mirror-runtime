@@ -1,7 +1,17 @@
 // Active source of truth for `openclaw mirror ...` subcommands.
 import type { Command } from "commander";
 import { registerMirrorApiCli } from "../../mirror-daemon/api-cli.js";
-import { readMirrorJournal } from "../../mirror-daemon/journal.js";
+import { formatMirrorDaemonCliError } from "../../mirror-daemon/cli-errors.js";
+import {
+  getMirrorProviderHealth,
+  getMirrorRun,
+  getMirrorProviderStatus,
+  listMirrorJournal,
+  getOceanEvidence,
+  listMirrorRuns,
+  type MirrorApiProviderStatusResponse,
+  type MirrorApiRunStatus,
+} from "../../mirror-daemon/client.js";
 import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
 import { runVerifyLoreCli } from "../lore_manifest/index.js";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
@@ -38,7 +48,9 @@ export type MirrorTelemetryTailCliOptions = {
 export type MirrorJournalTailCliOptions = {
   json?: boolean;
   limit?: number;
-  path?: string;
+  type?: string;
+  traceId?: string;
+  baseUrl?: string;
 };
 
 export type MirrorTelemetryReplayCliOptions = {
@@ -98,6 +110,36 @@ export type MirrorVerifyLoreCliOptions = {
   json?: boolean;
 };
 
+export type MirrorRunsListCliOptions = {
+  limit?: number;
+  callerAgent?: string;
+  status?: MirrorApiRunStatus;
+  baseUrl?: string;
+  json?: boolean;
+};
+
+export type MirrorRunsShowCliOptions = {
+  id: string;
+  baseUrl?: string;
+  json?: boolean;
+};
+
+export type MirrorOceanEvidenceCliOptions = {
+  pondId: string;
+  baseUrl?: string;
+  json?: boolean;
+};
+
+export type MirrorProviderStatusCliOptions = {
+  baseUrl?: string;
+  json?: boolean;
+};
+
+export type MirrorProviderHealthCliOptions = {
+  baseUrl?: string;
+  json?: boolean;
+};
+
 function parseLimit(raw: string): number {
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value) || value < 0) {
@@ -112,6 +154,13 @@ function parseSinceMinutes(raw: string): number {
     throw new Error(`Invalid --since: ${raw}`);
   }
   return value;
+}
+
+function parseRunStatus(raw: string): MirrorApiRunStatus {
+  if (raw === "completed" || raw === "failed" || raw === "partial" || raw === "pending") {
+    return raw;
+  }
+  throw new Error("status must be one of: completed, failed, partial, pending");
 }
 
 function formatIso(ts: number | undefined): string {
@@ -356,46 +405,340 @@ export async function runMirrorVerifyLoreCli(opts: MirrorVerifyLoreCliOptions): 
   });
 }
 
-export async function runMirrorJournalTailCli(opts: MirrorJournalTailCliOptions): Promise<void> {
-  const entries = await readMirrorJournal({
-    limit: opts.limit ?? 20,
-    path: opts.path,
-  });
-  if (opts.json) {
-    for (const entry of entries) {
-      process.stdout.write(`${JSON.stringify(entry)}\n`);
+export async function runMirrorRunsListCli(opts: MirrorRunsListCliOptions): Promise<void> {
+  try {
+    const payload = await listMirrorRuns(
+      {
+        limit: opts.limit,
+        callerAgent: opts.callerAgent,
+        status: opts.status,
+      },
+      { baseUrl: opts.baseUrl },
+    );
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      return;
     }
-    return;
+    for (const run of payload.runs) {
+      const parts = [
+        run.trace_id,
+        run.status,
+        run.caller_agent ?? "-",
+        `tools=${run.tool_count}`,
+        `approvals=${run.approval_count}`,
+        run.ended_at,
+      ];
+      process.stdout.write(`${parts.join(" | ")}\n`);
+    }
+  } catch (error) {
+    throw formatMirrorDaemonCliError("mirror runs list", error);
   }
-  for (const entry of entries) {
-    const parts = [
-      entry.ts,
-      entry.event_type,
-      entry.tool_name ?? "-",
-      entry.trace_id,
-      entry.reason ?? "",
-    ].filter((value) => value && value.trim().length > 0);
-    process.stdout.write(`${parts.join(" | ")}\n`);
+}
+
+export async function runMirrorRunsShowCli(opts: MirrorRunsShowCliOptions): Promise<void> {
+  try {
+    const payload = await getMirrorRun(opts.id, { baseUrl: opts.baseUrl });
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      return;
+    }
+
+    const summary = payload.summary;
+    const header = [
+      `trace_id: ${summary.trace_id}`,
+      `status: ${summary.status}`,
+      `caller_agent: ${summary.caller_agent ?? "-"}`,
+      `started_at: ${summary.started_at}`,
+      `ended_at: ${summary.ended_at}`,
+      `tool_count: ${summary.tool_count}`,
+      `approval_count: ${summary.approval_count}`,
+      `last_event_type: ${summary.last_event_type}`,
+      "",
+    ];
+    process.stdout.write(`${header.join("\n")}\n`);
+    for (const event of payload.events) {
+      process.stdout.write(`${JSON.stringify(event)}\n`);
+    }
+  } catch (error) {
+    throw formatMirrorDaemonCliError("mirror runs show", error);
+  }
+}
+
+export async function runMirrorOceanEvidenceCli(
+  opts: MirrorOceanEvidenceCliOptions,
+): Promise<void> {
+  try {
+    const payload = await getOceanEvidence(opts.pondId, { baseUrl: opts.baseUrl });
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      return;
+    }
+    const lines = [
+      `pond_id: ${payload.pond_id}`,
+      `name: ${payload.name ?? "-"}`,
+      `manifest_url: ${payload.manifest_url ?? "-"}`,
+      `trust_status: ${payload.trust_status ?? "-"}`,
+      `pubkey_id: ${payload.pubkey_id ?? "-"}`,
+      `signature_ok: ${payload.signature_ok === true ? "true" : payload.signature_ok === false ? "false" : "-"}`,
+      `last_handshake_at: ${payload.last_handshake_at ?? "-"}`,
+      `last_consult_at: ${payload.last_consult_at ?? "-"}`,
+      `last_consult_ok: ${payload.last_consult_ok === true ? "true" : payload.last_consult_ok === false ? "false" : "-"}`,
+      `remote_runtime: ${payload.remote_runtime ?? "-"}`,
+      `remote_ocean_protocol: ${payload.remote_ocean_protocol ?? "-"}`,
+      `last_error: ${payload.last_error ?? "-"}`,
+    ];
+    process.stdout.write(`${lines.join("\n")}\n`);
+  } catch (error) {
+    throw formatMirrorDaemonCliError("mirror ocean evidence", error);
+  }
+}
+
+export async function runMirrorJournalTailCli(opts: MirrorJournalTailCliOptions): Promise<void> {
+  try {
+    const payload = await listMirrorJournal(
+      {
+        limit: opts.limit ?? 20,
+        type: opts.type,
+        traceId: opts.traceId,
+      },
+      { baseUrl: opts.baseUrl },
+    );
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      return;
+    }
+    for (const entry of payload.entries) {
+      const parts = [
+        entry.ts,
+        entry.event_type,
+        entry.tool_name ?? "-",
+        entry.trace_id,
+        entry.reason ?? "",
+      ].filter((value) => value && value.trim().length > 0);
+      process.stdout.write(`${parts.join(" | ")}\n`);
+    }
+  } catch (error) {
+    throw formatMirrorDaemonCliError("mirror journal tail", error);
+  }
+}
+
+function formatProviderStatusHuman(payload: MirrorApiProviderStatusResponse): string {
+  const evidence = payload.evidence;
+  const invocation = payload.invocation_summary;
+  const lines = [
+    `provider: ${payload.provider}`,
+    `default_model: ${payload.default_model}`,
+    `adapter: ${payload.adapter ?? "-"}`,
+    `runtime_snapshot: ${payload.source.runtime_snapshot ? "true" : "false"}`,
+    `MIRROR_PROVIDER: ${payload.provider_env.MIRROR_PROVIDER}`,
+    `MIRROR_PROVIDER_MODEL: ${payload.provider_env.MIRROR_PROVIDER_MODEL}`,
+    `effective_provider: ${evidence?.effective_provider ?? payload.provider}`,
+    `effective_model: ${evidence?.effective_model ?? payload.default_model}`,
+    `alias_normalized_from: ${evidence?.alias_normalized_from ?? "-"}`,
+    `auth_source: ${evidence?.auth_source ?? "-"}`,
+    `credential_resolution_attempted: ${evidence?.credential_resolution_attempted === true ? "true" : "false"}`,
+    `credential_resolution_ok: ${evidence?.credential_resolution_ok === true ? "true" : evidence?.credential_resolution_ok === false ? "false" : "-"}`,
+    `last_error: ${evidence?.last_error ?? "-"}`,
+    `last_invoked_at: ${invocation?.last_invoked_at ?? "-"}`,
+    `last_provider: ${invocation?.last_provider ?? "-"}`,
+    `last_model: ${invocation?.last_model ?? "-"}`,
+    `last_outcome: ${invocation?.last_outcome ?? "-"}`,
+    `last_invocation_error: ${invocation?.last_error ?? "-"}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+export async function runMirrorProviderStatusCli(
+  opts: MirrorProviderStatusCliOptions,
+): Promise<void> {
+  try {
+    const payload = await getMirrorProviderStatus({ baseUrl: opts.baseUrl });
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      return;
+    }
+    process.stdout.write(formatProviderStatusHuman(payload));
+  } catch (error) {
+    throw formatMirrorDaemonCliError("mirror provider status", error);
+  }
+}
+
+function formatProviderHealthHuman(payload: {
+  provider: string;
+  model: string;
+  configured: boolean;
+  reachable: boolean;
+  ok: boolean;
+  error?: string;
+  source: { runtime_snapshot: boolean };
+  invocation_summary?: {
+    last_invoked_at: string;
+    last_provider: string;
+    last_model: string;
+    last_outcome: "ok" | "error";
+    last_error?: string;
+  } | null;
+  evidence?: {
+    effective_provider: string;
+    effective_model: string;
+    alias_normalized_from?: string;
+    auth_source: "configured_token" | "resolved_credentials" | "none";
+    credential_resolution_attempted: boolean;
+    credential_resolution_ok?: boolean;
+    last_error?: string;
+  };
+}): string {
+  const evidence = payload.evidence;
+  const invocation = payload.invocation_summary;
+  const lines = [
+    `provider: ${payload.provider}`,
+    `model: ${payload.model}`,
+    `configured: ${payload.configured ? "true" : "false"}`,
+    `reachable: ${payload.reachable ? "true" : "false"}`,
+    `ok: ${payload.ok ? "true" : "false"}`,
+    `error: ${payload.error ?? "-"}`,
+    `runtime_snapshot: ${payload.source.runtime_snapshot ? "true" : "false"}`,
+    `effective_provider: ${evidence?.effective_provider ?? payload.provider}`,
+    `effective_model: ${evidence?.effective_model ?? payload.model}`,
+    `alias_normalized_from: ${evidence?.alias_normalized_from ?? "-"}`,
+    `auth_source: ${evidence?.auth_source ?? "-"}`,
+    `credential_resolution_attempted: ${evidence?.credential_resolution_attempted === true ? "true" : "false"}`,
+    `credential_resolution_ok: ${evidence?.credential_resolution_ok === true ? "true" : evidence?.credential_resolution_ok === false ? "false" : "-"}`,
+    `last_error: ${evidence?.last_error ?? "-"}`,
+    `last_invoked_at: ${invocation?.last_invoked_at ?? "-"}`,
+    `last_provider: ${invocation?.last_provider ?? "-"}`,
+    `last_model: ${invocation?.last_model ?? "-"}`,
+    `last_outcome: ${invocation?.last_outcome ?? "-"}`,
+    `last_invocation_error: ${invocation?.last_error ?? "-"}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+export async function runMirrorProviderHealthCli(
+  opts: MirrorProviderHealthCliOptions,
+): Promise<void> {
+  try {
+    const payload = await getMirrorProviderHealth({ baseUrl: opts.baseUrl });
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      return;
+    }
+    process.stdout.write(formatProviderHealthHuman(payload));
+  } catch (error) {
+    throw formatMirrorDaemonCliError("mirror provider health", error);
   }
 }
 
 export function registerMirrorTelemetryCli(program: Command): void {
   const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
+  const runs = mirror.command("runs").description("Mirror run history (via MirrorDaemon)");
+  const ocean = mirror.command("ocean").description("Mirror ocean operator commands");
+  const provider = mirror.command("provider").description("Mirror provider operator commands");
   registerMirrorApiCli(mirror);
   mirror
     .command("journal")
     .description("Mirror journal commands")
     .command("tail")
-    .description("Read local Mirror run journal")
-    .option("--json", "Output JSONL", false)
+    .description("Read Mirror run journal from MirrorDaemon")
+    .option("--json", "Output machine-readable JSON", false)
     .option("--limit <n>", "Number of journal entries", parseLimit, 20)
-    .option("--path <path>", "Journal path (overrides env/default)")
-    .action(async (opts: { json?: boolean; limit?: number; path?: string }) => {
-      await runMirrorJournalTailCli({
+    .option("--type <eventType>", "Filter by event type")
+    .option("--trace-id <traceId>", "Filter by trace id")
+    .option("--base-url <url>", "MirrorDaemon base URL")
+    .action(
+      async (opts: {
+        json?: boolean;
+        limit?: number;
+        type?: string;
+        traceId?: string;
+        baseUrl?: string;
+      }) => {
+        await runMirrorJournalTailCli({
+          json: opts.json === true,
+          limit: opts.limit,
+          type: opts.type,
+          traceId: opts.traceId,
+          baseUrl: opts.baseUrl,
+        });
+      },
+    );
+
+  runs
+    .command("list")
+    .description("List derived run summaries from MirrorDaemon")
+    .option("--limit <n>", "Maximum runs to return", parseLimit, 20)
+    .option("--caller-agent <agent>", "Filter by caller agent")
+    .option("--status <status>", "Filter by run status", parseRunStatus)
+    .option("--base-url <url>", "MirrorDaemon base URL")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(
+      async (opts: {
+        limit?: number;
+        callerAgent?: string;
+        status?: MirrorApiRunStatus;
+        baseUrl?: string;
+        json?: boolean;
+      }) => {
+        await runMirrorRunsListCli({
+          limit: opts.limit,
+          callerAgent: opts.callerAgent,
+          status: opts.status,
+          baseUrl: opts.baseUrl,
+          json: opts.json === true,
+        });
+      },
+    );
+
+  runs
+    .command("show")
+    .description("Show one run summary and events from MirrorDaemon")
+    .argument("<id>", "Run id (v0: trace_id)")
+    .option("--base-url <url>", "MirrorDaemon base URL")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(async (id: string, opts: { baseUrl?: string; json?: boolean }) => {
+      await runMirrorRunsShowCli({
+        id,
+        baseUrl: opts.baseUrl,
         json: opts.json === true,
-        limit: opts.limit,
-        path: opts.path,
+      });
+    });
+
+  ocean
+    .command("evidence")
+    .description("Show trust/evidence details for one ocean pond")
+    .argument("<pond_id>", "Pond ID")
+    .option("--base-url <url>", "MirrorDaemon base URL")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(async (pondId: string, opts: { baseUrl?: string; json?: boolean }) => {
+      await runMirrorOceanEvidenceCli({
+        pondId,
+        baseUrl: opts.baseUrl,
+        json: opts.json === true,
+      });
+    });
+
+  provider
+    .command("status")
+    .description("Show Mirror provider configuration/status from MirrorDaemon")
+    .option("--base-url <url>", "MirrorDaemon base URL")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(async (opts: { baseUrl?: string; json?: boolean }) => {
+      await runMirrorProviderStatusCli({
+        baseUrl: opts.baseUrl,
+        json: opts.json === true,
+      });
+    });
+
+  provider
+    .command("health")
+    .description("Probe current Mirror provider configuration via MirrorDaemon")
+    .option("--base-url <url>", "MirrorDaemon base URL")
+    .option("--json", "Output machine-readable JSON", false)
+    .action(async (opts: { baseUrl?: string; json?: boolean }) => {
+      await runMirrorProviderHealthCli({
+        baseUrl: opts.baseUrl,
+        json: opts.json === true,
       });
     });
 

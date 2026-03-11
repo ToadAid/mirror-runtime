@@ -1,14 +1,18 @@
 import path from "node:path";
 import type { Bot } from "grammy";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STATE_DIR } from "../config/paths.js";
 
 const createTelegramDraftStream = vi.hoisted(() => vi.fn());
+const createConfiguredReplyBackend = vi.hoisted(() => vi.fn());
+const describeTelegramImage = vi.hoisted(() => vi.fn());
 const dispatchReplyWithBufferedBlockDispatcher = vi.hoisted(() => vi.fn());
 const deliverReplies = vi.hoisted(() => vi.fn());
 const editMessageTelegram = vi.hoisted(() => vi.fn());
 const loadSessionStore = vi.hoisted(() => vi.fn());
 const resolveStorePath = vi.hoisted(() => vi.fn(() => "/tmp/sessions.json"));
+const selectedDefaultBackend = vi.hoisted(() => ({ resolveReply: vi.fn() }));
+const selectedMirrorBackend = vi.hoisted(() => ({ resolveReply: vi.fn() }));
 
 vi.mock("./draft-stream.js", () => ({
   createTelegramDraftStream,
@@ -16,6 +20,10 @@ vi.mock("./draft-stream.js", () => ({
 
 vi.mock("../auto-reply/reply/provider-dispatcher.js", () => ({
   dispatchReplyWithBufferedBlockDispatcher,
+}));
+
+vi.mock("../mirror-daemon/backend-selection.js", () => ({
+  createConfiguredReplyBackend,
 }));
 
 vi.mock("./bot/delivery.js", () => ({
@@ -34,6 +42,7 @@ vi.mock("../config/sessions.js", async () => ({
 vi.mock("./sticker-cache.js", () => ({
   cacheSticker: vi.fn(),
   describeStickerImage: vi.fn(),
+  describeTelegramImage,
 }));
 
 import { dispatchTelegramMessage } from "./bot-message-dispatch.js";
@@ -42,7 +51,12 @@ describe("dispatchTelegramMessage draft streaming", () => {
   type TelegramMessageContext = Parameters<typeof dispatchTelegramMessage>[0]["context"];
 
   beforeEach(() => {
+    delete process.env.MIRROR_RUNTIME_ENABLED;
     createTelegramDraftStream.mockClear();
+    createConfiguredReplyBackend.mockClear();
+    describeTelegramImage.mockReset();
+    selectedDefaultBackend.resolveReply.mockReset();
+    selectedMirrorBackend.resolveReply.mockReset();
     dispatchReplyWithBufferedBlockDispatcher.mockClear();
     deliverReplies.mockClear();
     editMessageTelegram.mockClear();
@@ -50,6 +64,13 @@ describe("dispatchTelegramMessage draft streaming", () => {
     resolveStorePath.mockClear();
     resolveStorePath.mockReturnValue("/tmp/sessions.json");
     loadSessionStore.mockReturnValue({});
+    createConfiguredReplyBackend.mockImplementation(() =>
+      process.env.MIRROR_RUNTIME_ENABLED === "1" ? selectedMirrorBackend : selectedDefaultBackend,
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   function createDraftStream(messageId?: number) {
@@ -220,13 +241,356 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
     expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledWith(
       expect.objectContaining({
+        replyBackend: selectedDefaultBackend,
         replyOptions: expect.objectContaining({
           disableBlockStreaming: true,
         }),
       }),
     );
+    expect(createConfiguredReplyBackend).toHaveBeenCalledWith({
+      routeMeta: {
+        agentId: "work",
+        accountId: "default",
+        surface: "telegram",
+      },
+    });
     expect(editMessageTelegram).not.toHaveBeenCalled();
     expect(draftStream.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the default selected backend when the runtime flag is unset", async () => {
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async () => ({
+      queuedFinal: false,
+    }));
+
+    await dispatchWithContext({
+      context: createContext(),
+    });
+
+    expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyBackend: selectedDefaultBackend,
+      }),
+    );
+  });
+
+  it("uses the Mirror backend when MIRROR_RUNTIME_ENABLED=1", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async () => ({
+      queuedFinal: false,
+    }));
+
+    await dispatchWithContext({
+      context: createContext(),
+    });
+
+    expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyBackend: expect.objectContaining({
+          resolveReply: expect.any(Function),
+        }),
+      }),
+    );
+  });
+
+  it("keeps the text-only Mirror path unchanged", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    const context = createContext({
+      ctxPayload: {
+        BodyForAgent: "hello mirror",
+        RawBody: "hello mirror",
+      } as TelegramMessageContext["ctxPayload"],
+    });
+    selectedMirrorBackend.resolveReply.mockResolvedValue({ text: "ok" });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ replyBackend, dispatcherOptions }) => {
+        await replyBackend.resolveReply({
+          ctx: context.ctxPayload as never,
+          replyOptions: {
+            onReplyStart: dispatcherOptions.typingCallbacks?.onReplyStart,
+          },
+        });
+        return { queuedFinal: false };
+      },
+    );
+
+    await dispatchWithContext({ context });
+
+    expect(describeTelegramImage).not.toHaveBeenCalled();
+    expect(selectedMirrorBackend.resolveReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: expect.objectContaining({
+          BodyForAgent: "hello mirror",
+        }),
+      }),
+    );
+  });
+
+  it("detects photo attachments and injects a factual caption into the Mirror request", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    describeTelegramImage.mockResolvedValue("A green frog sits beside a calm moonlit pond.");
+    const context = createContext({
+      msg: {
+        chat: { id: 123, type: "private" },
+        message_id: 456,
+        photo: [{ file_id: "photo-1" }],
+      } as TelegramMessageContext["msg"],
+      ctxPayload: {
+        BodyForAgent: "<media:image>",
+        RawBody: "<media:image>",
+        MediaPath: "/tmp/photo.jpg",
+        MediaType: "image/jpeg",
+        MediaPaths: ["/tmp/photo.jpg"],
+        MediaTypes: ["image/jpeg"],
+      } as TelegramMessageContext["ctxPayload"],
+    });
+    selectedMirrorBackend.resolveReply.mockResolvedValue({ text: "ok" });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ replyBackend, dispatcherOptions }) => {
+        await replyBackend.resolveReply({
+          ctx: context.ctxPayload as never,
+          replyOptions: {
+            onReplyStart: dispatcherOptions.typingCallbacks?.onReplyStart,
+          },
+        });
+        return { queuedFinal: false };
+      },
+    );
+
+    await dispatchWithContext({ context });
+
+    expect(describeTelegramImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imagePath: "/tmp/photo.jpg",
+        mimeType: "image/jpeg",
+      }),
+    );
+    expect(selectedMirrorBackend.resolveReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: expect.objectContaining({
+          BodyForAgent: expect.stringContaining(
+            'Image description:\n"A green frog sits beside a calm moonlit pond."',
+          ),
+        }),
+      }),
+    );
+  });
+
+  it("detects image documents and includes both caption and user text", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    describeTelegramImage.mockResolvedValue(
+      "A black-and-white diagram shows a circle labeled Mirror.",
+    );
+    const context = createContext({
+      msg: {
+        chat: { id: 123, type: "private" },
+        message_id: 456,
+        caption: "what symbol is this?",
+        document: {
+          file_id: "doc-1",
+          file_name: "diagram.png",
+          mime_type: "image/png",
+        },
+      } as TelegramMessageContext["msg"],
+      ctxPayload: {
+        BodyForAgent: "what symbol is this?",
+        RawBody: "what symbol is this?",
+        MediaPath: "/tmp/diagram.png",
+        MediaType: "image/png",
+        MediaPaths: ["/tmp/diagram.png"],
+        MediaTypes: ["image/png"],
+      } as TelegramMessageContext["ctxPayload"],
+    });
+    selectedMirrorBackend.resolveReply.mockResolvedValue({ text: "ok" });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ replyBackend, dispatcherOptions }) => {
+        await replyBackend.resolveReply({
+          ctx: context.ctxPayload as never,
+          replyOptions: {
+            onReplyStart: dispatcherOptions.typingCallbacks?.onReplyStart,
+          },
+        });
+        return { queuedFinal: false };
+      },
+    );
+
+    await dispatchWithContext({ context });
+
+    expect(describeTelegramImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imagePath: "/tmp/diagram.png",
+        mimeType: "image/png",
+        fileName: "diagram.png",
+      }),
+    );
+    expect(selectedMirrorBackend.resolveReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: expect.objectContaining({
+          BodyForAgent: expect.stringContaining("User request:\nwhat symbol is this?"),
+        }),
+      }),
+    );
+  });
+
+  it("uses the image description as the primary request content for image-only messages", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    describeTelegramImage.mockResolvedValue("A glowing circular sigil hovers above still water.");
+    const context = createContext({
+      msg: {
+        chat: { id: 123, type: "private" },
+        message_id: 456,
+        photo: [{ file_id: "photo-2" }],
+      } as TelegramMessageContext["msg"],
+      ctxPayload: {
+        BodyForAgent: "<media:image>",
+        RawBody: "<media:image>",
+        MediaPath: "/tmp/pond.jpg",
+        MediaType: "image/jpeg",
+        MediaPaths: ["/tmp/pond.jpg"],
+        MediaTypes: ["image/jpeg"],
+      } as TelegramMessageContext["ctxPayload"],
+    });
+    selectedMirrorBackend.resolveReply.mockResolvedValue({ text: "ok" });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ replyBackend, dispatcherOptions }) => {
+        await replyBackend.resolveReply({
+          ctx: context.ctxPayload as never,
+          replyOptions: {
+            onReplyStart: dispatcherOptions.typingCallbacks?.onReplyStart,
+          },
+        });
+        return { queuedFinal: false };
+      },
+    );
+
+    await dispatchWithContext({ context });
+
+    const replyCall = selectedMirrorBackend.resolveReply.mock.calls[0]?.[0];
+    expect(replyCall?.ctx.BodyForAgent).toContain("User sent an image.");
+    expect(replyCall?.ctx.BodyForAgent).not.toContain("User request:");
+  });
+
+  it("returns the honest fallback when image analysis fails", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    describeTelegramImage.mockResolvedValue(null);
+    deliverReplies.mockResolvedValue({ delivered: true });
+    const context = createContext({
+      msg: {
+        chat: { id: 123, type: "private" },
+        message_id: 456,
+        photo: [{ file_id: "photo-3" }],
+      } as TelegramMessageContext["msg"],
+      ctxPayload: {
+        BodyForAgent: "<media:image>",
+        RawBody: "<media:image>",
+        MediaPath: "/tmp/fail.jpg",
+        MediaType: "image/jpeg",
+        MediaPaths: ["/tmp/fail.jpg"],
+        MediaTypes: ["image/jpeg"],
+      } as TelegramMessageContext["ctxPayload"],
+    });
+
+    await dispatchWithContext({ context });
+
+    expect(selectedMirrorBackend.resolveReply).not.toHaveBeenCalled();
+    expect(deliverReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replies: [
+          {
+            text: "I received the image, but I couldn't analyze it yet. Please describe what you want me to examine.",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("starts and refreshes Telegram typing while the Mirror backend is pending", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    vi.useFakeTimers();
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    const context = createContext();
+    let resolveReply: ((value: { text: string }) => void) | undefined;
+    selectedMirrorBackend.resolveReply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReply = resolve;
+        }),
+    );
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ replyBackend, dispatcherOptions }) => {
+        const run = replyBackend.resolveReply({
+          ctx: {} as never,
+          replyOptions: {
+            onReplyStart: dispatcherOptions.typingCallbacks?.onReplyStart,
+          },
+        });
+        await Promise.resolve();
+        expect(context.sendTyping).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(3_100);
+        expect(context.sendTyping).toHaveBeenCalledTimes(2);
+        resolveReply?.({ text: "Hello final" });
+        try {
+          await run;
+        } finally {
+          dispatcherOptions.typingCallbacks?.onIdle?.();
+        }
+        await dispatcherOptions.deliver({ text: "Hello final" }, { kind: "final" });
+        return { queuedFinal: true };
+      },
+    );
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    await dispatchWithContext({ context });
+
+    await vi.advanceTimersByTimeAsync(3_100);
+    expect(context.sendTyping).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops the Telegram typing loop when the Mirror backend errors", async () => {
+    process.env.MIRROR_RUNTIME_ENABLED = "1";
+    vi.useFakeTimers();
+    createTelegramDraftStream.mockReturnValue(createDraftStream());
+    const context = createContext();
+    let rejectReply: ((error: Error) => void) | undefined;
+    selectedMirrorBackend.resolveReply.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectReply = reject;
+        }),
+    );
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ replyBackend, dispatcherOptions }) => {
+        const run = replyBackend.resolveReply({
+          ctx: {} as never,
+          replyOptions: {
+            onReplyStart: dispatcherOptions.typingCallbacks?.onReplyStart,
+          },
+        });
+        await Promise.resolve();
+        expect(context.sendTyping).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(3_100);
+        expect(context.sendTyping).toHaveBeenCalledTimes(2);
+        rejectReply?.(new Error("mirror failed"));
+        try {
+          await run;
+        } finally {
+          dispatcherOptions.typingCallbacks?.onIdle?.();
+        }
+        throw new Error("mirror failed");
+      },
+    );
+
+    await expect(dispatchWithContext({ context })).rejects.toThrow("mirror failed");
+
+    await vi.advanceTimersByTimeAsync(3_100);
+    expect(context.sendTyping).toHaveBeenCalledTimes(2);
   });
 
   it("uses 30-char preview debounce for legacy block stream mode", async () => {

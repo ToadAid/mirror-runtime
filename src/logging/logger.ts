@@ -189,11 +189,9 @@ export function getChildLogger(
 ): TsLogger<LogObj> {
   const base = getLogger();
   const minLevel = opts?.level ? levelToMinLevel(opts.level) : undefined;
-  const name = bindings ? JSON.stringify(bindings) : undefined;
   return base.getSubLogger({
-    name,
     minLevel,
-    prefix: bindings ? [name ?? ""] : [],
+    prefix: bindings ? [JSON.stringify(bindings)] : [],
   });
 }
 

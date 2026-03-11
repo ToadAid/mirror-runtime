@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { dispatchInboundMessage, withReplyDispatcher } from "./dispatch.js";
+import { createReplyBackendFromResolver } from "./reply/backend.js";
 import type { ReplyDispatcher } from "./reply/reply-dispatcher.js";
 import { buildTestCtx } from "./reply/test-ctx.js";
 
@@ -83,9 +84,34 @@ describe("withReplyDispatcher", () => {
       ctx: buildTestCtx(),
       cfg: {} as OpenClawConfig,
       dispatcher,
-      replyResolver: async () => ({ text: "ok" }),
+      replyBackend: createReplyBackendFromResolver(async () => ({ text: "ok" })),
     });
 
     expect(order).toEqual(["sendFinalReply", "markComplete", "waitForIdle"]);
+  });
+
+  it("dispatchInboundMessage uses the injected reply backend", async () => {
+    const dispatcher = createDispatcher([]);
+    const resolveReply = vi.fn(async () => ({ text: "backend-ok" }));
+
+    await dispatchInboundMessage({
+      ctx: buildTestCtx(),
+      cfg: {} as OpenClawConfig,
+      dispatcher,
+      replyBackend: {
+        resolveReply,
+      },
+    });
+
+    expect(resolveReply).toHaveBeenCalledWith({
+      ctx: expect.objectContaining({
+        Body: expect.any(String),
+      }),
+      replyOptions: expect.objectContaining({
+        onToolResult: expect.any(Function),
+        onBlockReply: expect.any(Function),
+      }),
+      configOverride: {},
+    });
   });
 });

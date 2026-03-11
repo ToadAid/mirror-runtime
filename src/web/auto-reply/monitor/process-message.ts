@@ -5,7 +5,7 @@ import {
   formatInboundEnvelope,
   resolveEnvelopeFormatOptions,
 } from "../../../auto-reply/envelope.js";
-import type { getReplyFromConfig } from "../../../auto-reply/reply.js";
+import type { ReplyBackend } from "../../../auto-reply/reply/backend.js";
 import {
   buildHistoryContextFromEntries,
   type HistoryEntry,
@@ -121,7 +121,7 @@ export async function processMessage(params: {
   connectionId: string;
   verbose: boolean;
   maxMediaBytes: number;
-  replyResolver: typeof getReplyFromConfig;
+  replyBackend: ReplyBackend;
   replyLogger: ReturnType<typeof getChildLogger>;
   backgroundTasks: Set<Promise<unknown>>;
   rememberSentText: (
@@ -360,7 +360,7 @@ export async function processMessage(params: {
   const { queuedFinal } = await dispatchReplyWithBufferedBlockDispatcher({
     ctx: ctxPayload,
     cfg: params.cfg,
-    replyResolver: params.replyResolver,
+    replyBackend: params.replyBackend,
     dispatcherOptions: {
       ...prefixOptions,
       responsePrefix,

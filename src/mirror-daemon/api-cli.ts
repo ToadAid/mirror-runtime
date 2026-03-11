@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { formatMirrorDaemonCliError } from "./cli-errors.js";
 import {
   consultOcean,
   fetchOceanPond,
@@ -35,6 +36,19 @@ function parseQueryInput(value: string): unknown {
   }
 }
 
+async function runClientCommand(
+  action: string,
+  json: boolean,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    const payload = await run();
+    printOutput(payload, json);
+  } catch (error) {
+    throw formatMirrorDaemonCliError(action, error);
+  }
+}
+
 export function registerMirrorApiCli(mirror: Command): void {
   const api = mirror.command("api").description("MirrorDaemon Pond/Ocean API commands");
   const pond = api.command("pond").description("Pond API");
@@ -46,8 +60,9 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (opts: CommandOptions) => {
-      const payload = await getPondManifest({ baseUrl: opts.baseUrl });
-      printOutput(payload, opts.json === true);
+      await runClientCommand("mirror api pond manifest", opts.json === true, async () => {
+        return await getPondManifest({ baseUrl: opts.baseUrl });
+      });
     });
 
   pond
@@ -56,8 +71,9 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (opts: CommandOptions) => {
-      const payload = await refreshPond({ baseUrl: opts.baseUrl });
-      printOutput(payload, opts.json === true);
+      await runClientCommand("mirror api pond refresh", opts.json === true, async () => {
+        return await refreshPond({ baseUrl: opts.baseUrl });
+      });
     });
 
   ocean
@@ -66,8 +82,9 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (opts: CommandOptions) => {
-      const payload = await listOceanPonds({ baseUrl: opts.baseUrl });
-      printOutput(payload, opts.json === true);
+      await runClientCommand("mirror api ocean ponds", opts.json === true, async () => {
+        return await listOceanPonds({ baseUrl: opts.baseUrl });
+      });
     });
 
   ocean
@@ -77,8 +94,9 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (manifestUrl: string, opts: CommandOptions) => {
-      const payload = await fetchOceanPond(manifestUrl, { baseUrl: opts.baseUrl });
-      printOutput(payload, opts.json === true);
+      await runClientCommand("mirror api ocean fetch", opts.json === true, async () => {
+        return await fetchOceanPond(manifestUrl, { baseUrl: opts.baseUrl });
+      });
     });
 
   ocean
@@ -89,10 +107,11 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (pondId: string, status: string, opts: CommandOptions) => {
-      const payload = await updateOceanTrust(pondId, parseTrustStatus(status), {
-        baseUrl: opts.baseUrl,
+      await runClientCommand("mirror api ocean trust", opts.json === true, async () => {
+        return await updateOceanTrust(pondId, parseTrustStatus(status), {
+          baseUrl: opts.baseUrl,
+        });
       });
-      printOutput(payload, opts.json === true);
     });
 
   ocean
@@ -103,10 +122,11 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (pondId: string, query: string, opts: CommandOptions) => {
-      const payload = await consultOcean(pondId, parseQueryInput(query), {
-        baseUrl: opts.baseUrl,
+      await runClientCommand("mirror api ocean consult", opts.json === true, async () => {
+        return await consultOcean(pondId, parseQueryInput(query), {
+          baseUrl: opts.baseUrl,
+        });
       });
-      printOutput(payload, opts.json === true);
     });
 
   ocean
@@ -115,7 +135,8 @@ export function registerMirrorApiCli(mirror: Command): void {
     .option("--base-url <url>", "MirrorDaemon base URL")
     .option("--json", "Output compact JSON", false)
     .action(async (opts: CommandOptions) => {
-      const payload = await getOceanStatus({ baseUrl: opts.baseUrl });
-      printOutput(payload, opts.json === true);
+      await runClientCommand("mirror api ocean status", opts.json === true, async () => {
+        return await getOceanStatus({ baseUrl: opts.baseUrl });
+      });
     });
 }

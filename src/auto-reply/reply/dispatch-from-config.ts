@@ -9,12 +9,22 @@ import {
   logMessageQueued,
   logSessionStateChange,
 } from "../../logging/diagnostic.js";
+import {
+  createConfiguredReplyBackend,
+  inferMirrorDaemonReplyRouteMeta,
+  isMirrorRuntimeEnabled,
+} from "../../mirror-daemon/backend-selection.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { maybeApplyTtsToPayload, normalizeTtsAutoMode, resolveTtsConfig } from "../../tts/tts.js";
-import { getReplyFromConfig } from "../reply.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import { formatAbortReplyText, tryFastAbortFromMessage } from "./abort.js";
+import {
+  createReplyBackendFromResolver,
+  defaultReplyBackend,
+  type ReplyBackend,
+  type ReplyResolver,
+} from "./backend.js";
 import { shouldSkipDuplicateInbound } from "./inbound-dedupe.js";
 import type { ReplyDispatcher, ReplyDispatchKind } from "./reply-dispatcher.js";
 import { shouldSuppressReasoningPayload } from "./reply-payloads.js";
@@ -86,7 +96,8 @@ export async function dispatchReplyFromConfig(params: {
   cfg: OpenClawConfig;
   dispatcher: ReplyDispatcher;
   replyOptions?: Omit<GetReplyOptions, "onToolResult" | "onBlockReply">;
-  replyResolver?: typeof getReplyFromConfig;
+  replyBackend?: ReplyBackend;
+  replyResolver?: ReplyResolver;
 }): Promise<DispatchFromConfigResult> {
   const { ctx, cfg, dispatcher } = params;
   const diagnosticsEnabled = isDiagnosticsEnabled(cfg);
@@ -340,9 +351,18 @@ export async function dispatchReplyFromConfig(params: {
       return { ...payload, text: undefined };
     };
 
-    const replyResult = await (params.replyResolver ?? getReplyFromConfig)(
+    const replyBackend =
+      params.replyBackend ??
+      (params.replyResolver
+        ? createReplyBackendFromResolver(params.replyResolver)
+        : isMirrorRuntimeEnabled(process.env)
+          ? createConfiguredReplyBackend({
+              routeMeta: inferMirrorDaemonReplyRouteMeta(ctx),
+            })
+          : defaultReplyBackend);
+    const replyResult = await replyBackend.resolveReply({
       ctx,
-      {
+      replyOptions: {
         ...params.replyOptions,
         onToolResult: (payload: ReplyPayload) => {
           const run = async () => {
@@ -399,8 +419,8 @@ export async function dispatchReplyFromConfig(params: {
           return run();
         },
       },
-      cfg,
-    );
+      configOverride: cfg,
+    });
 
     const replies = replyResult ? (Array.isArray(replyResult) ? replyResult : [replyResult]) : [];
 

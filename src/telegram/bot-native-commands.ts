@@ -32,6 +32,7 @@ import type {
 import { danger, logVerbose } from "../globals.js";
 import { getChildLogger } from "../logging.js";
 import { getAgentScopedMediaLocalRoots } from "../media/local-roots.js";
+import { createConfiguredReplyBackend } from "../mirror-daemon/backend-selection.js";
 import {
   executePluginCommand,
   getPluginCommandSpecs,
@@ -628,6 +629,13 @@ export const registerTelegramNativeCommands = ({
           await dispatchReplyWithBufferedBlockDispatcher({
             ctx: ctxPayload,
             cfg,
+            replyBackend: createConfiguredReplyBackend({
+              routeMeta: {
+                agentId: route.agentId,
+                accountId: route.accountId,
+                surface: "telegram",
+              },
+            }),
             dispatcherOptions: {
               ...prefixOptions,
               deliver: async (payload, _info) => {

@@ -27,8 +27,8 @@ export function registerMirrorDaemonCli(program: Command): void {
     .description("Run MirrorDaemon in the foreground")
     .option("--host <host>", "Bind host (default: 127.0.0.1)")
     .option("--port <port>", "Bind port (default: MIRROR_DAEMON_PORT or 8787)", parsePort)
-    .option("--brain-url <url>", "Optional upstream brain URL")
-    .option("--auth-token <token>", "Optional auth token for /api/brain/chat")
+    .option("--brain-url <url>", "Upstream brain URL (or set MIRROR_BRAIN_URL)")
+    .option("--auth-token <token>", "Upstream brain auth token (or set MIRROR_BRAIN_AUTH_TOKEN)")
     .action(
       async (opts: { host?: string; port?: number; brainUrl?: string; authToken?: string }) => {
         await runCommandWithRuntime(defaultRuntime, async () => {
@@ -48,8 +48,8 @@ export function registerMirrorDaemonCli(program: Command): void {
     .description("Start MirrorDaemon in the background")
     .option("--host <host>", "Bind host (default: 127.0.0.1)")
     .option("--port <port>", "Bind port (default: MIRROR_DAEMON_PORT or 8787)", parsePort)
-    .option("--brain-url <url>", "Optional upstream brain URL")
-    .option("--auth-token <token>", "Optional auth token for /api/brain/chat")
+    .option("--brain-url <url>", "Upstream brain URL (or set MIRROR_BRAIN_URL)")
+    .option("--auth-token <token>", "Upstream brain auth token (or set MIRROR_BRAIN_AUTH_TOKEN)")
     .action(
       async (opts: { host?: string; port?: number; brainUrl?: string; authToken?: string }) => {
         await runCommandWithRuntime(defaultRuntime, async () => {

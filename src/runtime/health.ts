@@ -26,15 +26,22 @@ interface HealthResponse {
   };
 }
 
+export type RuntimeHealthMetadata = {
+  mode: "lan" | "intranet";
+  version: string;
+  commit: string;
+};
+
 export async function handleHealthEndpoint(
   env: RuntimeEnv,
   brainUrl: string | undefined,
   authToken: string | undefined,
+  metadata?: RuntimeHealthMetadata,
 ): Promise<HealthResponse> {
   // No network calls. All state is local.
-  const mode = process.env.MIRROR_RUNTIME_MODE || "lan";
-  const version = process.env.MIRROR_RUNTIME_VERSION || "unknown";
-  const commit = process.env.MIRROR_RUNTIME_COMMIT || "unknown";
+  const mode = metadata?.mode ?? (process.env.MIRROR_RUNTIME_MODE || "lan");
+  const version = metadata?.version ?? (process.env.MIRROR_RUNTIME_VERSION || "unknown");
+  const commit = metadata?.commit ?? (process.env.MIRROR_RUNTIME_COMMIT || "unknown");
   const features: string[] = [];
   if (brainUrl) {
     features.push("brain");

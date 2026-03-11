@@ -26,6 +26,16 @@ async function withIsolatedWorkspace(run: (oceanRegistryPath: string) => Promise
 }
 
 describe("getOceanStatus", () => {
+  it("prefers explicit localPondId over env-based default", async () => {
+    await withIsolatedWorkspace(async (oceanRegistryPath) => {
+      const summary = await getOceanStatus({
+        registryPath: oceanRegistryPath,
+        localPondId: "snapshot-pond",
+      });
+      expect(summary.local_pond_id).toBe("snapshot-pond");
+    });
+  });
+
   it("handles missing registry cleanly", async () => {
     await withIsolatedWorkspace(async (oceanRegistryPath) => {
       const summary = await getOceanStatus({ registryPath: oceanRegistryPath });
