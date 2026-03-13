@@ -8,6 +8,7 @@ export * from "./mirror-console/index.js";
 export * from "./mirror-observability/index.js";
 export * from "./mirror-sync/index.js";
 export * from "./mirror-user-workspace/index.js";
+export * from "./mirror-ui-api/index.js";
 export * from "./mirror-adapters/index.js";
 export * from "./mirror-policy/index.js";
 export * from "./mirror-actions/index.js";

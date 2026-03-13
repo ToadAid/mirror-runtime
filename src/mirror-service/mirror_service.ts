@@ -30,6 +30,7 @@ import {
   createMirrorSyncRouter,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
+import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
 import {
   createMirrordaemon,
   getMirrordaemonDebugState,
@@ -282,8 +283,24 @@ export async function startMirrorService(
     observabilityHandlers,
     health: healthHandler,
   });
+  const uiApiHandlers = createMirrorUiApiHandlers({
+    daemon,
+    getRuntime: () =>
+      getMirrordaemonRuntimeState(daemon, {
+        port: boundPort,
+        baseUrl: syncManager.getLocalBaseUrl(),
+      }),
+    getHealth: () =>
+      getMirrordaemonHealthState(daemon, {
+        port: boundPort,
+        baseUrl: syncManager.getLocalBaseUrl(),
+        peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
+      }),
+    getBaseUrl: () => syncManager.getLocalBaseUrl(),
+  });
   app.use(createMirrorGatewayRouter("/mirror", handlers));
   app.use(createMirrorConsoleRouterAtBase("/mirror/console", consoleHandlers));
+  app.use(createMirrorUiApiRouter(uiApiHandlers));
   app.use(createMirrorObservabilityRouter(observabilityHandlers));
   app.use(createMirrorSyncRouter(syncManager, syncHandlers));
   app.get("/mirror/runtime", (_req, res) => {
