@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createMirrorPolicyEngine } from "../mirror-policy/index.js";
 import { createMirrorGatewayHandlers } from "./index.js";
 
 const tempDirs: string[] = [];
@@ -152,7 +153,54 @@ describe("mirror gateway", () => {
     );
 
     expect(res.statusCode).toBe(403);
-    expect(res.body).toEqual({ error: "Mirror operator authorization required" });
+    expect(res.body).toEqual({
+      error: "Mirror operator authorization required",
+      code: "operator_auth_required",
+    });
+  });
+
+  it("applies policy evaluation at chat ingress", async () => {
+    const handlers = createMirrorGatewayHandlers(undefined, {
+      provider: {
+        url: "https://provider.example",
+        authToken: "token",
+      },
+      policy: createMirrorPolicyEngine([
+        {
+          name: "deny.chat",
+          evaluate(input) {
+            if (input.target.kind !== "chat") {
+              return null;
+            }
+            return {
+              allowed: false,
+              code: "chat_blocked",
+              reason: "Chat blocked by test policy",
+              statusCode: 451,
+              rule: "deny.chat",
+            };
+          },
+        },
+      ]),
+    });
+    const res = createMockResponse();
+
+    await handlers.executeChat(
+      createRequest(
+        {},
+        {
+          model: "mirror-model",
+          messages: [{ role: "user", content: "hello" }],
+        },
+      ) as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(451);
+    expect(res.body).toEqual({
+      error: "Chat blocked by test policy",
+      code: "chat_blocked",
+    });
   });
 
   it("routes personal utility tools without touching canon", async () => {

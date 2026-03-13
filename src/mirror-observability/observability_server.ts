@@ -1,19 +1,23 @@
 import express from "express";
-import { getMirrorDiagnostics } from "./diagnostics.js";
-import { getMirrorMetrics } from "./metrics.js";
+import {
+  getDefaultMirrorObservabilityContext,
+  type MirrorObservabilityContext,
+} from "./context.js";
 
 export type MirrorObservabilityHandlers = {
   metrics: (req: express.Request, res: express.Response) => void;
   diagnostics: (req: express.Request, res: express.Response) => void;
 };
 
-export function createMirrorObservabilityHandlers(): MirrorObservabilityHandlers {
+export function createMirrorObservabilityHandlers(
+  observability: MirrorObservabilityContext = getDefaultMirrorObservabilityContext(),
+): MirrorObservabilityHandlers {
   return {
     metrics: (_req, res) => {
-      res.json(getMirrorMetrics());
+      res.json(observability.getMetrics());
     },
     diagnostics: (_req, res) => {
-      res.json(getMirrorDiagnostics());
+      res.json(observability.getDiagnostics());
     },
   };
 }

@@ -370,7 +370,7 @@ describe("mirror web console", () => {
       expect(announceRes.statusCode).toBe(500);
 
       const peersRes = createMockResponse();
-      consoleServer.consoleHandlers.syncPeers({} as never, peersRes as never);
+      await consoleServer.consoleHandlers.syncPeers({} as never, peersRes as never);
       expect(Array.isArray((peersRes.body as { peers: unknown[] }).peers)).toBe(true);
 
       const metricsRes = createMockResponse();

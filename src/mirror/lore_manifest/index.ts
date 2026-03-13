@@ -15,6 +15,7 @@ export { verifyLoreManifest } from "./verify.js";
 export {
   DEFAULT_LORE_CANONICAL_DIR,
   DEFAULT_LORE_MANIFEST_PATH,
+  resolveDefaultLoreManifestPath,
   formatVerifyLoreHuman,
   runVerifyLoreCli,
 } from "./cli.js";

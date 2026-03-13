@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { requireNodeSqlite } from "../../../memory/sqlite.js";
+import { createMirrorRuntimeHost } from "../../../mirror-service/index.js";
 import { formatMirrorStatusHuman } from "../format.js";
 import { getMirrorStatus } from "../status.js";
 
@@ -19,85 +19,81 @@ async function createTempDir(): Promise<string> {
 }
 
 describe("mirror status", () => {
-  it("returns exists=false for missing storage files without throwing", async () => {
+  it("returns daemon-backed runtime and lore truth", async () => {
     const dir = await createTempDir();
-    const status = await getMirrorStatus({
-      cwd: dir,
-      now: new Date("2026-03-05T00:00:00.000Z"),
-      ndjsonPath: path.join(dir, "missing.ndjson"),
-      dbPath: path.join(dir, "missing.sqlite"),
-      env: {},
+    const loreDir = await createTempDir();
+    const runtimeHost = await createMirrorRuntimeHost({
+      loreDir,
+      nodeId: "status-node",
+      baseUrl: "http://127.0.0.1:7777",
+      providerUrl: "",
+      providerAuthToken: "",
     });
 
-    expect(status.ts).toBe("2026-03-05T00:00:00.000Z");
-    expect(status.storage.ndjsonExists).toBe(false);
-    expect(status.storage.sqliteExists).toBe(false);
-    expect(status.storage.ndjsonBytes).toBeUndefined();
-    expect(status.storage.sqliteEvents).toBeUndefined();
-    expect(status.privacy.boundaryGuard).toBe(true);
-    expect(JSON.stringify(status)).not.toContain("travelerName");
-  });
-
-  it("returns ndjson file size when present", async () => {
-    const dir = await createTempDir();
-    const ndjsonPath = path.join(dir, "telemetry.ndjson");
-    await fs.writeFile(ndjsonPath, '{"type":"mirror.nudge"}\n', "utf8");
-
-    const status = await getMirrorStatus({
-      ndjsonPath,
-      dbPath: path.join(dir, "missing.sqlite"),
-      env: {},
-    });
-
-    expect(status.storage.ndjsonExists).toBe(true);
-    expect(status.storage.ndjsonBytes).toBeGreaterThan(0);
-  });
-
-  it("returns sqlite event count when db and events table exist", async () => {
-    const dir = await createTempDir();
-    const dbPath = path.join(dir, "telemetry.sqlite");
-    const { DatabaseSync } = requireNodeSqlite();
-    const db = new DatabaseSync(dbPath);
     try {
-      db.exec(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, type TEXT NOT NULL, run_id TEXT, payload_json TEXT NOT NULL)",
-      );
-      db.exec(
-        "INSERT INTO events(ts, type, run_id, payload_json) VALUES (1, 'mirror.nudge', 'run-1', '{}'), (2, 'mirror.nudge', 'run-2', '{}')",
-      );
+      const status = await getMirrorStatus({
+        runtimeHost,
+        cwd: dir,
+        now: new Date("2026-03-05T00:00:00.000Z"),
+      });
+
+      expect(status.ts).toBe("2026-03-05T00:00:00.000Z");
+      expect(status.runtime.node_id).toBe("status-node");
+      expect(status.runtime.sessions.total).toBe(0);
+      expect(status.service.lore_dir).toBe(path.resolve(loreDir));
+      expect(status.provider.configured).toBe(false);
+      expect(status.provider.active_provider_id).toBe("primary");
+      expect(status.provider.total).toBe(1);
+      expect(status.lore.ready).toBe(true);
+      expect(status.workspace.ready).toBe(true);
+      expect(status.sync.node_id).toBe("status-node");
+      expect(status.observability.metrics.counters.chat_requests).toBe(0);
+      expect(JSON.stringify(status)).not.toContain("travelerName");
     } finally {
-      db.close();
+      await runtimeHost.shutdown();
     }
-
-    const status = await getMirrorStatus({
-      ndjsonPath: path.join(dir, "missing.ndjson"),
-      dbPath,
-      env: {},
-    });
-
-    expect(status.storage.sqliteExists).toBe(true);
-    expect(status.storage.sqliteEvents).toBe(2);
   });
 
-  it("produces valid json output payload for --json path", async () => {
+  it("reflects current daemon metrics and sessions", async () => {
     const dir = await createTempDir();
-    const status = await getMirrorStatus({
-      cwd: dir,
-      ndjsonPath: path.join(dir, "missing.ndjson"),
-      dbPath: path.join(dir, "missing.sqlite"),
-      env: {
-        MIRROR_TELEMETRY_ENABLED: "1",
-        MIRROR_TELEMETRY_SINK_ENABLED: "1",
-        MIRROR_PASSPORT_TELEMETRY_ENABLED: "1",
-      },
+    const loreDir = await createTempDir();
+    const runtimeHost = await createMirrorRuntimeHost({
+      loreDir,
+      nodeId: "status-metrics-node",
+      providerUrl: "",
+      providerAuthToken: "",
     });
 
-    const json = JSON.stringify(status);
-    const parsed = JSON.parse(json) as Record<string, unknown>;
-    expect(parsed).toHaveProperty("telemetry");
-    expect(parsed).toHaveProperty("storage");
+    try {
+      runtimeHost.daemon.createSession({
+        session_id: "status-session",
+        user_id: "alice",
+      });
+      runtimeHost.daemon.getObservability().incrementMetric("chat_requests");
 
-    const human = formatMirrorStatusHuman(status);
-    expect(human).toContain("🪞 Mirror Runtime");
+      const status = await getMirrorStatus({
+        runtimeHost,
+        cwd: dir,
+      });
+
+      expect(status.runtime.sessions.total).toBe(1);
+      expect(status.runtime.sessions.open).toBe(1);
+      expect(status.observability.metrics.counters.chat_requests).toBe(1);
+      expect(status.provider.providers[0]?.provider_id).toBe("primary");
+
+      const json = JSON.stringify(status);
+      const parsed = JSON.parse(json) as Record<string, unknown>;
+      expect(parsed).toHaveProperty("runtime");
+      expect(parsed).toHaveProperty("service");
+      expect(parsed).toHaveProperty("observability");
+
+      const human = formatMirrorStatusHuman(status);
+      expect(human).toContain("🪞 Mirror Runtime");
+      expect(human).toContain("runtime:");
+      expect(human).toContain("service:");
+      expect(human).toContain("observability:");
+    } finally {
+      await runtimeHost.shutdown();
+    }
   });
 });

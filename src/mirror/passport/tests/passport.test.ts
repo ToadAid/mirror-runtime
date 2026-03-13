@@ -43,4 +43,23 @@ describe("mirror passport", () => {
     expect(output).toContain("travelerName: Tommy Traveler");
     expect(output).toContain("hostName: host-b");
   });
+
+  it("ignores OpenClaw compatibility env keys in the canonical passport path", () => {
+    const passport = buildMirrorPassport({
+      includeLocal: true,
+      env: {
+        OPENCLAW_AGENT_ID: "legacy-agent",
+        OPENCLAW_AGENT: "legacy-short-agent",
+        OPENCLAW_RUN_ID: "legacy-run",
+        OPENCLAW_TRAVELER_NAME: "Legacy Traveler",
+      },
+      now: new Date("2026-03-05T12:00:00.000Z"),
+      hostName: "host-c",
+      cwd: "/tmp/local",
+    });
+
+    expect(passport.agentIdentity.agentId).toBe("mirror.local");
+    expect(passport.agentIdentity.runId).toBeUndefined();
+    expect(passport.localOnly?.travelerName).toBeUndefined();
+  });
 });

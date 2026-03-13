@@ -1,8 +1,10 @@
 import { logMirrorEvent, recordLatency } from "../mirror-observability/index.js";
 import {
-  executeMirrorProviderRequest,
+  buildPrimaryProviderDescriptorFromConfig,
+  createMirrorProviderPlane,
   type FetchLike,
   type MirrorProviderConfig,
+  type MirrorProviderPlane,
 } from "../mirror-provider/index.js";
 import { buildReflectionPrompt, reflectOnCanonContext } from "../mirror-reflection/index.js";
 import { buildLoreContext, retrieveCanonicalScrolls } from "../mirror/lore_retrieval/index.js";
@@ -14,7 +16,7 @@ import type {
 } from "./mirror_response.js";
 
 function isDebugMode(): boolean {
-  const level = (process.env.OPENCLAW_LOG_LEVEL ?? "").toLowerCase();
+  const level = (process.env.MIRROR_LOG_LEVEL ?? "").toLowerCase();
   return level === "debug" || level === "trace";
 }
 
@@ -162,10 +164,41 @@ export async function executeMirrorChatWithProvider(
   deps: {
     provider: MirrorProviderConfig;
     fetchImpl?: FetchLike;
+    onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+  },
+): Promise<MirrorChatResponse> {
+  const providerPlane = createMirrorProviderPlane([
+    {
+      ...buildPrimaryProviderDescriptorFromConfig({
+        providerUrl: deps.provider.url,
+        providerAuthToken: deps.provider.authToken,
+      }),
+      timeoutMs: deps.provider.timeoutMs,
+    },
+  ]);
+  return executeMirrorChatWithProviderPlane(request, {
+    providerPlane,
+    fetchImpl: deps.fetchImpl,
+    onRuntimeEvent: deps.onRuntimeEvent,
+  });
+}
+
+export async function executeMirrorChatWithProviderPlane(
+  request: MirrorChatRequest,
+  deps: {
+    providerPlane: MirrorProviderPlane;
+    fetchImpl?: FetchLike;
+    onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
   },
 ): Promise<MirrorChatResponse> {
   const prepared = await prepareMirrorChatRequest(request);
-  return executeMirrorProviderRequest(prepared.modelRequest, deps.provider, {
+  const execution = await deps.providerPlane.execute(prepared.modelRequest, {
     fetchImpl: deps.fetchImpl,
+    onRuntimeEvent: deps.onRuntimeEvent,
+    selection: {
+      preferredProviderId: request.provider?.provider_id,
+      allowFallback: request.provider?.allow_fallback,
+    },
   });
+  return execution.response;
 }

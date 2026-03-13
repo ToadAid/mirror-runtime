@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { resolveDefaultLoreRoot } from "../lore_sources/policy.js";
 import type {
   MirrorLoreManifest,
   MirrorLoreManifestVerificationReport,
@@ -6,8 +8,12 @@ import type {
 } from "./types.js";
 import { verifyLoreManifest } from "./verify.js";
 
-export const DEFAULT_LORE_MANIFEST_PATH = "lore/manifest.json";
-export const DEFAULT_LORE_CANONICAL_DIR = "lore/canonical";
+export function resolveDefaultLoreManifestPath(explicitLoreDir?: string): string {
+  return path.join(resolveDefaultLoreRoot(explicitLoreDir), "manifest.json");
+}
+
+export const DEFAULT_LORE_MANIFEST_PATH = resolveDefaultLoreManifestPath();
+export const DEFAULT_LORE_CANONICAL_DIR = resolveDefaultLoreRoot();
 
 export function formatVerifyLoreHuman(
   manifestPath: string,
@@ -49,8 +55,8 @@ export function formatVerifyLoreHuman(
 }
 
 export async function runVerifyLoreCli(opts: RunVerifyLoreCliOptions = {}): Promise<void> {
-  const manifestPath = opts.manifestPath ?? DEFAULT_LORE_MANIFEST_PATH;
-  const dir = opts.dir ?? DEFAULT_LORE_CANONICAL_DIR;
+  const dir = opts.dir ?? resolveDefaultLoreRoot();
+  const manifestPath = opts.manifestPath ?? resolveDefaultLoreManifestPath(dir);
   const write = opts.write ?? ((text: string) => process.stdout.write(text));
   const readManifestFile = opts.readFile ?? readFile;
 

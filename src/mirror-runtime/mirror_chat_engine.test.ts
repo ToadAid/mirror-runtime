@@ -19,7 +19,7 @@ import {
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
 const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
-const originalLogLevel = process.env.OPENCLAW_LOG_LEVEL;
+const originalLogLevel = process.env.MIRROR_LOG_LEVEL;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -33,9 +33,9 @@ afterEach(async () => {
     process.env.MIRROR_MEMORY_DB_PATH = originalMirrorMemoryDbPath;
   }
   if (originalLogLevel === undefined) {
-    delete process.env.OPENCLAW_LOG_LEVEL;
+    delete process.env.MIRROR_LOG_LEVEL;
   } else {
-    process.env.OPENCLAW_LOG_LEVEL = originalLogLevel;
+    process.env.MIRROR_LOG_LEVEL = originalLogLevel;
   }
 
   closeMirrorMemoryDb();

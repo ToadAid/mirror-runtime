@@ -11,8 +11,18 @@ import { createMirrorGatewayHandlers, createMirrorGatewayRouter } from "../mirro
 import {
   createMirrorObservabilityHandlers,
   createMirrorObservabilityRouter,
-  getMirrorMetrics,
+  runWithMirrorObservabilityContext,
 } from "../mirror-observability/index.js";
+import {
+  buildMirrorActionPolicyTarget,
+  createMirrorPolicyEngine,
+  type MirrorPolicyContext,
+} from "../mirror-policy/index.js";
+import {
+  buildPrimaryProviderDescriptorFromConfig,
+  createMirrorProviderPlane,
+  type MirrorProviderPlane,
+} from "../mirror-provider/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
 import {
   createMirrorSyncHandlers,
@@ -29,6 +39,10 @@ import {
 } from "../mirrordaemon/index.js";
 import { loadMirrorServiceConfig, type MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
+import {
+  createMirrorRuntimeWebSocketServer,
+  type MirrorRuntimeWebSocketServer,
+} from "./runtime_events_ws.js";
 
 export type MirrorService = {
   app: express.Application;
@@ -37,6 +51,8 @@ export type MirrorService = {
   consoleHandlers: MirrorConsoleHandlers;
   syncHandlers: ReturnType<typeof createMirrorSyncHandlers>;
   syncManager: MirrorSyncManager;
+  providerPlane: MirrorProviderPlane;
+  runtimeWebSocket: MirrorRuntimeWebSocketServer;
   daemon: Mirrordaemon;
   config: MirrorServiceConfig;
   lifecycle: MirrorServiceLifecycle;
@@ -54,6 +70,14 @@ export type MirrorHealthStatus = {
     lore_dir: string;
     provider_url: string;
     operator_auth_configured: boolean;
+  };
+  provider: {
+    configured: boolean;
+    ready: boolean;
+    active_provider_id: string | null;
+    total: number;
+    available: number;
+    fallback_available: boolean;
   };
   sync: {
     peers_known: number;
@@ -79,27 +103,87 @@ export async function startMirrorService(
 ): Promise<MirrorService> {
   const config = loadMirrorServiceConfig(overrides);
   const lifecycle = await initializeMirrorServiceLifecycle(config);
+  const providerPlane = createMirrorProviderPlane([
+    {
+      ...buildPrimaryProviderDescriptorFromConfig(config),
+    },
+  ]);
+  const daemon = createMirrordaemon({
+    config,
+    lifecycle,
+    providerPlane,
+  });
+  const observability = daemon.getObservability();
+  const policy = createMirrorPolicyEngine();
 
   const handlers = createMirrorGatewayHandlers(undefined, {
-    provider: {
-      url: config.providerUrl,
-      authToken: config.providerAuthToken,
-    },
+    providerPlane,
     fetchImpl: deps.fetchImpl,
+    policy,
+    onRuntimeEvent: daemon.publishRuntimeEvent,
   });
   const syncManager = createMirrorSyncManager({
     nodeId: config.nodeId,
     loreDir: config.loreDir,
     baseUrl: config.baseUrl,
     fetchImpl: deps.fetchImpl,
-  });
-  const daemon = createMirrordaemon({
-    config,
-    lifecycle,
+    onRuntimeEvent: daemon.publishRuntimeEvent,
   });
   const rawSyncHandlers = createMirrorSyncHandlers(syncManager);
+  async function evaluateSyncPolicy(
+    req: express.Request,
+    actionName: "sync.announce" | "sync.updates" | "sync.pull" | "sync.peers",
+  ): Promise<
+    { allowed: true } | { allowed: false; statusCode: number; body: Record<string, unknown> }
+  > {
+    const header =
+      typeof req.header === "function"
+        ? (name: string) => req.header(name)
+        : (_name: string) => undefined;
+    const body =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body)
+        ? (req.body as Record<string, unknown>)
+        : {};
+    const policyContext: MirrorPolicyContext = {
+      surface: "sync",
+      route: typeof req.path === "string" ? req.path : "",
+      session: {
+        session_id: header("x-mirror-session-id") ?? undefined,
+      },
+      metadata: {
+        method: typeof req.method === "string" ? req.method : "UNKNOWN",
+      },
+    };
+    const decision = await policy.evaluate({
+      phase: "action",
+      target: buildMirrorActionPolicyTarget(actionName, body),
+      context: policyContext,
+    });
+    if (decision.allowed) {
+      return { allowed: true };
+    }
+    daemon.publishRuntimeEvent("policy.denied", {
+      phase: "action",
+      target: "action",
+      action: actionName,
+      code: decision.decision.code,
+      route: req.path,
+    });
+    return {
+      allowed: false,
+      statusCode: decision.decision.statusCode ?? 403,
+      body: {
+        error: decision.decision.reason,
+        code: decision.decision.code,
+      },
+    };
+  }
   const syncHandlers = {
     announce: async (req: express.Request, res: express.Response) => {
+      const policyDecision = await evaluateSyncPolicy(req, "sync.announce");
+      if (!policyDecision.allowed) {
+        return res.status(policyDecision.statusCode).json(policyDecision.body);
+      }
       const response = await rawSyncHandlers.announce(req, res);
       daemon.publishRuntimeEvent("sync.announce", {
         peer_id:
@@ -109,10 +193,25 @@ export async function startMirrorService(
       });
       return response;
     },
-    peers: (req: express.Request, res: express.Response) => rawSyncHandlers.peers(req, res),
-    updates: async (req: express.Request, res: express.Response) =>
-      rawSyncHandlers.updates(req, res),
+    peers: async (req: express.Request, res: express.Response) => {
+      const policyDecision = await evaluateSyncPolicy(req, "sync.peers");
+      if (!policyDecision.allowed) {
+        return res.status(policyDecision.statusCode).json(policyDecision.body);
+      }
+      return rawSyncHandlers.peers(req, res);
+    },
+    updates: async (req: express.Request, res: express.Response) => {
+      const policyDecision = await evaluateSyncPolicy(req, "sync.updates");
+      if (!policyDecision.allowed) {
+        return res.status(policyDecision.statusCode).json(policyDecision.body);
+      }
+      return rawSyncHandlers.updates(req, res);
+    },
     pull: async (req: express.Request, res: express.Response) => {
+      const policyDecision = await evaluateSyncPolicy(req, "sync.pull");
+      if (!policyDecision.allowed) {
+        return res.status(policyDecision.statusCode).json(policyDecision.body);
+      }
       const response = await rawSyncHandlers.pull(req, res);
       daemon.publishRuntimeEvent("sync.pull", {
         peer_id:
@@ -123,10 +222,15 @@ export async function startMirrorService(
       return response;
     },
   };
-  const observabilityHandlers = createMirrorObservabilityHandlers();
+  const observabilityHandlers = createMirrorObservabilityHandlers(observability);
   let boundPort = config.port;
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    runWithMirrorObservabilityContext(observability, () => {
+      next();
+    });
+  });
   app.use((req, res, next) => {
     if (!shouldTrackMirrorSession(req.path)) {
       next();
@@ -166,7 +270,7 @@ export async function startMirrorService(
     const status: MirrorHealthStatus = getMirrordaemonHealthState(daemon, {
       port: boundPort,
       baseUrl: syncManager.getLocalBaseUrl(),
-      peersKnown: getMirrorMetrics().gauges.peers_known || syncManager.listPeers().length,
+      peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
     });
     daemon.publishRuntimeEvent("runtime.health.requested", {
       path: "/mirror/health",
@@ -198,7 +302,7 @@ export async function startMirrorService(
       getMirrordaemonDebugState(daemon, {
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
-        peersKnown: getMirrorMetrics().gauges.peers_known || syncManager.listPeers().length,
+        peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
       }),
     );
   });
@@ -226,6 +330,10 @@ export async function startMirrorService(
   const server = await new Promise<http.Server>((resolve) => {
     const instance = app.listen(config.port, () => resolve(instance));
   });
+  const runtimeWebSocket = createMirrorRuntimeWebSocketServer({
+    server,
+    daemon,
+  });
   const address = server.address();
   const port =
     address && typeof address === "object" && "port" in address ? address.port : config.port;
@@ -241,11 +349,14 @@ export async function startMirrorService(
     consoleHandlers,
     syncHandlers,
     syncManager,
+    providerPlane,
+    runtimeWebSocket,
     daemon,
     config: { ...config, port },
     lifecycle,
     port,
     async shutdown() {
+      await runtimeWebSocket.close();
       if (!server.listening) {
         await lifecycle.shutdown();
         return;

@@ -1,4 +1,7 @@
-import type { MirrorDiagnosticEvent } from "../mirror-observability/index.js";
+import type {
+  MirrorDiagnosticEvent,
+  MirrorObservabilityContext,
+} from "../mirror-observability/index.js";
 
 export type MirrordaemonSurfaceName =
   | "cli"
@@ -7,7 +10,8 @@ export type MirrordaemonSurfaceName =
   | "console"
   | "sync"
   | "observability"
-  | "runtime_api";
+  | "runtime_api"
+  | "runtime_ws";
 
 export type MirrordaemonBootSnapshot = {
   runtime_started_at: string;
@@ -17,6 +21,8 @@ export type MirrordaemonBootSnapshot = {
     base_url: string | null;
     lore_dir: string;
     provider_url: string;
+    active_provider_id: string | null;
+    provider_count: number;
     operator_auth_configured: boolean;
     workspace_users_root: string;
   };
@@ -37,6 +43,10 @@ export type MirrordaemonBootSnapshot = {
     provider: {
       ready: boolean;
       configured: boolean;
+      active_provider_id: string | null;
+      total: number;
+      available: number;
+      fallback_available: boolean;
     };
     observability: {
       ready: true;
@@ -99,6 +109,11 @@ export type MirrordaemonHealthSummary = MirrordaemonRuntimeSummary & {
   };
   provider: {
     configured: boolean;
+    ready: boolean;
+    active_provider_id: string | null;
+    total: number;
+    available: number;
+    fallback_available: boolean;
   };
   sync: {
     peers_known: number;
@@ -130,4 +145,8 @@ export type MirrordaemonEventStream = {
     listener: (event: MirrordaemonRuntimeEvent) => void,
   ) => MirrordaemonEventSubscription;
   getRecentEvents: () => MirrordaemonRuntimeEvent[];
+};
+
+export type MirrordaemonObservability = {
+  getObservability: () => MirrorObservabilityContext;
 };

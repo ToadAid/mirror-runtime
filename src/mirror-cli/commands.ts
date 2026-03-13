@@ -5,11 +5,11 @@ import type { MirrorProviderConfig } from "../mirror-provider/index.js";
 import type { MirrorChatResponse } from "../mirror-runtime/index.js";
 import type { MirrorRuntimeHost, MirrorService } from "../mirror-service/index.js";
 import {
-  DEFAULT_LORE_CANONICAL_DIR,
-  DEFAULT_LORE_MANIFEST_PATH,
+  resolveDefaultLoreManifestPath,
   verifyLoreManifest,
 } from "../mirror/lore_manifest/index.js";
 import type { MirrorLoreManifest } from "../mirror/lore_manifest/types.js";
+import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { getMirrorStatus } from "../mirror/status/status.js";
 
 export type MirrorCliCommandName =
@@ -431,6 +431,7 @@ async function executeLegacyToolCommand(
   const result = await runtimeHost.executeTool(tool, payload, {
     user_id: typeof payload.user_id === "string" ? payload.user_id : undefined,
     command,
+    operator_token: buildCliRequestToken(flags),
   });
   return {
     kind: "tool",
@@ -488,11 +489,11 @@ async function executeSyncCommand(
 }
 
 async function executeStatusCommand(
-  flags: Record<string, string | boolean>,
+  runtimeHost: MirrorRuntimeHost,
+  _flags: Record<string, string | boolean>,
 ): Promise<MirrorCliCommandResult> {
   const status = await getMirrorStatus({
-    ndjsonPath: getFlagValue(flags, "ndjson-path"),
-    dbPath: getFlagValue(flags, "db"),
+    runtimeHost,
   });
   return {
     kind: "status",
@@ -504,8 +505,8 @@ async function executeStatusCommand(
 async function executeVerifyLoreCommand(
   flags: Record<string, string | boolean>,
 ): Promise<MirrorCliCommandResult> {
-  const manifestPath = getFlagValue(flags, "manifest") ?? DEFAULT_LORE_MANIFEST_PATH;
-  const directory = getFlagValue(flags, "dir") ?? DEFAULT_LORE_CANONICAL_DIR;
+  const directory = getFlagValue(flags, "dir") ?? resolveDefaultLoreRoot();
+  const manifestPath = getFlagValue(flags, "manifest") ?? resolveDefaultLoreManifestPath(directory);
   const manifestRaw = await readFile(manifestPath, "utf8");
 
   let manifest: MirrorLoreManifest;
@@ -570,6 +571,7 @@ async function executeTaskCommand(
     user_id: userId,
     command: "task",
     action,
+    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "task", action, tool, result };
 }
@@ -617,6 +619,7 @@ async function executeReminderCommand(
     user_id: userId,
     command: "reminder",
     action,
+    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "reminder", action, tool, result };
 }
@@ -656,6 +659,7 @@ async function executeHeartbeatCommand(
     user_id: userId,
     command: "heartbeat",
     action,
+    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "heartbeat", action, tool, result };
 }
@@ -712,6 +716,7 @@ async function executeMonkCommand(
     user_id: userId,
     command: "monk",
     action,
+    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "monk", action, tool, result };
 }
@@ -744,7 +749,7 @@ export async function executeMirrorCliCommand(
   }
 
   if (parsed.command === "status") {
-    return executeStatusCommand(parsed.flags);
+    return executeStatusCommand(deps.runtimeHost, parsed.flags);
   }
 
   if (parsed.command === "verify-lore") {

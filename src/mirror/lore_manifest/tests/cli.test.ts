@@ -113,4 +113,38 @@ describe("runVerifyLoreCli", () => {
     expect(parsed.manifestPath).toBe(manifestPath);
     expect(parsed.directory).toBe(dir);
   });
+
+  it("uses MIRROR_LORE_DIR defaults with the current lore-root manifest layout", async () => {
+    const dir = await createTempDir();
+    const originalLoreDir = process.env.MIRROR_LORE_DIR;
+    process.env.MIRROR_LORE_DIR = dir;
+
+    try {
+      await fs.writeFile(path.join(dir, "TOBY_L001.md"), "alpha\n", "utf8");
+      await fs.writeFile(
+        path.join(dir, "manifest.json"),
+        JSON.stringify({
+          name: "tobyworld-lore-scrolls",
+          base_dir: "lore-scrolls",
+          version: "2026-03-06",
+          files: ["TOBY_L001.md"],
+        }),
+        "utf8",
+      );
+
+      const out: string[] = [];
+      await runVerifyLoreCli({ write: (text) => out.push(text) });
+      const printed = out.join("");
+
+      expect(printed).toContain(`Manifest: ${path.join(dir, "manifest.json")}`);
+      expect(printed).toContain(`Directory: ${dir}`);
+      expect(printed).toContain("Status: VERIFIED");
+    } finally {
+      if (originalLoreDir === undefined) {
+        delete process.env.MIRROR_LORE_DIR;
+      } else {
+        process.env.MIRROR_LORE_DIR = originalLoreDir;
+      }
+    }
+  });
 });

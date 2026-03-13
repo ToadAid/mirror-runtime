@@ -8,13 +8,20 @@ export type FetchLike = typeof fetch;
 export async function executeMirrorProviderRequest(
   request: MirrorProviderRequest,
   config: MirrorProviderConfig,
-  deps: { fetchImpl?: FetchLike } = {},
+  deps: {
+    fetchImpl?: FetchLike;
+    onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+  } = {},
 ): Promise<MirrorProviderResponse> {
   if (!config.url) {
     throw new Error("provider url not configured");
   }
 
   const startedAt = Date.now();
+  deps.onRuntimeEvent?.("provider.call.started", {
+    url: config.url,
+    model: request.model,
+  });
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
 
@@ -34,11 +41,23 @@ export async function executeMirrorProviderRequest(
     const payload = (await response.json()) as MirrorProviderResponse;
     const durationMs = Date.now() - startedAt;
     recordLatency("provider_latency_ms", durationMs);
+    deps.onRuntimeEvent?.("provider.call.finished", {
+      url: config.url,
+      model: request.model,
+      latency_ms: durationMs,
+    });
     logMirrorEvent("provider.call", {
       url: config.url,
       latency_ms: durationMs,
     });
     return payload;
+  } catch (error) {
+    deps.onRuntimeEvent?.("provider.call.failed", {
+      url: config.url,
+      model: request.model,
+      error: String(error),
+    });
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }

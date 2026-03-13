@@ -17,6 +17,7 @@ export type {
   MirrordaemonEventStream,
   MirrordaemonEventSubscription,
   MirrordaemonHealthSummary,
+  MirrordaemonObservability,
   MirrordaemonRuntimeEvent,
   MirrordaemonRuntimeSummary,
   MirrordaemonSession,

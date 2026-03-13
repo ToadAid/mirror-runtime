@@ -1,11 +1,19 @@
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import WebSocket from "ws";
 import { runMirrorCli } from "../mirror-cli/index.js";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
-import { loadMirrorServiceConfig, startMirrorService } from "./index.js";
+import {
+  loadMirrorServiceConfig,
+  MIRROR_RUNTIME_WS_PATH,
+  MIRROR_RUNTIME_WS_PROTOCOL,
+  startMirrorService,
+  type MirrorRuntimeWsEnvelope,
+} from "./index.js";
 
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
@@ -192,6 +200,143 @@ async function requestJsonFromApp(
   });
 }
 
+async function openSseStreamFromApp(app: {
+  handle: (req: unknown, res: unknown) => void;
+}): Promise<{
+  chunks: string[];
+  headers: Map<string, string>;
+  close: () => void;
+}> {
+  const chunks: string[] = [];
+  const headers = new Map<string, string>();
+  let closeListener: (() => void) | undefined;
+
+  const req = {
+    method: "GET",
+    url: "/mirror/runtime/events",
+    path: "/mirror/runtime/events",
+    on(event: string, listener: () => void) {
+      if (event === "close") {
+        closeListener = listener;
+      }
+    },
+    header() {
+      return undefined;
+    },
+  };
+  const res = {
+    setHeader(name: string, value: string) {
+      headers.set(name.toLowerCase(), value);
+    },
+    write(chunk: string) {
+      chunks.push(chunk);
+      return true;
+    },
+    end() {
+      return this;
+    },
+  };
+
+  app.handle(req, res);
+
+  return {
+    chunks,
+    headers,
+    close() {
+      closeListener?.();
+    },
+  };
+}
+
+function readSseEventTypes(chunks: string[]): string[] {
+  return chunks
+    .join("")
+    .split("\n\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const eventLine = entry
+        .split("\n")
+        .find((line) => line.startsWith("event: "))
+        ?.slice("event: ".length);
+      return eventLine ?? "";
+    })
+    .filter(Boolean);
+}
+
+function decodeWebSocketPayload(payload: WebSocket.RawData): string {
+  if (typeof payload === "string") {
+    return payload;
+  }
+  if (Buffer.isBuffer(payload)) {
+    return payload.toString("utf8");
+  }
+  if (Array.isArray(payload)) {
+    return Buffer.concat(payload).toString("utf8");
+  }
+  if (payload instanceof ArrayBuffer) {
+    return Buffer.from(payload).toString("utf8");
+  }
+  return Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).toString("utf8");
+}
+
+async function openRuntimeWebSocket(
+  port: number,
+  query = "",
+): Promise<{
+  socket: WebSocket;
+  messages: MirrorRuntimeWsEnvelope[];
+  waitFor: <T extends MirrorRuntimeWsEnvelope["type"]>(
+    type: T,
+    predicate?: (message: Extract<MirrorRuntimeWsEnvelope, { type: T }>) => boolean,
+  ) => Promise<Extract<MirrorRuntimeWsEnvelope, { type: T }>>;
+}> {
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}${MIRROR_RUNTIME_WS_PATH}${query}`,
+    MIRROR_RUNTIME_WS_PROTOCOL,
+  );
+  const messages: MirrorRuntimeWsEnvelope[] = [];
+
+  socket.on("message", (payload) => {
+    messages.push(JSON.parse(decodeWebSocketPayload(payload)) as MirrorRuntimeWsEnvelope);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    socket.once("open", () => resolve());
+    socket.once("error", (error) => reject(error));
+  });
+
+  const waitFor = async <T extends MirrorRuntimeWsEnvelope["type"]>(
+    type: T,
+    predicate?: (message: Extract<MirrorRuntimeWsEnvelope, { type: T }>) => boolean,
+  ): Promise<Extract<MirrorRuntimeWsEnvelope, { type: T }>> => {
+    const existing = messages.find(
+      (message): message is Extract<MirrorRuntimeWsEnvelope, { type: T }> =>
+        message.type === type && (predicate ? predicate(message) : true),
+    );
+    if (existing) {
+      return existing;
+    }
+
+    return await new Promise<Extract<MirrorRuntimeWsEnvelope, { type: T }>>((resolve) => {
+      const listener = (payload: WebSocket.RawData) => {
+        const message = JSON.parse(decodeWebSocketPayload(payload)) as MirrorRuntimeWsEnvelope;
+        if (message.type === type && (!predicate || predicate(message as never))) {
+          socket.off("message", listener);
+          resolve(message as Extract<MirrorRuntimeWsEnvelope, { type: T }>);
+        }
+      };
+      socket.on("message", listener);
+    });
+  };
+
+  return {
+    socket,
+    messages,
+    waitFor,
+  };
+}
+
 describe("mirror service", () => {
   it("loads config from environment", () => {
     process.env.MIRROR_PORT = "7777";
@@ -370,7 +515,7 @@ describe("mirror service", () => {
       expect((announceRes.body as { peer: { peer_id: string } }).peer.peer_id).toBe("peer-1");
 
       const peersRes = createMockResponse();
-      service.syncHandlers.peers({} as never, peersRes as never);
+      await service.syncHandlers.peers({} as never, peersRes as never);
       expect((peersRes.body as { peers: Array<{ peer_id: string }> }).peers[0]?.peer_id).toBe(
         "peer-1",
       );
@@ -583,6 +728,392 @@ describe("mirror service", () => {
         "/mirror/console/api/tools/mirror.find-scroll",
       );
       expect(sessions.sessions[0]?.metadata.method).toBe("POST");
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("emits daemon runtime events for chat, tool, provider, and sync lifecycle", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+        providerUrl: "http://brain.local/v1/chat/completions",
+        providerAuthToken: "token",
+        nodeId: "events-node",
+      },
+      {
+        fetchImpl: vi.fn(async (_url: string) => {
+          return {
+            ok: true,
+            json: async () => ({
+              id: "resp_events",
+              object: "chat.completion",
+              created: 1,
+              model: "mirror-default",
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: "Cancelled." },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+          } as Response;
+        }),
+      },
+    );
+
+    try {
+      await requestJsonFromApp(service.app, "POST", "/mirror/chat", {
+        body: {
+          session_id: "runtime-chat-session",
+          user_id: "alice",
+          model: "mirror-default",
+          messages: [{ role: "user", content: "What happened to the patience vault?" }],
+        },
+      });
+
+      await requestJsonFromApp(service.app, "POST", "/mirror/tools/mirror.find-scroll", {
+        body: {
+          session_id: "runtime-tool-session",
+          user_id: "alice",
+          query: "patience vault",
+        },
+      });
+
+      await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        body: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+        },
+      });
+
+      const eventTypes = service.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("chat.started");
+      expect(eventTypes).toContain("chat.finished");
+      expect(eventTypes).toContain("provider.call.started");
+      expect(eventTypes).toContain("provider.call.finished");
+      expect(eventTypes).toContain("tool.execution.started");
+      expect(eventTypes).toContain("tool.execution.finished");
+      expect(eventTypes).toContain("sync.announce.started");
+      expect(eventTypes).toContain("sync.announce.finished");
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("streams /mirror/runtime/events with backlog and live request events", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+        providerUrl: "http://brain.local/v1/chat/completions",
+        providerAuthToken: "token",
+        nodeId: "events-stream-node",
+      },
+      {
+        fetchImpl: vi.fn(async () => {
+          return {
+            ok: true,
+            json: async () => ({
+              id: "resp_stream",
+              object: "chat.completion",
+              created: 1,
+              model: "mirror-default",
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: "Cancelled." },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+          } as Response;
+        }),
+      },
+    );
+
+    try {
+      const stream = await openSseStreamFromApp(service.app);
+      expect(stream.headers.get("content-type")).toBe("text/event-stream");
+      expect(stream.headers.get("cache-control")).toBe("no-cache");
+      expect(stream.headers.get("connection")).toBe("keep-alive");
+
+      await requestJsonFromApp(service.app, "POST", "/mirror/chat", {
+        body: {
+          session_id: "stream-chat-session",
+          user_id: "alice",
+          model: "mirror-default",
+          messages: [{ role: "user", content: "What happened to the patience vault?" }],
+        },
+      });
+      await requestJsonFromApp(service.app, "POST", "/mirror/tools/mirror.find-scroll", {
+        body: {
+          session_id: "stream-tool-session",
+          user_id: "alice",
+          query: "patience vault",
+        },
+      });
+      await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        body: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+        },
+      });
+
+      const eventTypes = readSseEventTypes(stream.chunks);
+      expect(eventTypes).toContain("runtime.started");
+      expect(eventTypes).toContain("session.created");
+      expect(eventTypes).toContain("chat.started");
+      expect(eventTypes).toContain("chat.finished");
+      expect(eventTypes).toContain("provider.call.started");
+      expect(eventTypes).toContain("provider.call.finished");
+      expect(eventTypes).toContain("tool.execution.started");
+      expect(eventTypes).toContain("tool.execution.finished");
+      expect(eventTypes).toContain("sync.announce.started");
+      expect(eventTypes).toContain("sync.announce.finished");
+
+      stream.close();
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("streams /mirror/runtime/ws with backlog, live events, and protocol messages", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+        providerUrl: "http://brain.local/v1/chat/completions",
+        providerAuthToken: "token",
+        nodeId: "events-ws-node",
+      },
+      {
+        fetchImpl: vi.fn(async () => {
+          return {
+            ok: true,
+            json: async () => ({
+              id: "resp_ws",
+              object: "chat.completion",
+              created: 1,
+              model: "mirror-default",
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: "Cancelled." },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+          } as Response;
+        }),
+      },
+    );
+
+    try {
+      const ws = await openRuntimeWebSocket(service.port);
+      const hello = await ws.waitFor("hello");
+      expect(hello.protocol).toBe(MIRROR_RUNTIME_WS_PROTOCOL);
+      expect(hello.stream).toBe("runtime.events");
+      expect(hello.node_id).toBe("events-ws-node");
+
+      const subscribed = await ws.waitFor("subscribed");
+      expect(subscribed.stream).toBe("runtime.events");
+      expect(subscribed.backlog_sent).toBeGreaterThan(0);
+      expect(
+        ws.messages.some(
+          (message) => message.type === "runtime.event" && message.event.type === "runtime.started",
+        ),
+      ).toBe(true);
+
+      await requestJsonFromApp(service.app, "POST", "/mirror/chat", {
+        body: {
+          session_id: "ws-chat-session",
+          user_id: "alice",
+          model: "mirror-default",
+          messages: [{ role: "user", content: "What happened to the patience vault?" }],
+        },
+      });
+      await requestJsonFromApp(service.app, "POST", "/mirror/tools/mirror.find-scroll", {
+        body: {
+          session_id: "ws-tool-session",
+          user_id: "alice",
+          query: "patience vault",
+        },
+      });
+      await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        body: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+        },
+      });
+
+      await ws.waitFor(
+        "runtime.event",
+        (message) => message.event.type === "provider.call.finished",
+      );
+      await ws.waitFor(
+        "runtime.event",
+        (message) => message.event.type === "action.execution.finished",
+      );
+      await ws.waitFor(
+        "runtime.event",
+        (message) => message.event.type === "sync.announce.finished",
+      );
+
+      ws.socket.send(JSON.stringify({ type: "ping", ts: "123" }));
+      const pong = await ws.waitFor("pong", (message) => message.ts === "123");
+      expect(pong.connection_id).toBe(hello.connection_id);
+
+      const runtimeEventTypes = ws.messages
+        .filter(
+          (message): message is Extract<MirrorRuntimeWsEnvelope, { type: "runtime.event" }> =>
+            message.type === "runtime.event",
+        )
+        .map((message) => message.event.type);
+      expect(runtimeEventTypes).toContain("chat.started");
+      expect(runtimeEventTypes).toContain("chat.finished");
+      expect(runtimeEventTypes).toContain("provider.call.started");
+      expect(runtimeEventTypes).toContain("provider.call.finished");
+      expect(runtimeEventTypes).toContain("tool.execution.started");
+      expect(runtimeEventTypes).toContain("tool.execution.finished");
+      expect(runtimeEventTypes).toContain("action.execution.started");
+      expect(runtimeEventTypes).toContain("action.execution.finished");
+      expect(runtimeEventTypes).toContain("sync.announce.started");
+      expect(runtimeEventTypes).toContain("sync.announce.finished");
+
+      ws.socket.close();
+      await new Promise<void>((resolve) => {
+        ws.socket.once("close", () => resolve());
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("keeps service, console, daemon, observability, and status surfaces in sync", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+        providerUrl: "http://brain.local/v1/chat/completions",
+        providerAuthToken: "token",
+        nodeId: "truth-node",
+      },
+      {
+        fetchImpl: vi.fn(async () => {
+          return {
+            ok: true,
+            json: async () => ({
+              id: "resp_truth",
+              object: "chat.completion",
+              created: 1,
+              model: "mirror-default",
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: "Cancelled." },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+          } as Response;
+        }),
+      },
+    );
+
+    try {
+      await requestJsonFromApp(service.app, "POST", "/mirror/chat", {
+        body: {
+          session_id: "truth-service-chat",
+          user_id: "alice",
+          model: "mirror-default",
+          messages: [{ role: "user", content: "What happened to the patience vault?" }],
+        },
+      });
+      await requestJsonFromApp(
+        service.app,
+        "POST",
+        "/mirror/console/api/tools/mirror.find-scroll",
+        {
+          body: {
+            session_id: "truth-console-tool",
+            user_id: "alice",
+            query: "patience vault",
+          },
+        },
+      );
+
+      const runtime = (await requestJsonFromApp(service.app, "GET", "/mirror/runtime")) as {
+        node_id: string;
+        sessions: { total: number; open: number };
+      };
+      const sessions = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/runtime/sessions",
+      )) as {
+        sessions: Array<{ session_id: string }>;
+      };
+      const debug = (await requestJsonFromApp(service.app, "GET", "/mirror/runtime/debug")) as {
+        runtime: { node_id: string; sessions: { total: number; open: number } };
+        sessions: Array<{ session_id: string }>;
+        diagnostics: Array<{ event: string }>;
+        recent_events: Array<{ type: string }>;
+      };
+      const metrics = (await requestJsonFromApp(service.app, "GET", "/mirror/metrics")) as {
+        counters: {
+          chat_requests: number;
+          tool_executions: number;
+        };
+      };
+      const diagnostics = (await requestJsonFromApp(service.app, "GET", "/mirror/diagnostics")) as {
+        events: Array<{ event: string }>;
+      };
+      const status = (await requestJsonFromApp(service.app, "GET", "/mirror/status")) as {
+        service: { node_id: string };
+      };
+
+      expect(runtime.node_id).toBe("truth-node");
+      expect(runtime.sessions.total).toBe(2);
+      expect(runtime.sessions.open).toBe(2);
+      expect(sessions.sessions.map((session) => session.session_id).toSorted()).toEqual([
+        "truth-console-tool",
+        "truth-service-chat",
+      ]);
+      expect(debug.runtime.node_id).toBe("truth-node");
+      expect(debug.runtime.sessions.total).toBe(runtime.sessions.total);
+      expect(debug.runtime.sessions.open).toBe(runtime.sessions.open);
+      expect(debug.sessions.map((session) => session.session_id).toSorted()).toEqual(
+        sessions.sessions.map((session) => session.session_id).toSorted(),
+      );
+      expect(metrics.counters.chat_requests).toBe(1);
+      expect(metrics.counters.tool_executions).toBe(1);
+      expect(diagnostics.events.length).toBe(debug.diagnostics.length);
+      expect(diagnostics.events.some((event) => event.event === "chat.pipeline")).toBe(true);
+      expect(diagnostics.events.some((event) => event.event === "tool.execution")).toBe(true);
+      expect(debug.recent_events.some((event) => event.type === "chat.started")).toBe(true);
+      expect(debug.recent_events.some((event) => event.type === "tool.execution.started")).toBe(
+        true,
+      );
+      expect(status.service.node_id).toBe(runtime.node_id);
     } finally {
       await service.shutdown();
     }

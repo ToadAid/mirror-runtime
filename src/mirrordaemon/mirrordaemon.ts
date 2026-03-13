@@ -1,3 +1,5 @@
+import { createMirrorObservabilityContext } from "../mirror-observability/index.js";
+import type { MirrorProviderPlane } from "../mirror-provider/index.js";
 import type { MirrorServiceConfig } from "../mirror-service/config.js";
 import type { MirrorServiceLifecycle } from "../mirror-service/lifecycle.js";
 import { createBootSnapshot } from "./boot_snapshot.js";
@@ -5,6 +7,7 @@ import type {
   CreateMirrordaemonSessionInput,
   MirrordaemonBootSnapshot,
   MirrordaemonEventStream,
+  MirrordaemonObservability,
   MirrordaemonSession,
   TouchMirrordaemonSessionInput,
 } from "./daemon_types.js";
@@ -12,26 +15,33 @@ import { createRuntimeEventStream } from "./event_stream.js";
 import { createSessionRegistry, type MirrordaemonSessionRegistry } from "./session_registry.js";
 
 export type Mirrordaemon = MirrordaemonSessionRegistry &
-  MirrordaemonEventStream & {
+  MirrordaemonEventStream &
+  MirrordaemonObservability & {
     getBootSnapshot: () => MirrordaemonBootSnapshot;
   };
 
 export function createMirrordaemon(params: {
   config: MirrorServiceConfig;
   lifecycle: MirrorServiceLifecycle;
+  providerPlane?: MirrorProviderPlane;
   runtimeStartedAt?: string;
 }): Mirrordaemon {
   const bootSnapshot = createBootSnapshot({
     config: params.config,
     lifecycle: params.lifecycle,
+    providerPlane: params.providerPlane,
     runtimeStartedAt: params.runtimeStartedAt,
   });
+  const observability = createMirrorObservabilityContext();
   const sessions = createSessionRegistry();
   const events = createRuntimeEventStream();
 
   const daemon: Mirrordaemon = {
     getBootSnapshot() {
       return bootSnapshot;
+    },
+    getObservability() {
+      return observability;
     },
     createSession(input?: CreateMirrordaemonSessionInput): MirrordaemonSession {
       const session = sessions.createSession(input);

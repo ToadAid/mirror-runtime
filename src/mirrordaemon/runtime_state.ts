@@ -1,4 +1,3 @@
-import { getMirrorDiagnostics, getMirrorMetrics } from "../mirror-observability/index.js";
 import type {
   MirrordaemonDebugSnapshot,
   MirrordaemonHealthSummary,
@@ -36,6 +35,7 @@ export function buildHealthSummary(
 ): MirrordaemonHealthSummary {
   const runtime = buildRuntimeSummary(daemon, overrides);
   const boot = daemon.getBootSnapshot();
+  const metrics = daemon.getObservability().getMetrics();
 
   return {
     ...runtime,
@@ -49,9 +49,14 @@ export function buildHealthSummary(
     },
     provider: {
       configured: boot.readiness.provider.configured,
+      ready: boot.readiness.provider.ready,
+      active_provider_id: boot.readiness.provider.active_provider_id,
+      total: boot.readiness.provider.total,
+      available: boot.readiness.provider.available,
+      fallback_available: boot.readiness.provider.fallback_available,
     },
     sync: {
-      peers_known: overrides.peersKnown ?? 0,
+      peers_known: overrides.peersKnown ?? metrics.gauges.peers_known ?? 0,
     },
     observability: {
       metrics_available: true,
@@ -64,18 +69,19 @@ export function buildDebugSnapshot(
   daemon: Mirrordaemon,
   overrides: { port?: number; baseUrl?: string | null; peersKnown?: number } = {},
 ): MirrordaemonDebugSnapshot {
+  const observability = daemon.getObservability();
   return {
     runtime: buildRuntimeSummary(daemon, overrides),
     boot_snapshot: daemon.getBootSnapshot(),
     sessions: daemon.listSessions(),
-    diagnostics: getMirrorDiagnostics().events,
+    diagnostics: observability.getDiagnostics().events,
     recent_events: daemon.getRecentEvents(),
   };
 }
 
-export function buildStatusPayload() {
+export function buildStatusPayload(daemon: Mirrordaemon) {
   return {
-    metrics: getMirrorMetrics(),
-    diagnostics: getMirrorDiagnostics(),
+    metrics: daemon.getObservability().getMetrics(),
+    diagnostics: daemon.getObservability().getDiagnostics(),
   };
 }

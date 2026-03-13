@@ -24,6 +24,9 @@ export function getMirrorOperatorToken(): string | null {
 }
 
 export function readMirrorRequestToken(req: express.Request): string | null {
+  if (typeof req.header !== "function") {
+    return null;
+  }
   const headerValue = req.header(OPERATOR_HEADER);
   if (typeof headerValue === "string" && headerValue.trim().length > 0) {
     return headerValue.trim();
@@ -35,11 +38,11 @@ export function requiresMirrorOperatorAuth(tool: MirrorSkillTool): boolean {
   return tool.metadata.access === "operator";
 }
 
-export function authorizeMirrorToolRequest(
-  req: express.Request,
-  tool: MirrorSkillTool,
+export function authorizeMirrorToolAccess(
+  access: MirrorSkillTool["metadata"]["access"],
+  providedToken: string | null,
 ): MirrorGatewayAuthDecision {
-  if (!requiresMirrorOperatorAuth(tool)) {
+  if (access !== "operator") {
     return { allowed: true };
   }
 
@@ -52,8 +55,7 @@ export function authorizeMirrorToolRequest(
     };
   }
 
-  const provided = readMirrorRequestToken(req);
-  if (provided !== expected) {
+  if (providedToken !== expected) {
     return {
       allowed: false,
       statusCode: 403,
@@ -62,4 +64,11 @@ export function authorizeMirrorToolRequest(
   }
 
   return { allowed: true };
+}
+
+export function authorizeMirrorToolRequest(
+  req: express.Request,
+  tool: MirrorSkillTool,
+): MirrorGatewayAuthDecision {
+  return authorizeMirrorToolAccess(tool.metadata.access, readMirrorRequestToken(req));
 }

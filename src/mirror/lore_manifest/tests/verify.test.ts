@@ -128,4 +128,29 @@ describe("verifyLoreManifest", () => {
       mismatched: [],
     });
   });
+
+  it("supports current file-list manifests from the lore root", async () => {
+    const dir = await createTempDir();
+    const scrollPath = path.join(dir, "TOBY_L001.md");
+    const indexPath = path.join(dir, "INDEX.md");
+    await fs.writeFile(scrollPath, "alpha\n", "utf8");
+    await fs.writeFile(indexPath, "index\n", "utf8");
+
+    const manifest: MirrorLoreManifest = {
+      name: "tobyworld-lore-scrolls",
+      base_dir: "lore-scrolls",
+      version: "2026-03-06",
+      files: ["TOBY_L001.md", "INDEX.md"],
+    };
+
+    const report = await verifyLoreManifest({ manifest, baseDir: dir });
+
+    expect(report).toEqual({
+      ok: true,
+      checked: 2,
+      matched: 2,
+      missing: [],
+      mismatched: [],
+    });
+  });
 });

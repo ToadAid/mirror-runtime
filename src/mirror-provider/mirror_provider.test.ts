@@ -47,6 +47,7 @@ describe("mirror provider runtime", () => {
         }),
       } as Response;
     });
+    const onRuntimeEvent = vi.fn();
 
     const response = await executeMirrorProviderRequest(
       {
@@ -60,10 +61,24 @@ describe("mirror provider runtime", () => {
         url: "http://brain.local/v1/chat/completions",
         authToken: "token",
       },
-      { fetchImpl },
+      { fetchImpl, onRuntimeEvent },
     );
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(response.choices[0]?.message.content).toBe("ok");
+    expect(onRuntimeEvent).toHaveBeenCalledWith(
+      "provider.call.started",
+      expect.objectContaining({
+        url: "http://brain.local/v1/chat/completions",
+        model: "test-model",
+      }),
+    );
+    expect(onRuntimeEvent).toHaveBeenCalledWith(
+      "provider.call.finished",
+      expect.objectContaining({
+        url: "http://brain.local/v1/chat/completions",
+        model: "test-model",
+      }),
+    );
   });
 });

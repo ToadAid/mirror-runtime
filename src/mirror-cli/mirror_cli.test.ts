@@ -400,8 +400,31 @@ describe("mirror cli", () => {
     ]);
 
     expect(statusOutput).toContain("Mirror Runtime");
-    expect(statusOutput).toContain("telemetry:");
+    expect(statusOutput).toContain("runtime:");
+    expect(statusOutput).toContain("service:");
     expect(verifyOutput).toContain("Lore Verification");
+    expect(verifyOutput).toContain("Status: VERIFIED");
+  });
+
+  it("uses MIRROR_LORE_DIR defaults for verify-lore against the current lore root", async () => {
+    const loreDir = await createTempLoreDir();
+    process.env.MIRROR_LORE_DIR = loreDir;
+    await fs.writeFile(path.join(loreDir, "TOBY_L001.md"), "alpha\n", "utf8");
+    await fs.writeFile(
+      path.join(loreDir, "manifest.json"),
+      JSON.stringify({
+        name: "tobyworld-lore-scrolls",
+        base_dir: "lore-scrolls",
+        version: "2026-03-06",
+        files: ["TOBY_L001.md"],
+      }),
+      "utf8",
+    );
+
+    const verifyOutput = await runMirrorCli(["mirror", "verify-lore"]);
+
+    expect(verifyOutput).toContain(`Manifest: ${path.join(loreDir, "manifest.json")}`);
+    expect(verifyOutput).toContain(`Directory: ${loreDir}`);
     expect(verifyOutput).toContain("Status: VERIFIED");
   });
 
@@ -412,11 +435,13 @@ describe("mirror cli", () => {
     const statusOutput = JSON.parse(await runMirrorCli(["mirror", "status", "--json"])) as {
       ok: boolean;
       command: string;
-      status: { telemetry: object; storage: object };
+      status: { runtime: object; service: object; observability: object };
     };
     expect(statusOutput.ok).toBe(true);
     expect(statusOutput.command).toBe("status");
-    expect(typeof statusOutput.status.telemetry).toBe("object");
+    expect(typeof statusOutput.status.runtime).toBe("object");
+    expect(typeof statusOutput.status.service).toBe("object");
+    expect(typeof statusOutput.status.observability).toBe("object");
 
     const verifyOutput = JSON.parse(
       await runMirrorCli([
@@ -834,6 +859,72 @@ describe("mirror cli", () => {
           (session) => session.metadata.command === "monk" && session.metadata.action === "context",
         ),
       ).toBe(true);
+
+      const eventTypes = runtimeHost.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("chat.started");
+      expect(eventTypes).toContain("chat.finished");
+      expect(eventTypes).toContain("provider.call.started");
+      expect(eventTypes).toContain("provider.call.finished");
+      expect(eventTypes).toContain("tool.execution.started");
+      expect(eventTypes).toContain("tool.execution.finished");
+      expect(eventTypes).toContain("sync.announce.started");
+      expect(eventTypes).toContain("sync.announce.finished");
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
+  it("reports CLI status from the same daemon-backed runtime truth after command execution", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_USER_WORKSPACE_DIR = await createTempWorkspaceUsersRoot();
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+
+    try {
+      await runMirrorCli(["mirror", "find", "patience vault"], { runtimeHost });
+      await runMirrorCli(
+        ["mirror", "task", "create", "--user-id", "alice", "--title", "Review runtime truth"],
+        { runtimeHost },
+      );
+
+      const output = JSON.parse(
+        await runMirrorCli(["mirror", "status", "--json"], { runtimeHost }),
+      ) as {
+        ok: boolean;
+        command: string;
+        status: {
+          runtime: { node_id: string; sessions: { total: number; open: number } };
+          sync: { node_id: string };
+          observability: {
+            metrics: {
+              counters: {
+                tool_executions: number;
+              };
+            };
+            diagnostics_events: number;
+          };
+        };
+      };
+
+      expect(output.ok).toBe(true);
+      expect(output.command).toBe("status");
+      expect(output.status.runtime.node_id).toBe(
+        runtimeHost.daemon.getBootSnapshot().config.node_id,
+      );
+      expect(output.status.sync.node_id).toBe(runtimeHost.daemon.getBootSnapshot().config.node_id);
+      expect(output.status.runtime.sessions.total).toBe(runtimeHost.daemon.listSessions().length);
+      expect(output.status.runtime.sessions.open).toBe(
+        runtimeHost.daemon.listSessions().filter((session) => session.status === "open").length,
+      );
+      expect(output.status.observability.metrics.counters.tool_executions).toBe(
+        runtimeHost.daemon.getObservability().getMetrics().counters.tool_executions,
+      );
+      expect(output.status.observability.diagnostics_events).toBe(
+        runtimeHost.daemon.getObservability().getDiagnostics().events.length,
+      );
     } finally {
       await runtimeHost.shutdown();
     }

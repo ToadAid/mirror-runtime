@@ -2,6 +2,7 @@ export {
   prepareMirrorChatRequest,
   executeMirrorChatRequest,
   executeMirrorChatWithProvider,
+  executeMirrorChatWithProviderPlane,
 } from "./mirror_chat_engine.js";
 export type { MirrorChatRequest, MirrorChatMessage } from "./mirror_request.js";
 export type {
