@@ -2,9 +2,18 @@
 
 ## Mirror Runtime Overview
 
-Mirror runtime is a diagnostics and telemetry layer for OpenClaw runtime behavior.
+Mirror Runtime is a standalone Mirror-operated runtime surface.
 
-It provides operators with read-only inspection tools for:
+Primary operator paths:
+
+- `mirror ...` for the standalone Mirror CLI
+- `/mirror/*` for the standalone Mirror service routes
+
+Compatibility-only path:
+
+- `openclaw mirror ...` for legacy diagnostics and telemetry workflows
+
+Mirror provides operators with read-only inspection tools for:
 
 - Runtime diagnostics and health checks
 - Telemetry capture and event inspection
@@ -17,7 +26,18 @@ These tools are intended to inspect Mirror runtime behavior without modifying ru
 
 ### doctor
 
-Command:
+Canonical standalone entrypoint:
+
+```bash
+mirror help
+```
+
+Purpose:
+
+- Show the standalone Mirror command surface
+- Point operators to the canonical Mirror runtime entrypoints
+
+Compatibility command:
 
 ```bash
 openclaw mirror doctor
@@ -25,10 +45,7 @@ openclaw mirror doctor
 
 Purpose:
 
-- Run runtime health checks
-- Verify telemetry configuration
-- Verify SQLite index accessibility
-- Confirm environment configuration
+- Run compatibility diagnostics for legacy telemetry/operator flows
 
 Options:
 
@@ -38,25 +55,33 @@ Options:
 
 ### status
 
-Command:
+Primary standalone command:
+
+```bash
+mirror status
+```
+
+Purpose:
+
+- Provide a quick standalone runtime summary
+- Show telemetry and storage configuration state
+- Confirm the canonical Mirror operator surface is reachable
+
+Options:
+
+- `--json`
+- `--ndjson-path <path>`
+- `--db <path>`
+
+Compatibility wrapper:
 
 ```bash
 openclaw mirror status
 ```
 
-Purpose:
-
-- Provide a quick runtime summary
-- Show runtime identity context
-- Show telemetry configuration state
-
-Options:
-
-- `--json`
-
 ### passport
 
-Command:
+Compatibility command:
 
 ```bash
 openclaw mirror passport
@@ -73,7 +98,7 @@ Options:
 
 ### telemetry tail
 
-Command:
+Compatibility command:
 
 ```bash
 openclaw mirror telemetry tail
@@ -91,7 +116,7 @@ Options:
 
 ### telemetry replay
 
-Command:
+Compatibility-only command:
 
 ```bash
 openclaw mirror telemetry replay
@@ -103,7 +128,7 @@ Purpose:
 
 ### telemetry index
 
-Command:
+Compatibility-only command:
 
 ```bash
 openclaw mirror telemetry index
@@ -115,7 +140,7 @@ Purpose:
 
 ### telemetry query
 
-Command:
+Compatibility-only command:
 
 ```bash
 openclaw mirror telemetry query
@@ -127,7 +152,7 @@ Purpose:
 
 ### telemetry reflect
 
-Command:
+Compatibility-only command:
 
 ```bash
 openclaw mirror telemetry reflect
@@ -136,6 +161,31 @@ openclaw mirror telemetry reflect
 Purpose:
 
 - Produce summarized runtime reflection from telemetry data
+
+### verify-lore
+
+Primary standalone command:
+
+```bash
+mirror verify-lore
+```
+
+Purpose:
+
+- Verify canonical lore files against a lore manifest
+- Support canon validation on the standalone Mirror surface
+
+Options:
+
+- `--manifest <path>`
+- `--dir <path>`
+- `--json`
+
+Compatibility wrapper:
+
+```bash
+openclaw mirror verify-lore
+```
 
 ## Environment Variables
 
@@ -170,7 +220,21 @@ Purpose:
 
 ## Example Workflow
 
-Basic runtime check workflow:
+Standalone Mirror workflow:
+
+```bash
+mirror help
+mirror status --json
+mirror serve --json
+mirror verify-lore --json
+mirror task list --user-id local-user --json
+mirror reminder due --user-id local-user --json
+mirror heartbeat evaluate --user-id local-user --json
+mirror monk context --user-id local-user --json
+mirror monk resume --user-id local-user --json
+```
+
+Compatibility diagnostics workflow:
 
 ```bash
 openclaw mirror doctor
@@ -178,7 +242,7 @@ openclaw mirror status
 openclaw mirror telemetry tail
 ```
 
-Example debugging workflow:
+Compatibility debugging workflow:
 
 ```bash
 openclaw mirror telemetry index

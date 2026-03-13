@@ -1,7 +1,7 @@
 {
   "name": "openclaw",
   "version": "2026.2.25",
-  "description": "Multi-channel AI gateway with extensible messaging integrations",
+  "description": "Mirror Runtime standalone product surface with compatibility wrappers",
   "keywords": [],
   "homepage": "https://github.com/openclaw/openclaw#readme",
   "bugs": {
@@ -14,6 +14,7 @@
     "url": "git+https://github.com/openclaw/openclaw.git"
   },
   "bin": {
+    "mirror": "mirror.mjs",
     "openclaw": "openclaw.mjs"
   },
   "directories": {
@@ -23,6 +24,7 @@
   "files": [
     "CHANGELOG.md",
     "LICENSE",
+    "mirror.mjs",
     "openclaw.mjs",
     "README-header.png",
     "README.md",
@@ -98,6 +100,7 @@
     "mac:open": "open dist/OpenClaw.app",
     "mac:package": "bash scripts/package-mac-app.sh",
     "mac:restart": "bash scripts/restart-mac.sh",
+    "mirror": "node mirror.mjs",
     "moltbot:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "openclaw": "node scripts/run-node.mjs",
     "openclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",

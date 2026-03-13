@@ -75,7 +75,7 @@ const entries: SubCliEntry[] = [
   },
   {
     name: "mirror",
-    description: "Mirror diagnostics and telemetry tools",
+    description: "Mirror compatibility commands (standalone runtime ships as `mirror`)",
     hasSubcommands: true,
     register: async (program) => {
       const mod = await import("../../mirror/telemetry_tail/cli.js");

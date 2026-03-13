@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { ModelDefinitionConfig } from "../../config/types.models.js";
 import { withFetchPreconnect } from "../../test-utils/fetch-mock.js";
+import { getRequestBodyString } from "../../test/request_init.js";
 import { createOpenClawCodingTools } from "../pi-tools.js";
 import { createHostSandboxFsBridge } from "../test-helpers/host-sandbox-fs-bridge.js";
 import { createUnsafeMountedSandbox } from "../test-helpers/unsafe-mounted-sandbox.js";
@@ -656,8 +657,9 @@ describe("image tool MiniMax VLM routing", () => {
     expect(String((init?.headers as Record<string, string>)?.Authorization)).toBe(
       "Bearer minimax-test",
     );
-    expect(String(init?.body)).toContain('"prompt":"Describe the image."');
-    expect(String(init?.body)).toContain('"image_url":"data:image/png;base64,');
+    const body = getRequestBodyString(init);
+    expect(body).toContain('"prompt":"Describe the image."');
+    expect(body).toContain('"image_url":"data:image/png;base64,');
 
     const text = res.content?.find((b) => b.type === "text")?.text ?? "";
     expect(text).toBe("ok");

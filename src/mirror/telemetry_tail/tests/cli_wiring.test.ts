@@ -48,11 +48,13 @@ describe("mirror cli wiring", () => {
 
     const doctor = getSubcommand(mirror, "doctor");
     const status = getSubcommand(mirror, "status");
+    const passport = getSubcommand(mirror, "passport");
     const tail = getSubcommand(telemetry, "tail");
     expect(doctor).toBeDefined();
     expect(status).toBeDefined();
+    expect(passport).toBeDefined();
     expect(tail).toBeDefined();
-    if (!doctor || !status || !tail) {
+    if (!doctor || !status || !passport || !tail) {
       throw new Error("expected mirror doctor/status/tail commands to be registered");
     }
 
@@ -64,5 +66,10 @@ describe("mirror cli wiring", () => {
     expect(statusOptions.has("--json")).toBe(true);
     expect(tailOptions.has("--json")).toBe(true);
     expect(tailOptions.has("--limit")).toBe(true);
+    expect(mirror.description()).toContain("compatibility");
+    expect(doctor.description()).toContain("Compatibility-only");
+    expect(status.description()).toContain("Compatibility wrapper");
+    expect(passport.description()).toContain("Compatibility-only");
+    expect(tail.description()).toContain("Compatibility-only");
   });
 });

@@ -1,3 +1,5 @@
+// Archived builtin retained for skill-engine tests only.
+// This is not part of the canonical standalone Mirror product surface.
 import type { MirrorSkill } from "../../types.js";
 
 export const mirrorEchoSkill: MirrorSkill = {

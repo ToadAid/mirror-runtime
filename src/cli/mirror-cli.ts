@@ -1,3 +1,9 @@
+/**
+ * Compatibility-only OpenClaw wrapper for legacy `openclaw mirror ...` diagnostics commands.
+ * Keep long-term only for explicitly supported OpenClaw-side admin flows.
+ *
+ * Canonical standalone operator paths live under the `mirror` binary and `/mirror/*` service.
+ */
 import type { Command } from "commander";
 import { runMirrorTelemetryTailCli } from "../mirror/telemetry_tail/cli.js";
 
@@ -10,8 +16,12 @@ function parseLimit(raw: string): number {
 }
 
 export function registerMirrorCli(program: Command): void {
-  const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
-  const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
+  const mirror = program
+    .command("mirror")
+    .description("Compatibility-only Mirror diagnostics and telemetry tools");
+  const telemetry = mirror
+    .command("telemetry")
+    .description("Compatibility-only Mirror telemetry commands");
 
   telemetry
     .command("tail")
