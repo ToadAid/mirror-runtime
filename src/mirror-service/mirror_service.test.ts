@@ -134,9 +134,23 @@ async function requestJsonFromApp(
   app: { handle: (req: unknown, res: unknown) => void },
   method: string,
   url: string,
+  options: {
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<unknown> {
   return await new Promise((resolve, reject) => {
-    const req = { method, url, headers: {} };
+    const reqHeaders = { ...options.headers };
+    const req = {
+      method,
+      url,
+      headers: reqHeaders,
+      body: options.body,
+      header(name: string) {
+        const value = reqHeaders[name] ?? reqHeaders[name.toLowerCase()];
+        return typeof value === "string" ? value : undefined;
+      },
+    };
     const headers = new Map<string, string>();
     const res = {
       statusCode: 200,
@@ -449,6 +463,126 @@ describe("mirror service", () => {
       expect(debug.runtime.node_id).toBe("runtime-node");
       expect(debug.boot_snapshot.config.node_id).toBe("runtime-node");
       expect(debug.sessions[0]?.session_id).toBe("session-1");
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("tracks console chat requests in daemon sessions", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+        providerUrl: "http://brain.local/v1/chat/completions",
+        providerAuthToken: "token",
+        nodeId: "console-runtime-node",
+      },
+      {
+        fetchImpl: vi.fn(async (_url: string, init?: RequestInit) => {
+          const body = parseRequestBodyJson<{
+            messages: Array<{ role: string; content: string }>;
+          }>(init);
+          expect(body.messages[0]?.content).toContain("Mirror canon context:");
+          return {
+            ok: true,
+            json: async () => ({
+              id: "resp_console_chat",
+              object: "chat.completion",
+              created: 1,
+              model: "mirror-default",
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: "Cancelled." },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+          } as Response;
+        }),
+      },
+    );
+
+    try {
+      await requestJsonFromApp(service.app, "POST", "/mirror/console/api/chat", {
+        body: {
+          session_id: "console-chat-session",
+          user_id: "alice",
+          model: "mirror-default",
+          messages: [{ role: "user", content: "What happened to the patience vault?" }],
+        },
+      });
+
+      const sessions = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/runtime/sessions",
+      )) as {
+        sessions: Array<{
+          session_id: string;
+          user_id?: string;
+          metadata: { path?: string; method?: string };
+        }>;
+      };
+
+      expect(sessions.sessions[0]?.session_id).toBe("console-chat-session");
+      expect(sessions.sessions[0]?.user_id).toBe("alice");
+      expect(sessions.sessions[0]?.metadata.path).toBe("/mirror/console/api/chat");
+      expect(sessions.sessions[0]?.metadata.method).toBe("POST");
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("tracks console tool requests in daemon sessions", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "console-tool-node",
+    });
+
+    try {
+      await requestJsonFromApp(
+        service.app,
+        "POST",
+        "/mirror/console/api/tools/mirror.find-scroll",
+        {
+          body: {
+            session_id: "console-tool-session",
+            user_id: "alice",
+            query: "patience vault",
+          },
+        },
+      );
+
+      const sessions = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/runtime/sessions",
+      )) as {
+        sessions: Array<{
+          session_id: string;
+          user_id?: string;
+          metadata: { path?: string; method?: string };
+        }>;
+      };
+
+      expect(sessions.sessions[0]?.session_id).toBe("console-tool-session");
+      expect(sessions.sessions[0]?.user_id).toBe("alice");
+      expect(sessions.sessions[0]?.metadata.path).toBe(
+        "/mirror/console/api/tools/mirror.find-scroll",
+      );
+      expect(sessions.sessions[0]?.metadata.method).toBe("POST");
     } finally {
       await service.shutdown();
     }

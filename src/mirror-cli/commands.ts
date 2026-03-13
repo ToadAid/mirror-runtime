@@ -3,7 +3,7 @@ import { authorizeMirrorToolRequest } from "../mirror-gateway/auth.js";
 import type { MirrorGateway } from "../mirror-gateway/index.js";
 import type { MirrorProviderConfig } from "../mirror-provider/index.js";
 import type { MirrorChatResponse } from "../mirror-runtime/index.js";
-import type { MirrorService } from "../mirror-service/index.js";
+import type { MirrorRuntimeHost, MirrorService } from "../mirror-service/index.js";
 import {
   DEFAULT_LORE_CANONICAL_DIR,
   DEFAULT_LORE_MANIFEST_PATH,
@@ -237,19 +237,6 @@ function buildCliRequestToken(flags: Record<string, string | boolean>): string |
   return typeof envToken === "string" && envToken.trim().length > 0 ? envToken.trim() : undefined;
 }
 
-function resolveMirrorServiceUrl(flags: Record<string, string | boolean>): string {
-  const explicit = getFlagValue(flags, "service-url");
-  if (explicit) {
-    return explicit.replace(/\/+$/, "");
-  }
-  const envServiceUrl = process.env.MIRROR_SERVICE_URL ?? process.env.MIRROR_BASE_URL;
-  if (typeof envServiceUrl === "string" && envServiceUrl.trim().length > 0) {
-    return envServiceUrl.trim().replace(/\/+$/, "");
-  }
-  const port = process.env.MIRROR_PORT?.trim() || "7777";
-  return `http://127.0.0.1:${port}`;
-}
-
 function resolveUserId(flags: Record<string, string | boolean>): string | undefined {
   const explicit = getFlagValue(flags, "user-id");
   if (explicit) {
@@ -396,7 +383,7 @@ function requireText(value: string | undefined, label: string): string {
 }
 
 async function executeLegacyToolCommand(
-  gateway: MirrorGateway,
+  runtimeHost: MirrorRuntimeHost,
   command: Exclude<
     MirrorCliCommandName,
     "chat" | "serve" | "sync" | "task" | "reminder" | "heartbeat" | "monk"
@@ -405,7 +392,7 @@ async function executeLegacyToolCommand(
   positional: string[],
 ): Promise<MirrorCliCommandResult> {
   const tool = TOOL_BY_COMMAND[command];
-  authorizeToolOrThrow(gateway, tool, flags);
+  authorizeToolOrThrow(runtimeHost.gateway, tool, flags);
 
   let payload: Record<string, unknown>;
   switch (command) {
@@ -441,7 +428,10 @@ async function executeLegacyToolCommand(
       break;
   }
 
-  const result = await gateway.registry.executeTool(tool, payload);
+  const result = await runtimeHost.executeTool(tool, payload, {
+    user_id: typeof payload.user_id === "string" ? payload.user_id : undefined,
+    command,
+  });
   return {
     kind: "tool",
     command,
@@ -451,62 +441,37 @@ async function executeLegacyToolCommand(
 }
 
 async function executeSyncCommand(
+  runtimeHost: MirrorRuntimeHost,
   action: MirrorCliActionName,
   flags: Record<string, string | boolean>,
-  fetchImpl: typeof fetch = fetch,
 ): Promise<MirrorCliCommandResult> {
-  const baseUrl = resolveMirrorServiceUrl(flags);
-  const requestJson = async (
-    pathname: string,
-    init?: RequestInit,
-  ): Promise<Record<string, unknown>> => {
-    const response = await fetchImpl(`${baseUrl}${pathname}`, init);
-    const payload = (await response.json()) as Record<string, unknown>;
-    if (!response.ok) {
-      throw new Error(
-        typeof payload.error === "string"
-          ? payload.error
-          : `Mirror sync request failed: ${response.status}`,
-      );
-    }
-    return payload;
-  };
-
   let result: Record<string, unknown>;
   switch (action) {
     case "peers":
-      result = await requestJson("/mirror-sync/peers");
+      result = await runtimeHost.executeSyncAction("peers");
       break;
     case "updates": {
       const paths = getFlagValue(flags, "paths");
-      const search = new URLSearchParams();
-      if (paths) {
-        search.set("include_content", "1");
-        search.set("paths", paths);
-      }
-      result = await requestJson(
-        `/mirror-sync/updates${search.size > 0 ? `?${search.toString()}` : ""}`,
-      );
+      result = await runtimeHost.executeSyncAction("updates", {
+        requested_paths: paths
+          ? paths
+              .split(",")
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+          : [],
+      });
       break;
     }
     case "announce":
-      result = await requestJson("/mirror-sync/announce", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          peer_id: requireText(getFlagValue(flags, "peer-id"), "sync announce --peer-id"),
-          base_url: requireText(getFlagValue(flags, "base-url"), "sync announce --base-url"),
-        }),
+      result = await runtimeHost.executeSyncAction("announce", {
+        peer_id: requireText(getFlagValue(flags, "peer-id"), "sync announce --peer-id"),
+        base_url: requireText(getFlagValue(flags, "base-url"), "sync announce --base-url"),
       });
       break;
     case "pull":
-      result = await requestJson("/mirror-sync/pull", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          peer_id: getFlagValue(flags, "peer-id"),
-          base_url: getFlagValue(flags, "base-url"),
-        }),
+      result = await runtimeHost.executeSyncAction("pull", {
+        peer_id: getFlagValue(flags, "peer-id"),
+        base_url: getFlagValue(flags, "base-url"),
       });
       break;
     default:
@@ -569,7 +534,7 @@ async function executeVerifyLoreCommand(
 }
 
 async function executeTaskCommand(
-  gateway: MirrorGateway,
+  runtimeHost: MirrorRuntimeHost,
   action: MirrorCliActionName,
   flags: Record<string, string | boolean>,
 ): Promise<MirrorCliCommandResult> {
@@ -577,7 +542,7 @@ async function executeTaskCommand(
   if (!tool) {
     throw new Error(`Unsupported mirror task action: ${action}`);
   }
-  authorizeToolOrThrow(gateway, tool, flags);
+  authorizeToolOrThrow(runtimeHost.gateway, tool, flags);
 
   const userId = requireUserId(flags, `task ${action}`);
   const payload: Record<string, unknown> = { user_id: userId };
@@ -601,12 +566,16 @@ async function executeTaskCommand(
     payload.task_id = requireText(getFlagValue(flags, "id"), `task ${action} --id`);
   }
 
-  const result = await gateway.registry.executeTool(tool, payload);
+  const result = await runtimeHost.executeTool(tool, payload, {
+    user_id: userId,
+    command: "task",
+    action,
+  });
   return { kind: "tool", command: "task", action, tool, result };
 }
 
 async function executeReminderCommand(
-  gateway: MirrorGateway,
+  runtimeHost: MirrorRuntimeHost,
   action: MirrorCliActionName,
   flags: Record<string, string | boolean>,
 ): Promise<MirrorCliCommandResult> {
@@ -615,7 +584,7 @@ async function executeReminderCommand(
   if (!tool) {
     throw new Error(`Unsupported mirror reminder action: ${action}`);
   }
-  authorizeToolOrThrow(gateway, tool, flags);
+  authorizeToolOrThrow(runtimeHost.gateway, tool, flags);
 
   const userId = requireUserId(flags, `reminder ${action}`);
   const payload: Record<string, unknown> = { user_id: userId };
@@ -644,12 +613,16 @@ async function executeReminderCommand(
     payload.now = getFlagValue(flags, "now");
   }
 
-  const result = await gateway.registry.executeTool(tool, payload);
+  const result = await runtimeHost.executeTool(tool, payload, {
+    user_id: userId,
+    command: "reminder",
+    action,
+  });
   return { kind: "tool", command: "reminder", action, tool, result };
 }
 
 async function executeHeartbeatCommand(
-  gateway: MirrorGateway,
+  runtimeHost: MirrorRuntimeHost,
   action: MirrorCliActionName,
   flags: Record<string, string | boolean>,
 ): Promise<MirrorCliCommandResult> {
@@ -658,7 +631,7 @@ async function executeHeartbeatCommand(
   if (!tool) {
     throw new Error(`Unsupported mirror heartbeat action: ${action}`);
   }
-  authorizeToolOrThrow(gateway, tool, flags);
+  authorizeToolOrThrow(runtimeHost.gateway, tool, flags);
 
   const userId = requireUserId(flags, `heartbeat ${action}`);
   const payload: Record<string, unknown> = { user_id: userId };
@@ -679,12 +652,16 @@ async function executeHeartbeatCommand(
     payload.now = getFlagValue(flags, "now");
   }
 
-  const result = await gateway.registry.executeTool(tool, payload);
+  const result = await runtimeHost.executeTool(tool, payload, {
+    user_id: userId,
+    command: "heartbeat",
+    action,
+  });
   return { kind: "tool", command: "heartbeat", action, tool, result };
 }
 
 async function executeMonkCommand(
-  gateway: MirrorGateway,
+  runtimeHost: MirrorRuntimeHost,
   action: MirrorCliActionName,
   flags: Record<string, string | boolean>,
 ): Promise<MirrorCliCommandResult> {
@@ -692,7 +669,7 @@ async function executeMonkCommand(
   if (!tool) {
     throw new Error(`Unsupported mirror monk action: ${action}`);
   }
-  authorizeToolOrThrow(gateway, tool, flags);
+  authorizeToolOrThrow(runtimeHost.gateway, tool, flags);
 
   const userId = requireUserId(flags, `monk ${action}`);
   const payload: Record<string, unknown> = { user_id: userId };
@@ -731,7 +708,11 @@ async function executeMonkCommand(
     payload.context_notes = parseTags({ tags: flags["context-notes"] ?? flags.tags });
   }
 
-  const result = await gateway.registry.executeTool(tool, payload);
+  const result = await runtimeHost.executeTool(tool, payload, {
+    user_id: userId,
+    command: "monk",
+    action,
+  });
   return { kind: "tool", command: "monk", action, tool, result };
 }
 
@@ -739,6 +720,7 @@ export async function executeMirrorCliCommand(
   parsed: MirrorCliParsedArgs,
   deps: {
     gateway: MirrorGateway;
+    runtimeHost: MirrorRuntimeHost;
     provider?: MirrorProviderConfig;
     fetchImpl?: typeof fetch;
     startService?: (opts: { port?: number }) => Promise<MirrorService>;
@@ -758,7 +740,7 @@ export async function executeMirrorCliCommand(
   }
 
   if (parsed.command === "sync") {
-    return executeSyncCommand(parsed.action as MirrorCliActionName, parsed.flags, deps.fetchImpl);
+    return executeSyncCommand(deps.runtimeHost, parsed.action as MirrorCliActionName, parsed.flags);
   }
 
   if (parsed.command === "status") {
@@ -772,7 +754,7 @@ export async function executeMirrorCliCommand(
   if (parsed.command === "chat") {
     const message = requireText(parsed.positional.join(" "), "chat");
     const provider = buildProviderConfig(parsed.flags, deps.provider);
-    const response = await deps.gateway.executeChatWithProvider(
+    const response = await deps.runtimeHost.executeChatWithProvider(
       {
         model: getFlagValue(parsed.flags, "model") ?? "mirror-default",
         user_id: resolveUserId(parsed.flags),
@@ -794,21 +776,30 @@ export async function executeMirrorCliCommand(
     parsed.command === "forge" ||
     parsed.command === "commit"
   ) {
-    return executeLegacyToolCommand(deps.gateway, parsed.command, parsed.flags, parsed.positional);
+    return executeLegacyToolCommand(
+      deps.runtimeHost,
+      parsed.command,
+      parsed.flags,
+      parsed.positional,
+    );
   }
 
   if (parsed.command === "task") {
-    return executeTaskCommand(deps.gateway, parsed.action as MirrorCliActionName, parsed.flags);
+    return executeTaskCommand(deps.runtimeHost, parsed.action as MirrorCliActionName, parsed.flags);
   }
   if (parsed.command === "reminder") {
-    return executeReminderCommand(deps.gateway, parsed.action as MirrorCliActionName, parsed.flags);
-  }
-  if (parsed.command === "heartbeat") {
-    return executeHeartbeatCommand(
-      deps.gateway,
+    return executeReminderCommand(
+      deps.runtimeHost,
       parsed.action as MirrorCliActionName,
       parsed.flags,
     );
   }
-  return executeMonkCommand(deps.gateway, parsed.action as MirrorCliActionName, parsed.flags);
+  if (parsed.command === "heartbeat") {
+    return executeHeartbeatCommand(
+      deps.runtimeHost,
+      parsed.action as MirrorCliActionName,
+      parsed.flags,
+    );
+  }
+  return executeMonkCommand(deps.runtimeHost, parsed.action as MirrorCliActionName, parsed.flags);
 }

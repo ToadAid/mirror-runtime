@@ -64,6 +64,15 @@ export type MirrorHealthStatus = {
   };
 };
 
+function shouldTrackMirrorSession(pathname: string): boolean {
+  return (
+    pathname.startsWith("/mirror/chat") ||
+    pathname.startsWith("/mirror/tools") ||
+    pathname.startsWith("/mirror/console/api/chat") ||
+    pathname.startsWith("/mirror/console/api/tools")
+  );
+}
+
 export async function startMirrorService(
   overrides: Partial<MirrorServiceConfig> = {},
   deps: { fetchImpl?: FetchLike } = {},
@@ -119,7 +128,7 @@ export async function startMirrorService(
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => {
-    if (!req.path.startsWith("/mirror/chat") && !req.path.startsWith("/mirror/tools")) {
+    if (!shouldTrackMirrorSession(req.path)) {
       next();
       return;
     }

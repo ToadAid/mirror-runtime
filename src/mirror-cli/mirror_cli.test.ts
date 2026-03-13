@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
+import { createMirrorRuntimeHost } from "../mirror-service/index.js";
 import { sha256File } from "../mirror/lore_manifest/hash.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import { runMirrorCli } from "./index.js";
@@ -441,85 +442,14 @@ describe("mirror cli", () => {
   });
 
   it("supports sync commands in human-readable mode", async () => {
-    const output = await runMirrorCli(["mirror", "sync", "peers"], {
-      fetchImpl: vi.fn(
-        async () =>
-          ({
-            ok: true,
-            json: async () => ({
-              peers: [{ peer_id: "peer-1", base_url: "http://127.0.0.1:7999" }],
-            }),
-          }) as Response,
-      ),
-    });
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
 
-    expect(output).toContain("Mirror Sync peers");
-    expect(output).toContain("peer-1");
-  });
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
 
-  it("returns stable JSON shapes for sync commands", async () => {
-    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith("/mirror-sync/peers")) {
-        return {
-          ok: true,
-          json: async () => ({
-            peers: [{ peer_id: "peer-1", base_url: "http://127.0.0.1:7999" }],
-          }),
-        } as Response;
-      }
-      if (url.includes("/mirror-sync/updates")) {
-        return {
-          ok: true,
-          json: async () => ({
-            node_id: "local-node",
-            base_url: "http://127.0.0.1:7777",
-            canon: { files: [], index_version: 1 },
-            graph: { version: "graph-1", node_count: 1, edge_count: 0 },
-          }),
-        } as Response;
-      }
-      if (url.endsWith("/mirror-sync/announce")) {
-        expect(init?.method).toBe("POST");
-        return {
-          ok: true,
-          json: async () => ({
-            peer: { peer_id: "peer-1", base_url: "http://127.0.0.1:7999" },
-            local: { node_id: "local-node" },
-          }),
-        } as Response;
-      }
-      if (url.endsWith("/mirror-sync/pull")) {
-        expect(init?.method).toBe("POST");
-        return {
-          ok: true,
-          json: async () => ({
-            peer_id: "peer-1",
-            peer_base_url: "http://127.0.0.1:7999",
-            pulled_files: ["TOBY_L1219_Rune3_PatienceVaultCancelled.md"],
-            skipped_files: [],
-            conflicts: [],
-            graph: { remote_version: "graph-2", local_version: "graph-2", rebuilt: true },
-          }),
-        } as Response;
-      }
-      throw new Error(`unexpected sync url: ${url}`);
-    });
-
-    const peers = JSON.parse(
-      await runMirrorCli(["mirror", "sync", "peers", "--json"], { fetchImpl }),
-    ) as { ok: boolean; command: string; action: string; peers: Array<{ peer_id: string }> };
-    expect(peers.ok).toBe(true);
-    expect(peers.command).toBe("sync");
-    expect(peers.action).toBe("peers");
-    expect(peers.peers[0]?.peer_id).toBe("peer-1");
-
-    const updates = JSON.parse(
-      await runMirrorCli(["mirror", "sync", "updates", "--json"], { fetchImpl }),
-    ) as { ok: boolean; command: string; action: string; updates: { node_id: string } };
-    expect(updates.action).toBe("updates");
-    expect(updates.updates.node_id).toBe("local-node");
-
-    const announce = JSON.parse(
+    try {
       await runMirrorCli(
         [
           "mirror",
@@ -529,31 +459,116 @@ describe("mirror cli", () => {
           "peer-1",
           "--base-url",
           "http://127.0.0.1:7999",
-          "--json",
         ],
-        { fetchImpl },
-      ),
-    ) as { ok: boolean; command: string; action: string; peer: { peer_id: string } };
-    expect(announce.action).toBe("announce");
-    expect(announce.peer.peer_id).toBe("peer-1");
+        { runtimeHost },
+      );
+      const output = await runMirrorCli(["mirror", "sync", "peers"], { runtimeHost });
 
-    const pull = JSON.parse(
-      await runMirrorCli(
-        [
-          "mirror",
-          "sync",
-          "pull",
-          "--peer-id",
-          "peer-1",
-          "--base-url",
-          "http://127.0.0.1:7999",
-          "--json",
-        ],
-        { fetchImpl },
-      ),
-    ) as { ok: boolean; command: string; action: string; pull_result: { pulled_files: string[] } };
-    expect(pull.action).toBe("pull");
-    expect(pull.pull_result.pulled_files[0]).toContain("TOBY_L1219");
+      expect(output).toContain("Mirror Sync peers");
+      expect(output).toContain("peer-1");
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
+  it("returns stable JSON shapes for sync commands", async () => {
+    const localLoreDir = await createTempLoreDir();
+    await seedLoreCorpus(localLoreDir);
+    process.env.MIRROR_LORE_DIR = localLoreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const runtimeHost = await createMirrorRuntimeHost(
+      {
+        loreDir: localLoreDir,
+        nodeId: "local-node",
+        baseUrl: "http://127.0.0.1:7777",
+      },
+      {
+        fetchImpl: vi.fn(async (url: string, init?: RequestInit) => {
+          if (url.endsWith("/mirror-sync/announce")) {
+            expect(init?.method).toBe("POST");
+            return {
+              ok: true,
+              text: async () => '{"ok":true}',
+              json: async () => ({ ok: true }),
+            } as Response;
+          }
+          if (url.endsWith("/mirror-sync/updates")) {
+            return {
+              ok: true,
+              text: async () =>
+                JSON.stringify({
+                  node_id: "remote-node",
+                  base_url: "http://127.0.0.1:7999",
+                  canon: { files: [], index_version: 1 },
+                  graph: { version: "graph-1", node_count: 1, edge_count: 0 },
+                }),
+              json: async () => ({
+                node_id: "remote-node",
+                base_url: "http://127.0.0.1:7999",
+                canon: { files: [], index_version: 1 },
+                graph: { version: "graph-1", node_count: 1, edge_count: 0 },
+              }),
+            } as Response;
+          }
+          throw new Error(`unexpected sync url: ${url}`);
+        }),
+      },
+    );
+
+    try {
+      const announce = JSON.parse(
+        await runMirrorCli(
+          [
+            "mirror",
+            "sync",
+            "announce",
+            "--peer-id",
+            "peer-1",
+            "--base-url",
+            "http://127.0.0.1:7999",
+            "--json",
+          ],
+          { runtimeHost },
+        ),
+      ) as { ok: boolean; command: string; action: string; peer: { peer_id: string } };
+      expect(announce.action).toBe("announce");
+      expect(announce.peer.peer_id).toBe("peer-1");
+
+      const peers = JSON.parse(
+        await runMirrorCli(["mirror", "sync", "peers", "--json"], { runtimeHost }),
+      ) as { ok: boolean; command: string; action: string; peers: Array<{ peer_id: string }> };
+      expect(peers.ok).toBe(true);
+      expect(peers.command).toBe("sync");
+      expect(peers.action).toBe("peers");
+      expect(peers.peers[0]?.peer_id).toBe("peer-1");
+
+      const updates = JSON.parse(
+        await runMirrorCli(["mirror", "sync", "updates", "--json"], { runtimeHost }),
+      ) as { ok: boolean; command: string; action: string; updates: { node_id: string } };
+      expect(updates.action).toBe("updates");
+      expect(updates.updates.node_id).toBe("local-node");
+
+      const pull = JSON.parse(
+        await runMirrorCli(
+          [
+            "mirror",
+            "sync",
+            "pull",
+            "--peer-id",
+            "peer-1",
+            "--base-url",
+            "http://127.0.0.1:7999",
+            "--json",
+          ],
+          { runtimeHost },
+        ),
+      ) as { ok: boolean; command: string; action: string; pull_result: { peer_id: string } };
+      expect(pull.action).toBe("pull");
+      expect(pull.pull_result.peer_id).toBe("peer-1");
+    } finally {
+      await runtimeHost.shutdown();
+    }
   });
 
   it("supports task, reminder, and heartbeat commands in human-readable mode", async () => {
@@ -721,6 +736,107 @@ describe("mirror cli", () => {
 
     expect(contextOutput).toContain("Mirror Monk context");
     expect(noteOutput).toContain("Mirror Monk note");
+  });
+
+  it("routes CLI execution through a daemon-backed runtime host", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_USER_WORKSPACE_DIR = await createTempWorkspaceUsersRoot();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const runtimeHost = await createMirrorRuntimeHost(
+      {
+        loreDir,
+      },
+      {
+        fetchImpl: vi.fn(async (url: string) => {
+          if (url.endsWith("/mirror-sync/updates")) {
+            return {
+              ok: true,
+              json: async () => ({
+                node_id: "remote-node",
+                base_url: "http://127.0.0.1:7999",
+                canon: { files: [], index_version: 1 },
+                graph: { version: "graph-1", node_count: 1, edge_count: 0 },
+              }),
+            } as Response;
+          }
+          throw new Error(`unexpected sync url: ${url}`);
+        }),
+      },
+    );
+
+    try {
+      await runMirrorCli(["mirror", "chat", "What happened to the patience vault?"], {
+        runtimeHost,
+        provider: {
+          url: "http://brain.local/v1/chat/completions",
+          authToken: "token",
+        },
+        fetchImpl: vi.fn(
+          async () =>
+            ({
+              ok: true,
+              json: async () => ({
+                id: "resp_cli_daemon",
+                object: "chat.completion",
+                created: 1,
+                model: "mirror-default",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: "Cancelled." },
+                    finish_reason: "stop",
+                  },
+                ],
+              }),
+            }) as Response,
+        ),
+      });
+      await runMirrorCli(["mirror", "find", "patience vault"], { runtimeHost });
+      await runMirrorCli(
+        [
+          "mirror",
+          "sync",
+          "announce",
+          "--peer-id",
+          "peer-1",
+          "--base-url",
+          "http://127.0.0.1:7999",
+        ],
+        { runtimeHost },
+      );
+      await runMirrorCli(
+        ["mirror", "task", "create", "--user-id", "alice", "--title", "Review open work"],
+        { runtimeHost },
+      );
+      await runMirrorCli(["mirror", "monk", "context", "--user-id", "alice"], { runtimeHost });
+
+      const sessions = runtimeHost.daemon.listSessions();
+      expect(sessions).toHaveLength(5);
+      expect(sessions.some((session) => session.metadata.command === "chat")).toBe(true);
+      expect(sessions.some((session) => session.metadata.command === "find")).toBe(true);
+      expect(
+        sessions.some(
+          (session) =>
+            session.metadata.command === "sync" && session.metadata.action === "announce",
+        ),
+      ).toBe(true);
+      expect(
+        sessions.some(
+          (session) => session.metadata.command === "task" && session.metadata.action === "create",
+        ),
+      ).toBe(true);
+      expect(
+        sessions.some(
+          (session) => session.metadata.command === "monk" && session.metadata.action === "context",
+        ),
+      ).toBe(true);
+    } finally {
+      await runtimeHost.shutdown();
+    }
   });
 
   it("returns stable JSON shapes for monk commands", async () => {
