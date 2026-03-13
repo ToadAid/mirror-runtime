@@ -1,3 +1,5 @@
+// Archived builtin retained for tests and explicit compatibility references only.
+// The standalone Mirror product surface does not ship the chain skill family.
 import type { MirrorSkill } from "../../types.js";
 import { readBalanceOf } from "./erc20.js";
 import type { ChainTokenBalanceInput, ChainTokenBalanceResult } from "./types.js";

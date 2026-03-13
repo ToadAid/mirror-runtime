@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { validateLoreCorpus } from "../lore_validation/index.js";
+import { ensureScrollIndexUpToDate } from "./scroll_index.js";
 import type { MirrorLoreDiscoveredFile, MirrorLorePolicy, MirrorLoreSourceKind } from "./types.js";
 
 async function discoverMarkdownFiles(
@@ -46,7 +48,9 @@ async function discoverMarkdownFiles(
 export async function discoverLoreFiles(
   policy: MirrorLorePolicy,
 ): Promise<MirrorLoreDiscoveredFile[]> {
+  await ensureScrollIndexUpToDate(policy.canonicalDir);
   const canonical = await discoverMarkdownFiles(policy.canonicalDir, "canonical");
+  await validateLoreCorpus(policy.canonicalDir, canonical);
   if (!policy.includeLocal) {
     return canonical;
   }
