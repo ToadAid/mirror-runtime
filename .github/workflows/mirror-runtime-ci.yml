@@ -21,23 +21,8 @@ on:
       - ".github/actions/setup-node-env/**"
       - ".github/actions/setup-pnpm-store-cache/**"
   pull_request:
-    paths:
-      - "src/mirrordaemon/**"
-      - "src/mirror*/**"
-      - "packages/openclaw/**"
-      - "mirror.mjs"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "tsdown.mirror.config.ts"
-      - "vitest.mirror.config.ts"
-      - "scripts/ci-mirror-smoke.ts"
-      - "scripts/copy-mirror-runtime-assets.ts"
-      - "test/mirror-package-boundary.test.ts"
-      - "docs/debug/mirror-runtime-canonical-entrypoints.md"
-      - ".github/workflows/mirror-runtime-ci.yml"
-      - ".github/actions/setup-node-env/**"
-      - ".github/actions/setup-pnpm-store-cache/**"
+    # Keep PR checks reportable even when changes fall outside the narrow runtime paths.
+    # Required checks stay "Expected" forever if the whole workflow is skipped at trigger time.
 
 concurrency:
   group: mirror-runtime-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
