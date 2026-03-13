@@ -1,12 +1,16 @@
 /**
  * Runtime Server Integration
  *
- * Implements /health and /api/brain/chat endpoints.
- * Validates environment before starting.
+ * Compatibility-only runtime wrapper that predates the standalone Mirror service.
+ * Keep temporary while legacy `/health` and `/api/brain/chat` callers are retired.
+ * Canonical standalone routes live in `src/mirror-service/` under `/mirror/*`.
+ *
+ * Implements /health and /api/brain/chat endpoints for legacy callers.
  */
 
 import express from "express";
 import type { RuntimeEnv } from "../../runtime.js";
+import { createMirrorGatewayRouter } from "../mirror-gateway/index.js";
 import { handleBrainChatEndpoint } from "./brain-chat.js";
 import { handleHealthEndpoint } from "./health.js";
 
@@ -24,6 +28,7 @@ export async function startRuntimeServer(
 
   // Middleware
   app.use(express.json());
+  app.use(createMirrorGatewayRouter("/mirror"));
 
   // /health — Local-only status check. NO network calls.
   app.get("/health", async (req, res) => {

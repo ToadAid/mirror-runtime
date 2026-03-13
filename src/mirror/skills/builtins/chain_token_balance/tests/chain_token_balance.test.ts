@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseRequestBodyJson } from "../../../../../test/request_init.js";
 import { getBuiltinMirrorSkills } from "../../../discover.js";
 import { buildBalanceOfCallData } from "../erc20.js";
 import { mirrorChainTokenBalanceSkill } from "../skill.js";
@@ -9,9 +10,12 @@ function encodeUint(value: bigint): string {
 
 function mockRpcFetch(resultByData: Record<string, string>) {
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? "{}")) as {
+    const body = parseRequestBodyJson<{
       params?: Array<{ data?: string }>;
-    };
+    }>({
+      ...init,
+      body: typeof init?.body === "string" ? init.body : "{}",
+    });
 
     const data = body.params?.[0]?.data ?? "";
     if (data in resultByData) {

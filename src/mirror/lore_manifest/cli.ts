@@ -9,7 +9,7 @@ import { verifyLoreManifest } from "./verify.js";
 export const DEFAULT_LORE_MANIFEST_PATH = "lore/manifest.json";
 export const DEFAULT_LORE_CANONICAL_DIR = "lore/canonical";
 
-function formatVerifyLoreHuman(
+export function formatVerifyLoreHuman(
   manifestPath: string,
   dir: string,
   report: MirrorLoreManifestVerificationReport,

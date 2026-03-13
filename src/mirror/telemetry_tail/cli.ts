@@ -1,4 +1,5 @@
-// Active source of truth for `openclaw mirror ...` subcommands.
+// Compatibility-only source of truth for `openclaw mirror ...` subcommands.
+// Canonical standalone operator paths live under the `mirror` binary and `/mirror/*`.
 import type { Command } from "commander";
 import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
 import { runVerifyLoreCli } from "../lore_manifest/index.js";
@@ -349,12 +350,14 @@ export async function runMirrorVerifyLoreCli(opts: MirrorVerifyLoreCliOptions): 
 }
 
 export function registerMirrorTelemetryCli(program: Command): void {
-  const mirror = program.command("mirror").description("Mirror diagnostics and telemetry tools");
+  const mirror = program
+    .command("mirror")
+    .description("Mirror compatibility diagnostics and telemetry tools");
   const telemetry = mirror.command("telemetry").description("Mirror telemetry commands");
 
   mirror
     .command("doctor")
-    .description("Run read-only mirror runtime health checks")
+    .description("Compatibility-only read-only mirror runtime health checks")
     .option("--json", "Output machine-readable JSON", false)
     .option("--ndjson-path <path>", "Telemetry sink path (overrides env/default)")
     .option("--db <path>", "SQLite index path (overrides env/default)")
@@ -368,7 +371,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   mirror
     .command("status")
-    .description("Print mirror runtime status snapshot")
+    .description("Compatibility wrapper for mirror status")
     .option("--json", "Output machine-readable JSON", false)
     .option("--ndjson-path <path>", "Telemetry sink path (overrides env/default)")
     .option("--db <path>", "SQLite index path (overrides env/default)")
@@ -381,7 +384,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
     });
   mirror
     .command("passport")
-    .description("Print local mirror passport (agent identity)")
+    .description("Compatibility-only local mirror passport output")
     .option("--json", "Output machine-readable JSON", false)
     .option("--include-local", "Include local-only traveler fields", false)
     .action(async (opts: { json?: boolean; includeLocal?: boolean }) => {
@@ -393,7 +396,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   mirror
     .command("verify-lore")
-    .description("Verify canonical lore scrolls against a lore manifest")
+    .description("Compatibility wrapper for mirror verify-lore")
     .option("--manifest <path>", "Lore manifest path", "lore/manifest.json")
     .option("--dir <path>", "Canonical lore directory", "lore/canonical")
     .option("--json", "Output machine-readable JSON", false)
@@ -407,7 +410,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   telemetry
     .command("tail")
-    .description("Tail local mirror telemetry sink (mirror.nudge)")
+    .description("Compatibility-only tail for local mirror telemetry sink")
     .option("--json", "Output matched events as JSON", false)
     .option("--limit <n>", "Backlog event count before follow mode", parseLimit, 20)
     .option("--once", "Print backlog and exit", false)
@@ -423,7 +426,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   telemetry
     .command("replay")
-    .description("Replay local mirror telemetry sink events")
+    .description("Compatibility-only replay for local mirror telemetry sink events")
     .option("--path <path>", "Telemetry sink path (overrides env/default)")
     .option("--since <minutes>", "Include events newer than N minutes", parseSinceMinutes)
     .option("--grep <text>", "Case-insensitive substring match against nudges")
@@ -455,7 +458,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   telemetry
     .command("index")
-    .description("Index telemetry NDJSON into SQLite for fast queries")
+    .description("Compatibility-only telemetry NDJSON indexing into SQLite")
     .option("--path <ndjson>", "Telemetry source NDJSON path (overrides env/default)")
     .option("--db <sqlite>", "SQLite index path (overrides env/default)")
     .option("--rebuild", "Drop and recreate events table before indexing", false)
@@ -469,7 +472,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   telemetry
     .command("query")
-    .description("Query telemetry events from SQLite index")
+    .description("Compatibility-only telemetry query from SQLite index")
     .option("--type <eventType>", "Event type filter", "mirror.nudge")
     .option("--run-id <runId>", "Run ID filter")
     .option("--since <minutes>", "Include events newer than N minutes", parseSinceMinutes)
@@ -498,7 +501,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
 
   telemetry
     .command("reflect")
-    .description("Summarize telemetry patterns from SQLite index")
+    .description("Compatibility-only telemetry reflection from SQLite index")
     .option("--since <minutes>", "Include events newer than N minutes", parseSinceMinutes, 60)
     .option("--limit <n>", "Maximum events to scan", parseLimit, 200)
     .option("--run-id <runId>", "Run ID filter")

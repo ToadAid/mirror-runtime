@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { requireNodeSqlite } from "../../memory/sqlite.js";
+import { requireMirrorNodeSqlite } from "../shared/sqlite.js";
 
 export const DEFAULT_MIRROR_TELEMETRY_INDEX_DB_PATH = "./db/mirror-telemetry.sqlite";
 
@@ -39,7 +39,7 @@ export function openTelemetryIndexDb(params?: {
   const dbPath = path.resolve(params?.dbPath ?? resolveMirrorTelemetryIndexDbPath(process.env));
   mkdirSync(path.dirname(dbPath), { recursive: true });
 
-  const { DatabaseSync } = requireNodeSqlite();
+  const { DatabaseSync } = requireMirrorNodeSqlite();
   const db = new DatabaseSync(dbPath);
   if (params?.rebuild) {
     db.exec("DROP TABLE IF EXISTS events;");

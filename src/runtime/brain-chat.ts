@@ -1,6 +1,9 @@
 /**
  * Brain Chat Endpoint
  *
+ * Compatibility-only OpenAI-style proxy retained temporarily for legacy integrations.
+ * Canonical standalone Mirror chat lives under `/mirror/chat`.
+ *
  * /api/brain/chat — OpenAI-compatible proxy to Brain.
  *
  * Security properties:
@@ -12,8 +15,10 @@
  */
 
 import crypto from "node:crypto";
-import { createSubsystemLogger } from "../../logging/subsystem.js";
-import type { RuntimeEnv } from "../../runtime.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import { executeMirrorProviderRequest } from "../mirror-provider/index.js";
+import { prepareMirrorChatRequest } from "../mirror-runtime/index.js";
+import type { RuntimeEnv } from "../runtime.js";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -26,6 +31,7 @@ type ChatRequest = {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+  user_id?: string;
 };
 
 type ChatResponse = {
@@ -44,6 +50,8 @@ type ChatResponse = {
     total_tokens: number;
   };
 };
+
+type FetchLike = typeof fetch;
 
 interface ReplayCache {
   has(nonce: string): boolean;
@@ -67,8 +75,8 @@ class MemoryReplayCache implements ReplayCache {
   }
 
   add(nonce: string): void {
-    const TTL_MS = 5_000; // 5s replay protection
-    this.cache.set(nonce, { expires: Date.now() + TTL_MS });
+    const ttlMs = 5_000;
+    this.cache.set(nonce, { expires: Date.now() + ttlMs });
   }
 
   cleanup(): void {
@@ -82,12 +90,11 @@ class MemoryReplayCache implements ReplayCache {
 }
 
 const REPLAY_CACHE = new MemoryReplayCache();
-setInterval(() => REPLAY_CACHE.cleanup(), 10_000);
+setInterval(() => REPLAY_CACHE.cleanup(), 10_000).unref?.();
 
 function generateDeterministicSignature(model: string, messages: ChatMessage[]): string {
   const payload = JSON.stringify({ model, messages });
-  const hash = crypto.createHash("sha256").update(payload).digest("hex");
-  return hash.slice(0, 32); // Use first 32 chars
+  return crypto.createHash("sha256").update(payload).digest("hex");
 }
 
 export async function handleBrainChatEndpoint(
@@ -95,84 +102,52 @@ export async function handleBrainChatEndpoint(
   brainUrl: string,
   authToken: string,
   request: ChatRequest,
+  deps: { fetchImpl?: FetchLike } = {},
 ): Promise<ChatResponse> {
   const log = createSubsystemLogger("runtime.brain-chat");
 
-  // Input validation
-  if (!request.model) {
-    throw new Error("model is required");
+  if (!brainUrl) {
+    throw new Error("brainUrl not configured");
   }
-
-  if (!Array.isArray(request.messages) || request.messages.length === 0) {
-    throw new Error("messages array is required and must not be empty");
+  if (!authToken) {
+    throw new Error("authToken not configured");
   }
+  const prepared = await prepareMirrorChatRequest({
+    model: request.model,
+    messages: request.messages,
+    temperature: request.temperature,
+    max_tokens: request.max_tokens,
+    stream: request.stream,
+    user_id: request.user_id,
+  });
+  const outboundMessages = prepared.modelRequest.messages;
 
-  for (const msg of request.messages) {
-    if (!msg.role || !["system", "user", "assistant"].includes(msg.role)) {
-      throw new Error("invalid role: must be system, user, or assistant");
-    }
-    if (typeof msg.content !== "string" || msg.content.trim() === "") {
-      throw new Error("content must be a non-empty string");
-    }
-  }
-
-  // Temperature clamp
-  const temperature =
-    request.temperature !== undefined ? Math.min(Math.max(request.temperature, 0), 1) : 0.7;
-
-  // Max tokens clamp
-  const maxTokens =
-    request.max_tokens !== undefined ? Math.min(Math.max(request.max_tokens, 1), 100_000) : 4096;
-
-  // Generate nonce
-  const nonce = generateDeterministicSignature(request.model, request.messages);
-
-  // Replay protection
+  const nonce = generateDeterministicSignature(request.model, outboundMessages);
   if (REPLAY_CACHE.has(nonce)) {
     throw new Error("duplicate nonce detected (replay protection)");
   }
   REPLAY_CACHE.add(nonce);
 
-  // Prepare request
   const startTime = Date.now();
   const requestId = `chat-${nonce.slice(0, 8)}-${startTime}`;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30s timeout
-
-    const requestBody = JSON.stringify({
-      model: request.model,
-      messages: request.messages,
-      temperature,
-      max_tokens: maxTokens,
-      stream: false,
-    });
-
-    const response = await fetch(brainUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
+    const response = await executeMirrorProviderRequest(
+      prepared.modelRequest,
+      {
+        url: brainUrl,
+        authToken,
       },
-      body: requestBody,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`brain proxy error: ${response.status} ${error}`);
+      { fetchImpl: deps.fetchImpl },
+    );
+    log.info(`brain chat: ${requestId} ${response.usage?.total_tokens || 0} tokens`);
+    if (prepared.diagnostics) {
+      log.debug("brain chat retrieval diagnostics", prepared.diagnostics);
     }
-
-    const data: ChatResponse = await response.json();
-
-    log.info(`brain chat: ${requestId} ${data.usage?.total_tokens || 0} tokens`);
-
-    return data;
+    return response;
   } catch (err) {
     log.error(`brain chat: ${requestId} error: ${String(err)}`);
+    env.error(String(err));
     throw err;
   }
 }
