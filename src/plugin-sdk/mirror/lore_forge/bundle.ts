@@ -9,15 +9,14 @@ export function toJsonlBundle(items: LoreForgeScored[]) {
 }
 
 export function toMarkdownBundle(items: LoreForgeScored[]) {
-  // keep main’s implementation body below (whatever is already in main)
-}
+  // Keep the bundle renderer simple and deterministic for lint-only cleanup.
   const header = `# Lore Forge Bundle
 
 Generated: ${new Date().toISOString()}
 
 `;
 
-const body = (items || [])
+  const body = (items || [])
     .map((x, i) => {
       const content = x?.candidate?.content ?? "";
       const score = x?.score ?? 0;
@@ -33,8 +32,6 @@ ${content}
 
 ---
 `;
-    })
-    .join("\n");
     })
     .join("\n");
 

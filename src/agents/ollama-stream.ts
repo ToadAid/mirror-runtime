@@ -326,8 +326,8 @@ export function buildAssistantMessage(
   const text =
     response.message.content ||
     response.message.reasoning ||
-    (response.message as any).reasoning_content ||
-    (response.message as any).reasoning_text ||
+    response.message.reasoning_content ||
+    response.message.reasoning_text ||
     "";
   if (text) {
     content.push({ type: "text", text });
