@@ -325,8 +325,17 @@ describe("initSessionState thread forking", () => {
 
     expect(result.sessionEntry.forkedFromParent).toBe(true);
     expect(result.sessionEntry.sessionFile).toBeTruthy();
-    const forkedContent = await fs.readFile(result.sessionEntry.sessionFile ?? "", "utf-8");
-    expect(forkedContent).toContain(parentSessionFile);
+    const [headerLine] = (await fs.readFile(result.sessionEntry.sessionFile ?? "", "utf-8"))
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+    const parsedHeader = JSON.parse(headerLine) as {
+      parentSession?: string;
+    };
+    const expectedParentSession = await fs.realpath(parentSessionFile);
+    const actualParentSession = parsedHeader.parentSession
+      ? await fs.realpath(parsedHeader.parentSession)
+      : undefined;
+    expect(actualParentSession).toBe(expectedParentSession);
   });
 
   it("records topic-specific session files when MessageThreadId is present", async () => {
