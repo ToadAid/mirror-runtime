@@ -9,7 +9,7 @@ export function toJsonlBundle(items: LoreForgeScored[]) {
 }
 
 export function toMarkdownBundle(items: LoreForgeScored[]) {
-  // keep main's implementation simple and deterministic for bundle generation
+  // Keep bundle rendering deterministic for CLI and tests.
   const header = `# Lore Forge Bundle
 
 Generated: ${new Date().toISOString()}

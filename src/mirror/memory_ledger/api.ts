@@ -3,13 +3,20 @@
  */
 
 import crypto from "node:crypto";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import { getLedgerDb, isLedgerEnabled } from "./db.js";
-
-type LedgerDb = Database.Database;
+import type {
+  AddMemoryEventResult,
+  AddMistakeEventResult,
+  MemoryEvent,
+  MemoryKind,
+  MistakeCategory,
+  MistakeEvent,
+  MistakeSeverity,
+} from "./types.js";
 
 type MemoryEventInput = {
-  kind: "memory" | "forget";
+  kind: MemoryKind;
   key: string;
   value_json: Record<string, unknown>;
   user_id?: string;
@@ -22,45 +29,56 @@ type MemoryEventInput = {
 type MemoryEventFilters = {
   user_id?: string;
   session_id?: string;
-  kind?: "memory" | "forget";
+  kind?: MemoryKind;
   key?: string;
   limit?: number;
   since_ts?: number;
 };
 
 type MistakeEventInput = {
-  category: string;
+  category: MistakeCategory;
   summary: string;
   expected?: string;
   actual?: string;
   tool_name?: string;
   run_id?: string;
-  severity: string;
+  severity: MistakeSeverity;
   notes?: string;
 };
 
 type MistakeEventFilters = {
   resolved?: number;
   tool_name?: string;
-  category?: string;
-  severity?: string;
+  category?: MistakeCategory;
+  severity?: MistakeSeverity;
   limit?: number;
 };
 
-function resolveLedgerDb(database?: LedgerDb): LedgerDb {
-  return database ?? getLedgerDb();
+function resolveDb(db?: Database.Database): Database.Database | null {
+  if (!isLedgerEnabled() && !db) {
+    return null;
+  }
+  return db ?? getLedgerDb();
 }
 
-export function addMemoryEvent(database: LedgerDb, event: MemoryEventInput) {
-  if (!isLedgerEnabled()) {
+export function addMemoryEvent(
+  db: Database.Database,
+  event: MemoryEventInput,
+): AddMemoryEventResult;
+export function addMemoryEvent(event: MemoryEventInput): AddMemoryEventResult;
+export function addMemoryEvent(
+  dbOrEvent: Database.Database | MemoryEventInput,
+  maybeEvent?: MemoryEventInput,
+): AddMemoryEventResult {
+  const database = resolveDb(maybeEvent ? (dbOrEvent as Database.Database) : undefined);
+  if (!database) {
     return { event_id: "", is_duplicate: false };
   }
-
-  const ledger = resolveLedgerDb(database);
+  const event = (maybeEvent ?? dbOrEvent) as MemoryEventInput;
   const id = crypto.randomUUID();
   const ts = Date.now();
 
-  ledger
+  database
     .prepare(
       "INSERT INTO memory_events (id, ts, user_id, session_id, kind, key, value_json, source, confidence, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -80,12 +98,22 @@ export function addMemoryEvent(database: LedgerDb, event: MemoryEventInput) {
   return { event_id: id, is_duplicate: false };
 }
 
-export function listMemoryEvents(database: LedgerDb, filters?: MemoryEventFilters) {
-  if (!isLedgerEnabled()) {
+export function listMemoryEvents(
+  db: Database.Database,
+  filters?: MemoryEventFilters,
+): MemoryEvent[];
+export function listMemoryEvents(filters?: MemoryEventFilters): MemoryEvent[];
+export function listMemoryEvents(
+  dbOrFilters?: Database.Database | MemoryEventFilters,
+  maybeFilters?: MemoryEventFilters,
+): MemoryEvent[] {
+  const database = resolveDb(dbOrFilters && "prepare" in dbOrFilters ? dbOrFilters : undefined);
+  if (!database) {
     return [];
   }
+  const filters =
+    dbOrFilters && "prepare" in dbOrFilters ? maybeFilters : (dbOrFilters as MemoryEventFilters);
 
-  const ledger = resolveLedgerDb(database);
   let sql = "SELECT * FROM memory_events WHERE 1=1";
   const params: unknown[] = [];
 
@@ -110,48 +138,48 @@ export function listMemoryEvents(database: LedgerDb, filters?: MemoryEventFilter
     params.push(filters.since_ts);
   }
   sql += " ORDER BY ts DESC";
+
   if (filters?.limit) {
     sql += " LIMIT ?";
     params.push(filters.limit);
   }
 
-  const rows = ledger.prepare(sql).all(...params) as Array<{
-    id: string;
-    ts: number;
-    user_id: string | null;
-    session_id: string | null;
-    kind: string;
-    key: string;
-    value_json: string;
-    source: string | null;
-    confidence: number | null;
-    tags_json: string | null;
-  }>;
-
+  const rows = database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
-    id: row.id,
-    ts: row.ts,
-    user_id: row.user_id,
-    session_id: row.session_id,
-    kind: row.kind,
-    key: row.key,
-    value_json: JSON.parse(row.value_json) as Record<string, unknown>,
-    source: row.source,
-    confidence: row.confidence,
-    tags_json: row.tags_json,
+    id: String(row.id),
+    ts: Number(row.ts),
+    user_id: typeof row.user_id === "string" ? row.user_id : null,
+    session_id: typeof row.session_id === "string" ? row.session_id : null,
+    kind: row.kind as MemoryKind,
+    key: String(row.key),
+    value_json:
+      typeof row.value_json === "string"
+        ? (JSON.parse(row.value_json) as Record<string, unknown>)
+        : {},
+    source: typeof row.source === "string" ? row.source : null,
+    confidence: typeof row.confidence === "number" ? row.confidence : null,
+    tags_json: typeof row.tags_json === "string" ? row.tags_json : "[]",
   }));
 }
 
-export function addMistakeEvent(database: LedgerDb, event: MistakeEventInput) {
-  if (!isLedgerEnabled()) {
+export function addMistakeEvent(
+  db: Database.Database,
+  event: MistakeEventInput,
+): AddMistakeEventResult;
+export function addMistakeEvent(event: MistakeEventInput): AddMistakeEventResult;
+export function addMistakeEvent(
+  dbOrEvent: Database.Database | MistakeEventInput,
+  maybeEvent?: MistakeEventInput,
+): AddMistakeEventResult {
+  const database = resolveDb(maybeEvent ? (dbOrEvent as Database.Database) : undefined);
+  if (!database) {
     return { event_id: "", is_duplicate: false };
   }
-
-  const ledger = resolveLedgerDb(database);
+  const event = (maybeEvent ?? dbOrEvent) as MistakeEventInput;
   const id = crypto.randomUUID();
   const ts = Date.now();
 
-  ledger
+  database
     .prepare(
       "INSERT INTO mistake_events (id, ts, run_id, tool_name, category, summary, expected, actual, severity, resolved, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -172,12 +200,22 @@ export function addMistakeEvent(database: LedgerDb, event: MistakeEventInput) {
   return { event_id: id, is_duplicate: false };
 }
 
-export function listMistakeEvents(database: LedgerDb, filters?: MistakeEventFilters) {
-  if (!isLedgerEnabled()) {
+export function listMistakeEvents(
+  db: Database.Database,
+  filters?: MistakeEventFilters,
+): MistakeEvent[];
+export function listMistakeEvents(filters?: MistakeEventFilters): MistakeEvent[];
+export function listMistakeEvents(
+  dbOrFilters?: Database.Database | MistakeEventFilters,
+  maybeFilters?: MistakeEventFilters,
+): MistakeEvent[] {
+  const database = resolveDb(dbOrFilters && "prepare" in dbOrFilters ? dbOrFilters : undefined);
+  if (!database) {
     return [];
   }
+  const filters =
+    dbOrFilters && "prepare" in dbOrFilters ? maybeFilters : (dbOrFilters as MistakeEventFilters);
 
-  const ledger = resolveLedgerDb(database);
   let sql = "SELECT * FROM mistake_events WHERE 1=1";
   const params: unknown[] = [];
 
@@ -198,47 +236,42 @@ export function listMistakeEvents(database: LedgerDb, filters?: MistakeEventFilt
     params.push(filters.severity);
   }
   sql += " ORDER BY ts DESC";
+
   if (filters?.limit) {
     sql += " LIMIT ?";
     params.push(filters.limit);
   }
 
-  const rows = ledger.prepare(sql).all(...params) as Array<{
-    id: string;
-    ts: number;
-    run_id: string | null;
-    tool_name: string | null;
-    category: string;
-    summary: string;
-    expected: string | null;
-    actual: string | null;
-    severity: string;
-    resolved: number;
-    notes: string | null;
-  }>;
-
+  const rows = database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
-    id: row.id,
-    ts: row.ts,
-    run_id: row.run_id,
-    tool_name: row.tool_name,
-    category: row.category,
-    summary: row.summary,
-    expected: row.expected,
-    actual: row.actual,
-    severity: row.severity,
-    resolved: row.resolved,
-    notes: row.notes,
+    id: String(row.id),
+    ts: Number(row.ts),
+    run_id: typeof row.run_id === "string" ? row.run_id : null,
+    tool_name: typeof row.tool_name === "string" ? row.tool_name : null,
+    category: row.category as MistakeCategory,
+    summary: String(row.summary),
+    expected: typeof row.expected === "string" ? row.expected : null,
+    actual: typeof row.actual === "string" ? row.actual : null,
+    severity: row.severity as MistakeSeverity,
+    resolved: Number(row.resolved),
+    notes: typeof row.notes === "string" ? row.notes : null,
   }));
 }
 
-export function resolveMistake(database: LedgerDb, id: string, notes?: string) {
-  if (!isLedgerEnabled()) {
+export function resolveMistake(db: Database.Database, id: string, notes?: string): void;
+export function resolveMistake(id: string, notes?: string): void;
+export function resolveMistake(
+  dbOrId: Database.Database | string,
+  idOrNotes?: string,
+  maybeNotes?: string,
+): void {
+  const database = resolveDb(typeof dbOrId === "string" ? undefined : dbOrId);
+  if (!database) {
     return;
   }
-
-  const ledger = resolveLedgerDb(database);
-  ledger
+  const id = typeof dbOrId === "string" ? dbOrId : String(idOrNotes ?? "");
+  const notes = typeof dbOrId === "string" ? idOrNotes : maybeNotes;
+  database
     .prepare("UPDATE mistake_events SET resolved = 1, notes = ? WHERE id = ?")
     .run(notes ?? null, id);
 }
