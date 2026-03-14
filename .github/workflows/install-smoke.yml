@@ -25,9 +25,53 @@ jobs:
         id: check
         uses: ./.github/actions/detect-docs-changes
 
-  install-smoke:
+  install-scope:
     needs: [docs-scope]
     if: needs.docs-scope.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      run_install_smoke: ${{ steps.scope.outputs.run_install_smoke }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect install-smoke scope
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_install_smoke=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE="${{ github.event.pull_request.base.sha }}"
+          CHANGED="$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "UNKNOWN")"
+          if [ "$CHANGED" = "UNKNOWN" ] || [ -z "$CHANGED" ]; then
+            # Fail-safe: keep install smoke in the PR path if change detection fails.
+            echo "run_install_smoke=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          run_install_smoke=false
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            case "$path" in
+              .github/workflows/install-smoke.yml|.github/actions/setup-node-env/*|.github/actions/setup-pnpm-store-cache/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|mirror.mjs|tsdown.mirror.config.ts|scripts/copy-mirror-runtime-assets.ts|src/mirror-entry.ts|src/mirror-package.ts|src/mirrordaemon/*|src/mirror-runtime/*|src/mirror-service/*)
+                run_install_smoke=true
+                break
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          echo "run_install_smoke=${run_install_smoke}" >> "$GITHUB_OUTPUT"
+
+  install-smoke:
+    needs: [docs-scope, install-scope]
+    if: needs.docs-scope.outputs.docs_only != 'true' && needs.install-scope.outputs.run_install_smoke == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout CLI

@@ -92,7 +92,8 @@ function resolveMediaLocalRoots(params: { cfg: OpenClawConfig; accountId?: strin
   });
   return (account.config.mediaLocalRoots ?? [])
     .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+    .filter((entry) => entry.length > 0)
+    .map((entry) => resolveConfiguredPath(entry));
 }
 
 async function assertLocalMediaPathAllowed(params: {

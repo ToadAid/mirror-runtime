@@ -1,4 +1,9 @@
+import path from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+
+const TEST_AGENT_DIR = path.resolve(path.sep, "agents", "test-agent");
+const TEST_WORKSPACE_DIR = path.resolve(path.sep, "workspace", "test-agent");
+const TEST_TRANSCRIPTS_DIR = path.resolve(path.sep, "transcripts", "test-agent");
 
 /* ------------------------------------------------------------------ */
 /* Mocks                                                              */
@@ -12,9 +17,9 @@ const mocks = vi.hoisted(() => ({
   pruneAgentConfig: vi.fn(() => ({ config: {}, removedBindings: 0 })),
   writeConfigFile: vi.fn(async () => {}),
   ensureAgentWorkspace: vi.fn(async () => {}),
-  resolveAgentDir: vi.fn(() => "/agents/test-agent"),
-  resolveAgentWorkspaceDir: vi.fn(() => "/workspace/test-agent"),
-  resolveSessionTranscriptsDirForAgent: vi.fn(() => "/transcripts/test-agent"),
+  resolveAgentDir: vi.fn(() => TEST_AGENT_DIR),
+  resolveAgentWorkspaceDir: vi.fn(() => TEST_WORKSPACE_DIR),
+  resolveSessionTranscriptsDirForAgent: vi.fn(() => TEST_TRANSCRIPTS_DIR),
   listAgentsForGateway: vi.fn(() => ({
     defaultId: "main",
     mainKey: "agent:main:main",
@@ -69,7 +74,7 @@ vi.mock("../../browser/trash.js", () => ({
 }));
 
 vi.mock("../../utils.js", () => ({
-  resolveUserPath: (p: string) => `/resolved${p.startsWith("/") ? "" : "/"}${p}`,
+  resolveUserPath: (p: string) => path.resolve(path.sep, "resolved", p.replace(/^[/\\]+/, "")),
 }));
 
 vi.mock("../session-utils.js", () => ({
@@ -514,14 +519,14 @@ describe("agents.files.get/set symlink safety", () => {
   });
 
   it("rejects agents.files.get when allowlisted file symlink escapes workspace", async () => {
-    const workspace = "/workspace/test-agent";
-    const candidate = `${workspace}/AGENTS.md`;
+    const workspace = TEST_WORKSPACE_DIR;
+    const candidate = path.resolve(workspace, "AGENTS.md");
     mocks.fsRealpath.mockImplementation(async (p: string) => {
       if (p === workspace) {
         return workspace;
       }
       if (p === candidate) {
-        return "/outside/secret.txt";
+        return path.resolve(path.sep, "outside", "secret.txt");
       }
       return p;
     });
@@ -547,14 +552,14 @@ describe("agents.files.get/set symlink safety", () => {
   });
 
   it("rejects agents.files.set when allowlisted file symlink escapes workspace", async () => {
-    const workspace = "/workspace/test-agent";
-    const candidate = `${workspace}/AGENTS.md`;
+    const workspace = TEST_WORKSPACE_DIR;
+    const candidate = path.resolve(workspace, "AGENTS.md");
     mocks.fsRealpath.mockImplementation(async (p: string) => {
       if (p === workspace) {
         return workspace;
       }
       if (p === candidate) {
-        return "/outside/secret.txt";
+        return path.resolve(path.sep, "outside", "secret.txt");
       }
       return p;
     });
@@ -582,9 +587,9 @@ describe("agents.files.get/set symlink safety", () => {
   });
 
   it("allows in-workspace symlink targets for get/set", async () => {
-    const workspace = "/workspace/test-agent";
-    const candidate = `${workspace}/AGENTS.md`;
-    const target = `${workspace}/policies/AGENTS.md`;
+    const workspace = TEST_WORKSPACE_DIR;
+    const candidate = path.resolve(workspace, "AGENTS.md");
+    const target = path.resolve(workspace, "policies", "AGENTS.md");
     const targetStat = makeFileStat({ size: 7, mtimeMs: 1700, dev: 9, ino: 42 });
 
     mocks.fsRealpath.mockImplementation(async (p: string) => {
