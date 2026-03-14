@@ -95,3 +95,7 @@ export function defineChainTokenBalanceSkillTests() {
     });
   });
 }
+
+describe.skip("chain token balance skill test helper", () => {
+  it("is covered by the shared wrapper suite", () => {});
+});

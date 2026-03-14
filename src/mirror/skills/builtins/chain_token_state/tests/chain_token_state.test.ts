@@ -106,3 +106,7 @@ export function defineChainTokenStateSkillTests() {
     });
   });
 }
+
+describe.skip("chain token state skill test helper", () => {
+  it("is covered by the shared wrapper suite", () => {});
+});
