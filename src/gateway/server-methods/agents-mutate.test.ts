@@ -1,6 +1,10 @@
 import path from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+const TEST_AGENT_DIR = path.join(path.sep, "agents", "test-agent");
+const TEST_WORKSPACE_DIR = path.join(path.sep, "workspace", "test-agent");
+const TEST_TRANSCRIPTS_DIR = path.join(path.sep, "transcripts", "test-agent");
+
 /* ------------------------------------------------------------------ */
 /* Mocks                                                              */
 /* ------------------------------------------------------------------ */
@@ -13,9 +17,9 @@ const mocks = vi.hoisted(() => ({
   pruneAgentConfig: vi.fn(() => ({ config: {}, removedBindings: 0 })),
   writeConfigFile: vi.fn(async () => {}),
   ensureAgentWorkspace: vi.fn(async () => {}),
-  resolveAgentDir: vi.fn(() => "/agents/test-agent"),
-  resolveAgentWorkspaceDir: vi.fn(() => "/workspace/test-agent"),
-  resolveSessionTranscriptsDirForAgent: vi.fn(() => "/transcripts/test-agent"),
+  resolveAgentDir: vi.fn(() => TEST_AGENT_DIR),
+  resolveAgentWorkspaceDir: vi.fn(() => TEST_WORKSPACE_DIR),
+  resolveSessionTranscriptsDirForAgent: vi.fn(() => TEST_TRANSCRIPTS_DIR),
   listAgentsForGateway: vi.fn(() => ({
     defaultId: "main",
     mainKey: "agent:main:main",
@@ -70,7 +74,7 @@ vi.mock("../../browser/trash.js", () => ({
 }));
 
 vi.mock("../../utils.js", () => ({
-  resolveUserPath: (p: string) => `/resolved${p.startsWith("/") ? "" : "/"}${p}`,
+  resolveUserPath: (p: string) => path.join(path.sep, "resolved", p.replace(/^[/\\]+/, "")),
 }));
 
 vi.mock("../session-utils.js", () => ({
