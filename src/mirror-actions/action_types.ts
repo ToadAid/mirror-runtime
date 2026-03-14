@@ -37,6 +37,7 @@ export type MirrorActionExecutionResult = {
   action_name: string;
   trace_id: string;
   session_id?: string;
+  provider_id?: string;
   started_at: string;
   finished_at: string;
   duration_ms: number;
@@ -50,6 +51,7 @@ export type MirrorActionFailureResult = {
   action_name: string;
   trace_id: string;
   session_id?: string;
+  provider_id?: string;
   started_at: string;
   finished_at: string;
   duration_ms: number;
@@ -63,6 +65,7 @@ export type MirrorActionLifecycleEvent =
       action_id: string;
       trace_id: string;
       session_id?: string;
+      provider_id?: string;
       action: MirrorActionDescriptor;
       input: Record<string, unknown>;
       context?: MirrorPolicyContext;
@@ -74,6 +77,7 @@ export type MirrorActionLifecycleEvent =
       action_id: string;
       trace_id: string;
       session_id?: string;
+      provider_id?: string;
       action: MirrorActionDescriptor;
       context?: MirrorPolicyContext;
       timestamp: string;
@@ -85,6 +89,7 @@ export type MirrorActionLifecycleEvent =
       action_id: string;
       trace_id: string;
       session_id?: string;
+      provider_id?: string;
       action: MirrorActionDescriptor;
       context?: MirrorPolicyContext;
       timestamp: string;

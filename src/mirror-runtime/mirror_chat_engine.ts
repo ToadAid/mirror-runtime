@@ -8,6 +8,7 @@ import {
 } from "../mirror-provider/index.js";
 import { buildReflectionPrompt, reflectOnCanonContext } from "../mirror-reflection/index.js";
 import { buildLoreContext, retrieveCanonicalScrolls } from "../mirror/lore_retrieval/index.js";
+import { mergeMirrorCorrelation } from "./correlation.js";
 import type { MirrorChatRequest, MirrorChatMessage } from "./mirror_request.js";
 import type {
   MirrorChatDiagnostics,
@@ -189,12 +190,24 @@ export async function executeMirrorChatWithProviderPlane(
     providerPlane: MirrorProviderPlane;
     fetchImpl?: FetchLike;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+    correlation?: {
+      trace_id?: string;
+      session_id?: string;
+      action_id?: string;
+      provider_id?: string;
+    };
   },
 ): Promise<MirrorChatResponse> {
   const prepared = await prepareMirrorChatRequest(request);
+  const correlation = mergeMirrorCorrelation(request.correlation, deps.correlation, {
+    session_id: request.session?.session_id,
+    provider_id:
+      request.provider?.provider_id ?? deps.providerPlane.getActiveProvider()?.provider_id,
+  });
   const execution = await deps.providerPlane.execute(prepared.modelRequest, {
     fetchImpl: deps.fetchImpl,
     onRuntimeEvent: deps.onRuntimeEvent,
+    correlation,
     selection: {
       preferredProviderId: request.provider?.provider_id,
       allowFallback: request.provider?.allow_fallback,

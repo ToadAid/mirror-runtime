@@ -5,6 +5,7 @@ import {
 } from "../mirror-policy/index.js";
 import {
   buildMirrorCorrelationFromPolicyContext,
+  mergeMirrorCorrelation,
   resolveMirrorTraceId,
 } from "../mirror-runtime/index.js";
 import type { MirrorAction, MirrorActionRuntime } from "./action_types.js";
@@ -52,10 +53,18 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
 
       const execution_id = crypto.randomUUID();
       const action_id = execution_id;
-      const baseCorrelation =
-        request.correlation ?? buildMirrorCorrelationFromPolicyContext(request.context);
+      const baseCorrelation = mergeMirrorCorrelation(
+        buildMirrorCorrelationFromPolicyContext(request.context),
+        request.correlation,
+        request.providerPlane?.getActiveProvider()?.provider_id
+          ? {
+              provider_id: request.providerPlane.getActiveProvider()?.provider_id,
+            }
+          : undefined,
+      );
       const trace_id = resolveMirrorTraceId(baseCorrelation?.trace_id);
       const session_id = baseCorrelation?.session_id;
+      const provider_id = baseCorrelation?.provider_id;
       const started_at = new Date().toISOString();
       options.onLifecycleEvent?.({
         type: "started",
@@ -63,6 +72,7 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
         action_id,
         trace_id,
         session_id,
+        provider_id,
         action: action.descriptor,
         input: request.input,
         context: request.context,
@@ -84,6 +94,7 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
           action_name: action.descriptor.action_name,
           trace_id,
           session_id,
+          provider_id,
           started_at,
           finished_at,
           duration_ms: Date.now() - startedMs,
@@ -95,6 +106,7 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
           action_id,
           trace_id,
           session_id,
+          provider_id,
           action: action.descriptor,
           context: request.context,
           timestamp: finished_at,
@@ -110,6 +122,7 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
           action_name: action.descriptor.action_name,
           trace_id,
           session_id,
+          provider_id,
           started_at,
           finished_at,
           duration_ms: Date.now() - startedMs,
@@ -121,6 +134,7 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
           action_id,
           trace_id,
           session_id,
+          provider_id,
           action: action.descriptor,
           context: request.context,
           timestamp: finished_at,
