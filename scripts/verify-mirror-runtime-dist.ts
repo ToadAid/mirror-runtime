@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import * as tar from "tar";
 
 type MirrorService = {
   app: { handle: (req: unknown, res: unknown) => void };
@@ -20,20 +21,14 @@ type MirrorEntryModule = {
 };
 
 const root = process.cwd();
-const packageRoot = path.join(
-  root,
-  "dist",
-  "mirror-runtime-linux",
-  "rootfs",
-  "opt",
-  "mirror-runtime",
-);
+const distRoot = path.join(root, "dist");
+const packageArchive = path.join(distRoot, "mirror-runtime-linux.tar.gz");
 
-async function assertPathExists(relativePath: string): Promise<void> {
+async function assertPathExists(packageRoot: string, relativePath: string): Promise<void> {
   await fs.access(path.join(packageRoot, relativePath));
 }
 
-async function runMirrorHelp(): Promise<void> {
+async function runMirrorHelp(packageRoot: string): Promise<void> {
   const entryModule = (await import(
     pathToFileURL(path.join(packageRoot, "dist", "mirror-entry.js")).href
   )) as MirrorEntryModule;
@@ -142,7 +137,7 @@ async function requestJsonFromApp(
   });
 }
 
-async function smokePackagedRuntime(): Promise<void> {
+async function smokePackagedRuntime(packageRoot: string): Promise<void> {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-runtime-package-"));
   const loreDir = path.join(tempRoot, "lore-scrolls");
   const memoryDbPath = path.join(tempRoot, "mirror-memory.sqlite");
@@ -198,33 +193,74 @@ async function smokePackagedRuntime(): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
-  await assertPathExists(path.join("bin", "mirror"));
-  await assertPathExists("mirror.mjs");
-  await assertPathExists("package.json");
-  await assertPathExists(path.join("dist", "mirror-entry.js"));
-  await assertPathExists(path.join("dist", "mirror-package.js"));
-  await assertPathExists(path.join("dist", "schema.sql"));
-  await assertPathExists(path.join("share", "examples", "mirror-runtime.env.example"));
-  await assertPathExists(path.join("share", "docs", "STANDALONE_BOUNDARY.md"));
-  await fs.access(
-    path.join(
-      root,
-      "dist",
-      "mirror-runtime-linux",
-      "rootfs",
-      "usr",
-      "lib",
-      "systemd",
-      "user",
-      "mirror-runtime.service",
-    ),
+async function prepareExtractedPackage(): Promise<{
+  packageRoot: string;
+  cleanup: () => Promise<void>;
+}> {
+  const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-runtime-dist-"));
+  await tar.extract({ cwd: extractionRoot, file: packageArchive, gzip: true });
+
+  const packageRoot = path.join(
+    extractionRoot,
+    "mirror-runtime-linux",
+    "rootfs",
+    "opt",
+    "mirror-runtime",
   );
 
-  await runMirrorHelp();
-  await smokePackagedRuntime();
+  // Phase 1 boundary validation extracts the packaged tree and wires in the
+  // workspace dependency closure. A later installer phase can materialize the
+  // dependency graph directly under the runtime root using the packaged manifest.
+  await fs.symlink(path.join(root, "node_modules"), path.join(packageRoot, "node_modules"), "dir");
+
+  return {
+    packageRoot,
+    cleanup: async () => {
+      await fs.rm(extractionRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+async function main(): Promise<void> {
+  const extracted = await prepareExtractedPackage();
+  try {
+    await assertPathExists(extracted.packageRoot, path.join("bin", "mirror"));
+    await assertPathExists(extracted.packageRoot, "mirror.mjs");
+    await assertPathExists(extracted.packageRoot, "package.json");
+    await assertPathExists(extracted.packageRoot, path.join("dist", "mirror-entry.js"));
+    await assertPathExists(extracted.packageRoot, path.join("dist", "mirror-package.js"));
+    await assertPathExists(extracted.packageRoot, path.join("dist", "schema.sql"));
+    await assertPathExists(
+      extracted.packageRoot,
+      path.join("share", "examples", "mirror-runtime.env.example"),
+    );
+    await assertPathExists(
+      extracted.packageRoot,
+      path.join("share", "docs", "STANDALONE_BOUNDARY.md"),
+    );
+    await fs.access(
+      path.join(
+        extractionRootFromPackageRoot(extracted.packageRoot),
+        "rootfs",
+        "usr",
+        "lib",
+        "systemd",
+        "user",
+        "mirror-runtime.service",
+      ),
+    );
+
+    await runMirrorHelp(extracted.packageRoot);
+    await smokePackagedRuntime(extracted.packageRoot);
+  } finally {
+    await extracted.cleanup();
+  }
 
   process.stdout.write("MIRROR_RUNTIME_DIST_VERIFY_OK\n");
+}
+
+function extractionRootFromPackageRoot(packageRoot: string): string {
+  return path.resolve(packageRoot, "..", "..", "..");
 }
 
 void main().catch((error) => {

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import * as tar from "tar";
 
 type RootPackageJson = {
   version: string;
@@ -8,11 +9,14 @@ type RootPackageJson = {
   type?: string;
   engines?: Record<string, string>;
   packageManager?: string;
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
 };
 
 const root = process.cwd();
 const distRoot = path.join(root, "dist");
 const outputRoot = path.join(distRoot, "mirror-runtime-linux");
+const archivePath = path.join(distRoot, "mirror-runtime-linux.tar.gz");
 const rootfsRoot = path.join(outputRoot, "rootfs");
 const runtimeRoot = path.join(rootfsRoot, "opt", "mirror-runtime");
 const systemdRoot = path.join(rootfsRoot, "usr", "lib", "systemd", "user");
@@ -64,6 +68,8 @@ async function writeRuntimePackageJson(pkg: RootPackageJson): Promise<void> {
       mirror: "bin/mirror",
     },
     main: "dist/mirror-package.js",
+    dependencies: pkg.dependencies ?? {},
+    optionalDependencies: pkg.optionalDependencies ?? {},
     engines: pkg.engines ?? {},
     packageManager: pkg.packageManager,
   };
@@ -79,6 +85,7 @@ async function writeManifest(pkg: RootPackageJson): Promise<void> {
     schema_version: 1,
     package_name: "mirror-runtime-linux",
     version: pkg.version,
+    archive: "mirror-runtime-linux.tar.gz",
     runtime_root: "rootfs/opt/mirror-runtime",
     service_unit: "rootfs/usr/lib/systemd/user/mirror-runtime.service",
     required_runtime_files: [
@@ -106,6 +113,19 @@ async function writeManifest(pkg: RootPackageJson): Promise<void> {
     path.join(outputRoot, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
     "utf8",
+  );
+}
+
+async function writeArchive(): Promise<void> {
+  await fs.rm(archivePath, { force: true });
+  await tar.create(
+    {
+      cwd: distRoot,
+      file: archivePath,
+      gzip: true,
+      portable: false,
+    },
+    ["mirror-runtime-linux"],
   );
 }
 
@@ -138,6 +158,7 @@ async function main(): Promise<void> {
 
   await writeRuntimePackageJson(pkg);
   await writeManifest(pkg);
+  await writeArchive();
 
   process.stdout.write(`${path.relative(root, outputRoot)}\n`);
 }
