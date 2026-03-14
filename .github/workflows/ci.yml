@@ -398,6 +398,7 @@ jobs:
           pre-commit run zizmor --files "${workflow_files[@]}"
 
       - name: Audit production dependencies
+        if: github.event_name == 'push'
         run: pre-commit run --all-files pnpm-audit-prod
 
   checks-windows:
