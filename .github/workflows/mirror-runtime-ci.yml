@@ -14,7 +14,10 @@ on:
       - "tsdown.mirror.config.ts"
       - "vitest.mirror.config.ts"
       - "scripts/ci-mirror-smoke.ts"
+      - "scripts/assemble-mirror-runtime-dist.ts"
       - "scripts/copy-mirror-runtime-assets.ts"
+      - "scripts/verify-mirror-runtime-dist.ts"
+      - "packaging/mirror-runtime/**"
       - "test/mirror-package-boundary.test.ts"
       - "docs/debug/mirror-runtime-canonical-entrypoints.md"
       - ".github/workflows/mirror-runtime-ci.yml"
@@ -45,10 +48,10 @@ jobs:
           install-bun: "false"
 
       - name: Build Mirror runtime boundary
-        run: pnpm build:mirror
+        run: pnpm package:mirror-runtime
 
       - name: Test Mirror runtime boundary
-        run: pnpm test:mirror
+        run: pnpm test:mirror && pnpm verify:mirror-runtime-dist
 
       - name: Upload Mirror runtime dist artifact
         uses: actions/upload-artifact@v4
@@ -58,6 +61,8 @@ jobs:
             dist/mirror-entry.js
             dist/mirror-package.js
             dist/schema.sql
+            dist/mirror-runtime-linux.tar.gz
+            dist/mirror-runtime-linux/**
           retention-days: 1
 
   mirror-runtime-smoke:
@@ -80,8 +85,15 @@ jobs:
           name: mirror-runtime-dist
           path: dist/
 
-      - name: Smoke built Mirror CLI entry
-        run: node dist/mirror-entry.js help
+      - name: Extract packaged Mirror runtime dist
+        run: |
+          rm -rf /tmp/mirror-runtime-smoke
+          mkdir -p /tmp/mirror-runtime-smoke
+          tar -xzf dist/mirror-runtime-linux.tar.gz -C /tmp/mirror-runtime-smoke
+          ln -s "$PWD/node_modules" /tmp/mirror-runtime-smoke/mirror-runtime-linux/rootfs/opt/mirror-runtime/node_modules
+
+      - name: Smoke packaged Mirror CLI entry
+        run: /tmp/mirror-runtime-smoke/mirror-runtime-linux/rootfs/opt/mirror-runtime/bin/mirror help
 
       - name: Smoke built Mirror runtime service
-        run: pnpm smoke:mirror
+        run: pnpm smoke:mirror && pnpm verify:mirror-runtime-dist

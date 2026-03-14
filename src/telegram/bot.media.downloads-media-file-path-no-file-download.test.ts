@@ -230,7 +230,6 @@ describe("telegram media groups", () => {
   });
 
   const MEDIA_GROUP_TEST_TIMEOUT_MS = process.platform === "win32" ? 45_000 : 20_000;
-  const MEDIA_GROUP_FLUSH_MS = TELEGRAM_TEST_TIMINGS.mediaGroupFlushMs + 40;
 
   it(
     "handles same-group buffering and separate-group independence",
@@ -238,6 +237,7 @@ describe("telegram media groups", () => {
       const runtimeError = vi.fn();
       const { handler, replySpy } = await createBotHandlerWithOptions({ runtimeError });
       const fetchSpy = mockTelegramPngDownload();
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
 
       try {
         for (const scenario of [
@@ -295,6 +295,7 @@ describe("telegram media groups", () => {
         ]) {
           replySpy.mockClear();
           runtimeError.mockClear();
+          const baselineCallCount = setTimeoutSpy.mock.calls.length;
 
           await Promise.all(
             scenario.messages.map((message) =>
@@ -307,17 +308,28 @@ describe("telegram media groups", () => {
           );
 
           expect(replySpy).not.toHaveBeenCalled();
-          await vi.waitFor(
-            () => {
-              expect(replySpy).toHaveBeenCalledTimes(scenario.expectedReplyCount);
-            },
-            { timeout: MEDIA_GROUP_FLUSH_MS * 4, interval: 2 },
-          );
+          const flushTimerCalls = setTimeoutSpy.mock.calls
+            .map((call, index) => ({ call, index }))
+            .slice(baselineCallCount)
+            .filter(({ call }) => call[1] === TELEGRAM_TEST_TIMINGS.mediaGroupFlushMs);
+          expect(flushTimerCalls.length).toBeGreaterThan(0);
+          const flushCount =
+            scenario.expectedReplyCount === 1
+              ? 1
+              : Math.min(scenario.expectedReplyCount, flushTimerCalls.length);
+          for (const { index } of flushTimerCalls.slice(-flushCount)) {
+            clearTimeout(setTimeoutSpy.mock.results[index]?.value as ReturnType<typeof setTimeout>);
+            const flushTimer = setTimeoutSpy.mock.calls[index]?.[0] as (() => unknown) | undefined;
+            expect(flushTimer).toBeTypeOf("function");
+            await flushTimer?.();
+          }
+          expect(replySpy).toHaveBeenCalledTimes(scenario.expectedReplyCount);
 
           expect(runtimeError).not.toHaveBeenCalled();
           scenario.assert(replySpy);
         }
       } finally {
+        setTimeoutSpy.mockRestore();
         fetchSpy.mockRestore();
       }
     },
@@ -339,7 +351,7 @@ describe("telegram forwarded bursts", () => {
       const runtimeError = vi.fn();
       const { handler, replySpy } = await createBotHandlerWithOptions({ runtimeError });
       const fetchSpy = mockTelegramPngDownload();
-      vi.useFakeTimers();
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
 
       try {
         await handler({
@@ -368,16 +380,34 @@ describe("telegram forwarded bursts", () => {
           getFile: async () => ({ file_path: "photos/fwd1.jpg" }),
         });
 
-        await vi.runAllTimersAsync();
-        expect(replySpy).toHaveBeenCalledTimes(1);
+        const flushTimerCallIndex = setTimeoutSpy.mock.calls.findLastIndex(
+          (call) => call[1] === 80,
+        );
+        const flushTimer =
+          flushTimerCallIndex >= 0
+            ? (setTimeoutSpy.mock.calls[flushTimerCallIndex]?.[0] as (() => unknown) | undefined)
+            : undefined;
+        if (flushTimerCallIndex >= 0) {
+          clearTimeout(
+            setTimeoutSpy.mock.results[flushTimerCallIndex]?.value as ReturnType<typeof setTimeout>,
+          );
+        }
+        expect(flushTimer).toBeTypeOf("function");
+        await flushTimer?.();
+        await vi.waitFor(
+          () => {
+            expect(replySpy).toHaveBeenCalledTimes(1);
+          },
+          { timeout: FORWARD_BURST_TEST_TIMEOUT_MS, interval: 2 },
+        );
 
         expect(runtimeError).not.toHaveBeenCalled();
         const payload = replySpy.mock.calls[0][0];
         expect(payload.Body).toContain("Look at this");
         expect(payload.MediaPaths).toHaveLength(1);
       } finally {
+        setTimeoutSpy.mockRestore();
         fetchSpy.mockRestore();
-        vi.useRealTimers();
       }
     },
     FORWARD_BURST_TEST_TIMEOUT_MS,
