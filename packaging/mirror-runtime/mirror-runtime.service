@@ -1,0 +1,20 @@
+[Unit]
+Description=Mirror Runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/mirror-runtime/mirror-runtime.env
+Environment=MIRROR_PORT=7777
+Environment=MIRROR_NODE_ID=%H
+Environment=MIRROR_LORE_DIR=%h/.local/share/mirror-runtime/lore-scrolls
+Environment=MIRROR_MEMORY_DB_PATH=%h/.local/state/mirror-runtime/mirror-memory.db
+WorkingDirectory=%h/.local/share/mirror-runtime
+ExecStart=/opt/mirror-runtime/bin/mirror serve
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
