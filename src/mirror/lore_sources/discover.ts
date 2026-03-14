@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { validateLoreCorpus } from "../lore_validation/index.js";
@@ -11,7 +12,7 @@ async function discoverMarkdownFiles(
   const discovered: MirrorLoreDiscoveredFile[] = [];
 
   async function walk(currentDir: string): Promise<void> {
-    let entries: fs.Dirent[];
+    let entries: Dirent[];
     try {
       entries = await fs.readdir(currentDir, { withFileTypes: true });
     } catch (error) {

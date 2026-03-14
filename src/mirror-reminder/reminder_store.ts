@@ -6,7 +6,11 @@ import type { MirrorReminder } from "./reminder_types.js";
 
 export type MirrorReminderStore = {
   listReminders: (userId: string) => Promise<MirrorReminder[]>;
-  upsertReminder: (userId: string, reminder: MirrorReminder) => Promise<MirrorReminder[]>;
+  upsertReminder: (
+    userId: string,
+    reminder: Omit<MirrorReminder, "created_at" | "updated_at"> &
+      Partial<Pick<MirrorReminder, "created_at" | "updated_at">>,
+  ) => Promise<MirrorReminder[]>;
   deleteReminder: (userId: string, reminderId: string) => Promise<MirrorReminder[]>;
 };
 

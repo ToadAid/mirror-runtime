@@ -2,4 +2,5 @@ export type { MirrorLoreDiscoveredFile, MirrorLorePolicy, MirrorLoreSourceKind }
 export { discoverLoreFiles } from "./discover.js";
 export { getDefaultLorePolicy, resolveDefaultLoreRoot } from "./policy.js";
 export { ensureScrollIndexUpToDate } from "./scroll_index.js";
+export type { MirrorScrollIndexEntry } from "./scroll_index.js";
 export { getLastLoreValidationReport, validateLoreCorpus } from "../lore_validation/index.js";

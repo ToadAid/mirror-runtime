@@ -10,6 +10,10 @@ export type MirrorChatRequest = {
   max_tokens?: number;
   stream?: boolean;
   user_id?: string;
+  provider?: {
+    provider_id?: string;
+    allow_fallback?: boolean;
+  };
   session?: {
     session_id?: string;
     user_id?: string;

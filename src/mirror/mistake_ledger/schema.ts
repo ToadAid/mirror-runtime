@@ -2,12 +2,18 @@
  * Memory / Mistake Ledger v1 — SQLite Schema
  */
 
-import type { Database as BetterSqliteDatabase } from "better-sqlite3";
-
 const SCHEMA_VERSION = 1;
 const TABLE_NAME = "ledger_events";
 
-type SqliteDb = Pick<BetterSqliteDatabase, "prepare" | "exec" | "pragma">;
+type SqliteStatement = {
+  get: (...params: unknown[]) => unknown;
+};
+
+type SqliteDb = {
+  prepare: (sql: string) => SqliteStatement;
+  exec: (sql: string) => void;
+  pragma: (sql: string, opts?: { simple?: boolean }) => unknown;
+};
 
 export function initSchema(db: SqliteDb): void {
   const tableExists =

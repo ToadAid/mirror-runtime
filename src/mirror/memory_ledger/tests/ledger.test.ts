@@ -2,7 +2,10 @@
  * Memory / Mistake Ledger v1 — Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   addMemoryEvent,
   listMemoryEvents,
@@ -10,28 +13,57 @@ import {
   listMistakeEvents,
   resolveMistake,
 } from "../api.js";
-import { initLedger, isLedgerEnabled, getLedgerStats } from "../db.js";
+import { closeLedger, getLedgerStats, initLedger, isLedgerEnabled } from "../db.js";
 
-describe("Memory / Mistake Ledger v1 — Schema", () => {
+function createTempLedgerPath(): string {
+  return path.join(
+    os.tmpdir(),
+    `test-ledger-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`,
+  );
+}
+
+function hasLedgerNativeBindings(): boolean {
+  const tempPath = createTempLedgerPath();
+  try {
+    initLedger({ path: tempPath });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    closeLedger();
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {}
+  }
+}
+
+const describeLedger = hasLedgerNativeBindings() ? describe : describe.skip;
+
+describeLedger("Memory / Mistake Ledger v1 — Schema", () => {
   it("should create tables", () => {
-    const tempPath = "/tmp/test-ledger.sqlite";
+    const tempPath = createTempLedgerPath();
     const db = initLedger({ path: tempPath });
 
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
+      name: string;
+    }>;
     const tableNames = tables.map((t: { name: string }) => t.name);
 
     expect(tableNames).toContain("memory_events");
     expect(tableNames).toContain("mistake_events");
     expect(tableNames).toContain("meta");
 
-    db.close();
+    closeLedger();
+    fs.unlinkSync(tempPath);
   });
 
   it("should create indexes", () => {
-    const tempPath = "/tmp/test-ledger.sqlite";
+    const tempPath = createTempLedgerPath();
     const db = initLedger({ path: tempPath });
 
-    const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all();
+    const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as Array<{
+      name: string;
+    }>;
     const indexNames = indexes.map((i: { name: string }) => i.name);
 
     expect(indexNames).toContain("idx_memory_ts");
@@ -39,20 +71,22 @@ describe("Memory / Mistake Ledger v1 — Schema", () => {
     expect(indexNames).toContain("idx_mistake_resolved");
     expect(indexNames).toContain("idx_mistake_ts");
 
-    db.close();
+    closeLedger();
+    fs.unlinkSync(tempPath);
   });
 });
 
-describe("Memory / Mistake Ledger v1 — Memory Events", () => {
+describeLedger("Memory / Mistake Ledger v1 — Memory Events", () => {
   let tempPath: string;
 
   beforeEach(() => {
-    tempPath = `/tmp/test-ledger-${Date.now()}.sqlite`;
+    tempPath = createTempLedgerPath();
   });
 
   afterEach(() => {
+    closeLedger();
     try {
-      require("fs").unlinkSync(tempPath);
+      fs.unlinkSync(tempPath);
     } catch {}
   });
 
@@ -106,16 +140,17 @@ describe("Memory / Mistake Ledger v1 — Memory Events", () => {
   });
 });
 
-describe("Memory / Mistake Ledger v1 — Mistake Events", () => {
+describeLedger("Memory / Mistake Ledger v1 — Mistake Events", () => {
   let tempPath: string;
 
   beforeEach(() => {
-    tempPath = `/tmp/test-ledger-${Date.now()}.sqlite`;
+    tempPath = createTempLedgerPath();
   });
 
   afterEach(() => {
+    closeLedger();
     try {
-      require("fs").unlinkSync(tempPath);
+      fs.unlinkSync(tempPath);
     } catch {}
   });
 
@@ -189,16 +224,17 @@ describe("Memory / Mistake Ledger v1 — Mistake Events", () => {
   });
 });
 
-describe("Memory / Mistake Ledger v1 — Stats", () => {
+describeLedger("Memory / Mistake Ledger v1 — Stats", () => {
   let tempPath: string;
 
   beforeEach(() => {
-    tempPath = `/tmp/test-ledger-${Date.now()}.sqlite`;
+    tempPath = createTempLedgerPath();
   });
 
   afterEach(() => {
+    closeLedger();
     try {
-      require("fs").unlinkSync(tempPath);
+      fs.unlinkSync(tempPath);
     } catch {}
   });
 
@@ -217,7 +253,7 @@ describe("Memory / Mistake Ledger v1 — Stats", () => {
       severity: "low",
     });
 
-    const stats = getLedgerStats(db);
+    const stats = getLedgerStats();
     expect(stats.memory_count).toBe(1);
     expect(stats.mistake_count).toBe(1);
     expect(stats.unresolved_mistakes).toBe(1);

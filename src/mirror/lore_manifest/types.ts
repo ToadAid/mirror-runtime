@@ -3,11 +3,21 @@ export type MirrorLoreManifestEntry = {
   sha256: string;
 };
 
-export type MirrorLoreManifest = {
+export type MirrorLoreHashedManifest = {
   version: string;
   canonicalDir: string;
   scrolls: MirrorLoreManifestEntry[];
 };
+
+export type MirrorLoreFileListManifest = {
+  name?: string;
+  base_dir: string;
+  version: string;
+  chain?: string;
+  files: string[];
+};
+
+export type MirrorLoreManifest = MirrorLoreHashedManifest | MirrorLoreFileListManifest;
 
 export type MirrorLoreManifestMismatch = {
   path: string;

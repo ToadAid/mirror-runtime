@@ -28,6 +28,7 @@ describe("mirrordaemon", () => {
         shutdown: async () => undefined,
       },
       runtimeStartedAt: "2026-03-13T00:00:00.000Z",
+      daemonSessionId: "daemon-session-1",
     });
 
     expect(snapshot.runtime_started_at).toBe("2026-03-13T00:00:00.000Z");

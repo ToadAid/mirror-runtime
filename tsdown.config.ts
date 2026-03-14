@@ -24,6 +24,12 @@ export default defineConfig([
     platform: "node",
   },
   {
+    entry: "src/mirror-package.ts",
+    env,
+    fixedExtension: false,
+    platform: "node",
+  },
+  {
     // Ensure this module is bundled as an entry so legacy CLI shims can resolve its exports.
     entry: "src/cli/daemon-cli.ts",
     env,

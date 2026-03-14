@@ -1,0 +1,30 @@
+{
+  "name": "openclaw",
+  "version": "2026.2.25",
+  "private": true,
+  "description": "Compatibility package forwarding to the Mirror Runtime root package",
+  "bin": {
+    "openclaw": "./bin/openclaw.js"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./plugin-sdk": {
+      "types": "./plugin-sdk/index.d.ts",
+      "default": "./plugin-sdk/index.js"
+    },
+    "./plugin-sdk/account-id": {
+      "types": "./plugin-sdk/account-id.d.ts",
+      "default": "./plugin-sdk/account-id.js"
+    },
+    "./cli-entry": "./bin/openclaw.js"
+  },
+  "scripts": {
+    "build": "pnpm --dir ../.. build:mirror",
+    "smoke": "pnpm --dir ../.. smoke:mirror",
+    "test": "pnpm --dir ../.. test:mirror"
+  }
+}

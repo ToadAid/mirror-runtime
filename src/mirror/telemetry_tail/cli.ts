@@ -1,6 +1,7 @@
 // Compatibility-only source of truth for `openclaw mirror ...` subcommands.
 // Canonical standalone operator paths live under the `mirror` binary and `/mirror/*`.
 import type { Command } from "commander";
+import { createMirrorRuntimeHost } from "../../mirror-service/index.js";
 import { formatMirrorDoctorHuman, runMirrorDoctor } from "../doctor/index.js";
 import { runVerifyLoreCli } from "../lore_manifest/index.js";
 import { buildMirrorPassport, formatMirrorPassport } from "../passport/index.js";
@@ -301,17 +302,21 @@ export async function runMirrorTelemetryReflectCli(
 }
 
 export async function runMirrorStatusCli(opts: MirrorStatusCliOptions): Promise<void> {
-  const status = await getMirrorStatus({
-    ndjsonPath: opts.ndjsonPath,
-    dbPath: opts.db,
-  });
+  const runtimeHost = await createMirrorRuntimeHost();
+  try {
+    const status = await getMirrorStatus({
+      runtimeHost,
+    });
 
-  if (opts.json) {
-    process.stdout.write(`${JSON.stringify(status)}\n`);
-    return;
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(status)}\n`);
+      return;
+    }
+
+    process.stdout.write(formatMirrorStatusHuman(status));
+  } finally {
+    await runtimeHost.shutdown();
   }
-
-  process.stdout.write(formatMirrorStatusHuman(status));
 }
 
 export async function runMirrorDoctorCli(opts: MirrorDoctorCliOptions): Promise<void> {

@@ -70,3 +70,7 @@ export function defineChainWalletProfileSkillTests() {
     });
   });
 }
+
+describe.skip("chain wallet profile skill test helper", () => {
+  it("is covered by the shared wrapper suite", () => {});
+});

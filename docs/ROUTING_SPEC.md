@@ -50,6 +50,7 @@ Routing determines which mode activates based on incoming messages.
 - **Format**: Plain text or markdown, sanitized for public consumption.
 - **Tone**: Calm, precise, lore-focused. No technical jargon.
 - **Examples**:
+
   ```
   Mirror, who is Toadgod?
   → Toadgod is the first poet of Tobyworld. Through encrypted verses, they revealed $TOBY as a covenant of patience and community.
@@ -61,6 +62,7 @@ Routing determines which mode activates based on incoming messages.
 - **Format**: Structured, potentially with technical markup.
 - **Tone**: Direct, operational, no fluff.
 - **Examples**:
+
   ```
   Keeper, check the database
   → [System] Reading lore-scrolls from /path/to/lore-scrolls

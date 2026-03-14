@@ -9,6 +9,7 @@ import {
   addRetrievalHistory,
   upsertUserReflection,
 } from "../mirror-memory/repository.js";
+import type { FetchLike } from "../mirror-provider/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import {
   executeMirrorChatRequest,
@@ -19,7 +20,7 @@ import {
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
 const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
-const originalLogLevel = process.env.OPENCLAW_LOG_LEVEL;
+const originalLogLevel = process.env.MIRROR_LOG_LEVEL;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -33,9 +34,9 @@ afterEach(async () => {
     process.env.MIRROR_MEMORY_DB_PATH = originalMirrorMemoryDbPath;
   }
   if (originalLogLevel === undefined) {
-    delete process.env.OPENCLAW_LOG_LEVEL;
+    delete process.env.MIRROR_LOG_LEVEL;
   } else {
-    process.env.OPENCLAW_LOG_LEVEL = originalLogLevel;
+    process.env.MIRROR_LOG_LEVEL = originalLogLevel;
   }
 
   closeMirrorMemoryDb();
@@ -196,7 +197,7 @@ describe("mirror chat engine", () => {
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
 
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{
         model: string;
         messages: Array<{ role: string; content: string }>;
@@ -280,7 +281,7 @@ describe("mirror chat engine", () => {
     process.env.MIRROR_LORE_DIR = loreDir;
 
     const gateway = createMirrorGateway();
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{
         messages: Array<{ role: string; content: string }>;
       }>(init);

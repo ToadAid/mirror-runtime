@@ -29,25 +29,13 @@ function boolFromEnv(env: NodeJS.ProcessEnv, key: string): boolean {
 }
 
 function detectAgentId(env: NodeJS.ProcessEnv): string | undefined {
-  const keys = ["MIRROR_AGENT_ID", "OPENCLAW_AGENT_ID", "OPENCLAW_AGENT"];
-  for (const key of keys) {
-    const value = env[key]?.trim();
-    if (value) {
-      return value;
-    }
-  }
-  return undefined;
+  const value = env.MIRROR_AGENT_ID?.trim();
+  return value ? value : undefined;
 }
 
 function detectRunId(env: NodeJS.ProcessEnv): string | undefined {
-  const keys = ["MIRROR_RUN_ID", "OPENCLAW_RUN_ID"];
-  for (const key of keys) {
-    const value = env[key]?.trim();
-    if (value) {
-      return value;
-    }
-  }
-  return undefined;
+  const value = env.MIRROR_RUN_ID?.trim();
+  return value ? value : undefined;
 }
 
 async function canAccess(filePath: string, mode: number): Promise<boolean> {

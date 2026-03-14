@@ -31,7 +31,12 @@ export type MirrorSyncManager = {
   registry: MirrorPeerRegistry;
 };
 
-export type MirrorSyncHandlers = ReturnType<typeof createMirrorSyncHandlers>;
+export type MirrorSyncHandlers = {
+  announce: (req: express.Request, res: express.Response) => Promise<unknown>;
+  peers: (req: express.Request, res: express.Response) => Promise<unknown>;
+  updates: (req: express.Request, res: express.Response) => Promise<unknown>;
+  pull: (req: express.Request, res: express.Response) => Promise<unknown>;
+};
 
 type MirrorSyncManagerOptions = {
   nodeId: string;
@@ -39,6 +44,7 @@ type MirrorSyncManagerOptions = {
   baseUrl?: string | null;
   fetchImpl?: FetchLike;
   registry?: MirrorPeerRegistry;
+  onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
 };
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -63,9 +69,17 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
 
   return {
     async announcePeer(input) {
+      options.onRuntimeEvent?.("sync.announce.started", {
+        peer_id: input.peer_id,
+        base_url: input.base_url,
+      });
       const peer = registry.registerPeer({
         peer_id: input.peer_id,
         base_url: normalizeMirrorPeerBaseUrl(input.base_url),
+      });
+      options.onRuntimeEvent?.("sync.announce.finished", {
+        peer_id: peer.peer_id,
+        base_url: peer.base_url,
       });
       logMirrorEvent("sync.peer.announced", {
         peer_id: peer.peer_id,
@@ -77,6 +91,9 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
       return registry.listPeers();
     },
     async getLocalUpdates(params = {}) {
+      options.onRuntimeEvent?.("sync.updates.requested", {
+        requested_paths: params.requestedPaths?.length ?? 0,
+      });
       const canon = await collectLocalCanonUpdates(options.loreDir);
       const graph = await collectLocalGraphMetadata(options.loreDir);
       const requestedPaths = params.requestedPaths ?? [];
@@ -109,6 +126,10 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
 
       registry.registerPeer({ peer_id: peer.peer_id, base_url: peer.base_url });
       registry.markStatus(peer.peer_id, "syncing");
+      options.onRuntimeEvent?.("sync.pull.started", {
+        peer_id: peer.peer_id,
+        base_url: peer.base_url,
+      });
 
       try {
         if (localBaseUrl) {
@@ -157,6 +178,12 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
         });
 
         registry.markStatus(peer.peer_id, "ok");
+        options.onRuntimeEvent?.("sync.pull.finished", {
+          peer_id: peer.peer_id,
+          pulled_files: canonResult.pulledFiles.length,
+          conflicts: canonResult.conflicts.length,
+          graph_rebuilt: graphResult.rebuilt,
+        });
         logMirrorEvent("sync.pull.completed", {
           peer_id: peer.peer_id,
           pulled_files: canonResult.pulledFiles.length,
@@ -179,6 +206,10 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
       } catch (error) {
         incrementMetric("sync_failures");
         registry.markStatus(peer.peer_id, "error", String(error));
+        options.onRuntimeEvent?.("sync.pull.failed", {
+          peer_id: peer.peer_id,
+          error: String(error),
+        });
         logMirrorEvent("sync.pull.failed", {
           peer_id: peer.peer_id,
           error: String(error),
@@ -196,7 +227,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
   };
 }
 
-export function createMirrorSyncHandlers(manager: MirrorSyncManager) {
+export function createMirrorSyncHandlers(manager: MirrorSyncManager): MirrorSyncHandlers {
   return {
     announce: async (req: express.Request, res: express.Response) => {
       const payload =
@@ -209,8 +240,8 @@ export function createMirrorSyncHandlers(manager: MirrorSyncManager) {
       const updates = await manager.getLocalUpdates();
       return res.json({ peer, local: { node_id: updates.node_id, base_url: updates.base_url } });
     },
-    peers: (_req: express.Request, res: express.Response) => {
-      res.json({ peers: manager.listPeers() });
+    peers: async (_req: express.Request, res: express.Response) => {
+      return res.json({ peers: manager.listPeers() });
     },
     updates: async (req: express.Request, res: express.Response) => {
       const includeContent = req.query.include_content === "1";

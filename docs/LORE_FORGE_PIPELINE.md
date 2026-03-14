@@ -37,7 +37,7 @@ If the combined weighted score exceeds the configured threshold, a candidate bun
 
 When the score threshold is met, a candidate folder is created under:
 
-candidates/<candidate-id>/
+`candidates/<candidate-id>/`
 
 Each bundle contains:
 
@@ -52,7 +52,7 @@ These bundles remain untrusted until manually reviewed.
 
 ## Candidate Scroll Format
 
-# CANDIDATE — <short title>
+# CANDIDATE - Short Title
 
 ## Source Summary
 
@@ -99,25 +99,25 @@ This PR does NOT:
 
 ### Module Structure
 
+```text
 src/plugin-sdk/mirror/lore_forge/
 ├── index.ts
 ├── types.ts
 ├── scoring.ts
 └── bundle.ts
+```
 
 ---
 
 ### Usage (Library-Only)
 
-`ts
-import {
-scoreCandidate,
-createJsonBundle,
-} from "src/plugin-sdk/mirror/lore_forge";
+```ts
+import { scoreCandidate, createJsonBundle } from "src/plugin-sdk/mirror/lore_forge";
 
 const scored = scoreCandidate(
-{ id: "test", content: "Lore content", tags: ["example"] },
-{ includeReason: true }
+  { id: "test", content: "Lore content", tags: ["example"] },
+  { includeReason: true },
 );
+```
 
 const bundle = createJsonBundle(scored, { format: "json" });

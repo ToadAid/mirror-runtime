@@ -16,6 +16,7 @@ type BetterSqliteDb = {
   exec: (sql: string) => void;
   close: () => void;
   prepare: (sql: string) => {
+    get: (...params: unknown[]) => unknown;
     run: (...params: unknown[]) => void;
     all: (...params: unknown[]) => unknown[];
   };

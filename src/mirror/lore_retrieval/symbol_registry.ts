@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,17 @@ export type MirrorSymbolRegistryEntry = {
 
 function resolveSymbolRegistryPath(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(currentDir, "../../../docs/lore/SYMBOL_REGISTRY.md");
+  const candidates = [
+    path.resolve(process.cwd(), "docs/lore/SYMBOL_REGISTRY.md"),
+    path.resolve(currentDir, "../docs/lore/SYMBOL_REGISTRY.md"),
+    path.resolve(currentDir, "../../../docs/lore/SYMBOL_REGISTRY.md"),
+  ];
+
+  const resolved = candidates.find((candidate) => fsSync.existsSync(candidate));
+  if (!resolved) {
+    throw new Error("Unable to resolve SYMBOL_REGISTRY.md");
+  }
+  return resolved;
 }
 
 function splitConcepts(value: string): string[] {

@@ -1,4 +1,16 @@
 export {
+  createMirrorObservabilityContext,
+  getCurrentMirrorObservabilityContext,
+  getDefaultMirrorObservabilityContext,
+  runWithMirrorObservabilityContext,
+  type MirrorDiagnosticsSnapshot,
+  type MirrorMetricsSnapshot,
+  type MirrorObservabilityContext,
+  type CounterMetricName,
+  type GaugeMetricName,
+  type LatencyMetricName,
+} from "./context.js";
+export {
   getMirrorMetrics,
   incrementMetric,
   incrementToolExecution,

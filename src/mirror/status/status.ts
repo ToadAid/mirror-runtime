@@ -1,144 +1,124 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { openTelemetryIndexDb, resolveMirrorTelemetryIndexDbPath } from "../telemetry_index/db.js";
+import type { MirrorMetricsSnapshot } from "../../mirror-observability/index.js";
+import type { MirrorRuntimeHost } from "../../mirror-service/index.js";
 import {
-  resolveMirrorTelemetrySinkLockEnabled,
-  resolveMirrorTelemetrySinkLockPath,
-  resolveMirrorTelemetrySinkPath,
-  resolveMirrorTelemetrySinkRotateBytes,
-  resolveMirrorTelemetrySinkRotateKeep,
-} from "../telemetry_sinks/ndjson_sink.js";
+  getMirrordaemonHealthState,
+  getMirrordaemonRuntimeState,
+} from "../../mirrordaemon/index.js";
 
 export type MirrorStatus = {
   ts: string;
   cwd: string;
-  telemetry: {
-    enabled: boolean;
-    sinkEnabled: boolean;
-    sinkPath: string;
-    rotateBytes: number;
-    rotateKeep: number;
-    lockEnabled: boolean;
-    lockPath: string;
-    indexDbPath: string;
+  runtime: ReturnType<typeof getMirrordaemonRuntimeState>;
+  service: {
+    lore_dir: string;
+    provider_url: string;
+    operator_auth_configured: boolean;
+    workspace_users_root: string;
   };
-  passport: {
-    cliAvailable: true;
-    telemetryEnabled: boolean;
+  provider: {
+    configured: boolean;
+    ready: boolean;
+    active_provider_id: string | null;
+    total: number;
+    available: number;
+    fallback_available: boolean;
+    providers: Array<{
+      provider_id: string;
+      label: string;
+      url: string;
+      ready: boolean;
+      selected: boolean;
+      last_error?: string;
+    }>;
   };
-  privacy: {
-    boundaryGuard: boolean;
+  lore: {
+    ready: boolean;
+    discovered_files: number;
+    dir: string;
   };
-  storage: {
-    ndjsonExists: boolean;
-    ndjsonBytes?: number;
-    sqliteExists: boolean;
-    sqliteEvents?: number | null;
+  workspace: {
+    ready: boolean;
+    users_root: string;
+  };
+  sync: {
+    node_id: string;
+    base_url: string | null;
+    peers_known: number;
+  };
+  observability: {
+    metrics: MirrorMetricsSnapshot;
+    diagnostics_events: number;
   };
 };
 
 export type GetMirrorStatusOptions = {
-  env?: NodeJS.ProcessEnv;
+  runtimeHost: MirrorRuntimeHost;
   cwd?: string;
   now?: Date;
-  ndjsonPath?: string;
-  dbPath?: string;
-  openDb?: (dbPath: string) => import("node:sqlite").DatabaseSync;
 };
 
-async function statSafe(filePath: string): Promise<{ exists: boolean; size?: number }> {
-  try {
-    const stats = await fs.stat(filePath);
-    return {
-      exists: stats.isFile(),
-      size: stats.size,
-    };
-  } catch {
-    return { exists: false };
-  }
-}
-
-function resolvePath(inputPath: string): string {
-  return path.isAbsolute(inputPath) ? inputPath : path.resolve(inputPath);
-}
-
-function resolveStatusPaths(opts: GetMirrorStatusOptions): { sinkPath: string; dbPath: string } {
-  const env = opts.env ?? process.env;
-  const sinkPath =
-    opts.ndjsonPath?.trim() && opts.ndjsonPath.trim().length > 0
-      ? opts.ndjsonPath.trim()
-      : resolveMirrorTelemetrySinkPath(env);
-  const dbPath =
-    opts.dbPath?.trim() && opts.dbPath.trim().length > 0
-      ? opts.dbPath.trim()
-      : resolveMirrorTelemetryIndexDbPath(env);
-  return {
-    sinkPath: resolvePath(sinkPath),
-    dbPath: resolvePath(dbPath),
-  };
-}
-
-function querySqliteEventsSafe(params: {
-  dbPath: string;
-  openDb?: (dbPath: string) => import("node:sqlite").DatabaseSync;
-}): number | null {
-  const openDb = params.openDb ?? ((dbPath: string) => openTelemetryIndexDb({ dbPath }));
-
-  let db: import("node:sqlite").DatabaseSync | undefined;
-  try {
-    db = openDb(params.dbPath);
-    const row = db.prepare("SELECT COUNT(*) as count FROM events").get() as
-      | { count?: number }
-      | undefined;
-    return typeof row?.count === "number" && Number.isFinite(row.count) ? row.count : null;
-  } catch {
-    return null;
-  } finally {
-    db?.close();
-  }
-}
-
-export async function getMirrorStatus(opts: GetMirrorStatusOptions = {}): Promise<MirrorStatus> {
-  const env = opts.env ?? process.env;
+export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<MirrorStatus> {
   const now = opts.now ?? new Date();
   const cwd = opts.cwd ?? process.cwd();
-  const { sinkPath, dbPath } = resolveStatusPaths(opts);
-
-  const [ndjsonStat, sqliteStat] = await Promise.all([statSafe(sinkPath), statSafe(dbPath)]);
-
-  const storage: MirrorStatus["storage"] = {
-    ndjsonExists: ndjsonStat.exists,
-    sqliteExists: sqliteStat.exists,
-  };
-
-  if (typeof ndjsonStat.size === "number") {
-    storage.ndjsonBytes = ndjsonStat.size;
-  }
-
-  if (sqliteStat.exists) {
-    storage.sqliteEvents = querySqliteEventsSafe({ dbPath, openDb: opts.openDb });
-  }
+  const daemon = opts.runtimeHost.daemon;
+  const boot = daemon.getBootSnapshot();
+  const observability = daemon.getObservability();
+  const metrics = observability.getMetrics();
+  const peersKnown = metrics.gauges.peers_known || opts.runtimeHost.syncManager.listPeers().length;
+  const baseUrl = opts.runtimeHost.syncManager.getLocalBaseUrl();
+  const runtime = getMirrordaemonRuntimeState(daemon, {
+    port: opts.runtimeHost.config.port,
+    baseUrl,
+  });
+  const health = getMirrordaemonHealthState(daemon, {
+    port: opts.runtimeHost.config.port,
+    baseUrl,
+    peersKnown,
+  });
 
   return {
     ts: now.toISOString(),
     cwd,
-    telemetry: {
-      enabled: env.MIRROR_TELEMETRY_ENABLED === "1",
-      sinkEnabled: env.MIRROR_TELEMETRY_SINK_ENABLED === "1",
-      sinkPath,
-      rotateBytes: resolveMirrorTelemetrySinkRotateBytes(env),
-      rotateKeep: resolveMirrorTelemetrySinkRotateKeep(env),
-      lockEnabled: resolveMirrorTelemetrySinkLockEnabled(env),
-      lockPath: resolveMirrorTelemetrySinkLockPath({ filePath: sinkPath, env }),
-      indexDbPath: dbPath,
+    runtime,
+    service: {
+      lore_dir: boot.config.lore_dir,
+      provider_url: boot.config.provider_url,
+      operator_auth_configured: boot.config.operator_auth_configured,
+      workspace_users_root: boot.config.workspace_users_root,
     },
-    passport: {
-      cliAvailable: true,
-      telemetryEnabled: env.MIRROR_PASSPORT_TELEMETRY_ENABLED === "1",
+    provider: {
+      configured: health.provider.configured,
+      ready: health.provider.ready,
+      active_provider_id: health.provider.active_provider_id,
+      total: health.provider.total,
+      available: health.provider.available,
+      fallback_available: health.provider.fallback_available,
+      providers: opts.runtimeHost.providerPlane.listProviders().map((provider) => ({
+        provider_id: provider.provider_id,
+        label: provider.label,
+        url: provider.url,
+        ready: provider.ready,
+        selected: provider.selected,
+        last_error: provider.last_error,
+      })),
     },
-    privacy: {
-      boundaryGuard: true,
+    lore: {
+      ready: boot.readiness.lore.ready,
+      discovered_files: boot.readiness.lore.discovered_files,
+      dir: boot.config.lore_dir,
     },
-    storage,
+    workspace: {
+      ready: boot.readiness.workspace.ready,
+      users_root: boot.readiness.workspace.users_root,
+    },
+    sync: {
+      node_id: boot.readiness.sync.node_id,
+      base_url: health.service.base_url,
+      peers_known: health.sync.peers_known,
+    },
+    observability: {
+      metrics,
+      diagnostics_events: observability.getDiagnostics().events.length,
+    },
   };
 }

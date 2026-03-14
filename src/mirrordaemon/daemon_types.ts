@@ -1,4 +1,7 @@
-import type { MirrorDiagnosticEvent } from "../mirror-observability/index.js";
+import type {
+  MirrorDiagnosticEvent,
+  MirrorObservabilityContext,
+} from "../mirror-observability/index.js";
 
 export type MirrordaemonSurfaceName =
   | "cli"
@@ -7,16 +10,20 @@ export type MirrordaemonSurfaceName =
   | "console"
   | "sync"
   | "observability"
-  | "runtime_api";
+  | "runtime_api"
+  | "runtime_ws";
 
 export type MirrordaemonBootSnapshot = {
   runtime_started_at: string;
   config: {
+    daemon_session_id: string;
     node_id: string;
     port: number;
     base_url: string | null;
     lore_dir: string;
     provider_url: string;
+    active_provider_id: string | null;
+    provider_count: number;
     operator_auth_configured: boolean;
     workspace_users_root: string;
   };
@@ -37,6 +44,10 @@ export type MirrordaemonBootSnapshot = {
     provider: {
       ready: boolean;
       configured: boolean;
+      active_provider_id: string | null;
+      total: number;
+      available: number;
+      fallback_available: boolean;
     };
     observability: {
       ready: true;
@@ -70,13 +81,22 @@ export type MirrordaemonRuntimeEvent = {
   id: string;
   type: string;
   timestamp: string;
+  correlation?: {
+    trace_id: string;
+    session_id?: string;
+    action_id?: string;
+    provider_id?: string;
+  };
   payload: Record<string, unknown>;
 };
 
 export type MirrordaemonRuntimeSummary = {
   ok: true;
   product: "mirror";
+  version: string;
+  daemon_session_id: string;
   runtime_started_at: string;
+  uptime_ms: number;
   node_id: string;
   port: number;
   base_url: string | null;
@@ -85,6 +105,27 @@ export type MirrordaemonRuntimeSummary = {
   sessions: {
     open: number;
     total: number;
+  };
+  actions: {
+    active: number;
+    registered: number;
+  };
+  providers: {
+    active_provider_id: string | null;
+    total: number;
+    available: number;
+  };
+  event_stream: {
+    sse_available: boolean;
+    ws_available: boolean;
+    ws_connections: number;
+    recent_events: number;
+  };
+  correlation: {
+    trace_id: true;
+    session_id: true;
+    action_id: true;
+    provider_id: true;
   };
 };
 
@@ -99,6 +140,11 @@ export type MirrordaemonHealthSummary = MirrordaemonRuntimeSummary & {
   };
   provider: {
     configured: boolean;
+    ready: boolean;
+    active_provider_id: string | null;
+    total: number;
+    available: number;
+    fallback_available: boolean;
   };
   sync: {
     peers_known: number;
@@ -112,9 +158,45 @@ export type MirrordaemonHealthSummary = MirrordaemonRuntimeSummary & {
 export type MirrordaemonDebugSnapshot = {
   runtime: MirrordaemonRuntimeSummary;
   boot_snapshot: MirrordaemonBootSnapshot;
+  correlation: {
+    fields: ["trace_id", "session_id", "action_id", "provider_id"];
+  };
   sessions: MirrordaemonSession[];
   diagnostics: MirrorDiagnosticEvent[];
   recent_events: MirrordaemonRuntimeEvent[];
+};
+
+export type MirrordaemonActionStatus = {
+  action_id: string;
+  action_name: string;
+  trace_id: string;
+  session_id?: string;
+  started_at: string;
+};
+
+export type MirrordaemonActionsSummary = {
+  ok: true;
+  daemon_session_id: string;
+  registered: number;
+  active: number;
+  actions: MirrordaemonActionStatus[];
+};
+
+export type MirrordaemonProvidersSummary = {
+  ok: true;
+  daemon_session_id: string;
+  active_provider_id: string | null;
+  total: number;
+  available: number;
+  fallback_available: boolean;
+  providers: Array<{
+    provider_id: string;
+    label: string;
+    kind: string;
+    ready: boolean;
+    configured: boolean;
+    selected: boolean;
+  }>;
 };
 
 export type MirrordaemonEventSubscription = {
@@ -130,4 +212,8 @@ export type MirrordaemonEventStream = {
     listener: (event: MirrordaemonRuntimeEvent) => void,
   ) => MirrordaemonEventSubscription;
   getRecentEvents: () => MirrordaemonRuntimeEvent[];
+};
+
+export type MirrordaemonObservability = {
+  getObservability: () => MirrorObservabilityContext;
 };

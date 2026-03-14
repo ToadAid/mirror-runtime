@@ -74,7 +74,7 @@ describe("handleBrainChatEndpoint", () => {
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
 
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: typeof fetch = vi.fn(async (_url, init) => {
       const body = parseRequestBodyJson<{
         messages: Array<{ role: string; content: string }>;
       }>(init);
@@ -125,7 +125,7 @@ describe("handleBrainChatEndpoint", () => {
     process.env.MIRROR_LORE_DIR = loreDir;
     process.env.OPENCLAW_LOG_LEVEL = "debug";
 
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: typeof fetch = vi.fn(async (_url, init) => {
       const body = parseRequestBodyJson<{
         messages: Array<{ role: string; content: string }>;
       }>(init);
@@ -201,7 +201,7 @@ describe("handleBrainChatEndpoint", () => {
       db,
     );
 
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: typeof fetch = vi.fn(async (_url, init) => {
       const body = parseRequestBodyJson<{
         messages: Array<{ role: string; content: string }>;
       }>(init);
