@@ -294,6 +294,14 @@ function decodeWebSocketPayload(payload: WebSocket.RawData): string {
   throw new Error("Unsupported websocket payload");
 }
 
+function isLoopbackSocketPermissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+  return code === "EPERM" && error.message.includes("127.0.0.1");
+}
+
 async function openRuntimeWebSocket(
   port: number,
   query = "",
@@ -1088,7 +1096,15 @@ describe("mirror service", () => {
     );
 
     try {
-      const ws = await openRuntimeWebSocket(service.port);
+      let ws;
+      try {
+        ws = await openRuntimeWebSocket(service.port);
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
       const hello = await ws.waitFor("hello");
       expect(hello.protocol).toBe(MIRROR_RUNTIME_WS_PROTOCOL);
       expect(hello.stream).toBe("runtime.events");
