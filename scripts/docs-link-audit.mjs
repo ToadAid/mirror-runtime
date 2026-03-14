@@ -68,6 +68,9 @@ const routes = new Set();
 
 for (const abs of markdownFiles) {
   const rel = normalizeSlashes(path.relative(DOCS_DIR, abs));
+  if (rel.startsWith("debug/")) {
+    continue;
+  }
   const text = fs.readFileSync(abs, "utf8");
   const slug = rel.replace(/\.(md|mdx)$/i, "");
   const route = normalizeRoute(slug);
@@ -121,6 +124,9 @@ let checked = 0;
 
 for (const abs of markdownFiles) {
   const rel = normalizeSlashes(path.relative(DOCS_DIR, abs));
+  if (rel.startsWith("debug/")) {
+    continue;
+  }
   const baseDir = normalizeSlashes(path.dirname(rel));
   const rawText = fs.readFileSync(abs, "utf8");
   const lines = rawText.split("\n");

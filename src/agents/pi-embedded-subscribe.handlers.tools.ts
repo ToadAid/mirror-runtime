@@ -350,7 +350,7 @@ export async function handleToolExecutionEnd(
         : undefined;
     recordMistake({
       kind: "tool_error",
-      message: errorMessage,
+      message: errorMessage ?? "Unknown tool error",
       runId: ctx.params.runId,
       toolName,
       meta: {

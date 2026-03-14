@@ -1,4 +1,5 @@
 import { logMirrorEvent, recordLatency } from "../mirror-observability/index.js";
+import type { MirrorRuntimeCorrelation } from "../mirror-runtime/index.js";
 import { buildMirrorProviderHeaders } from "./provider_auth.js";
 import type { MirrorProviderConfig, MirrorProviderRequest } from "./provider_request.js";
 import type { MirrorProviderResponse } from "./provider_response.js";
@@ -8,13 +9,25 @@ export type FetchLike = typeof fetch;
 export async function executeMirrorProviderRequest(
   request: MirrorProviderRequest,
   config: MirrorProviderConfig,
-  deps: { fetchImpl?: FetchLike } = {},
+  deps: {
+    fetchImpl?: FetchLike;
+    onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+    correlation?: Partial<MirrorRuntimeCorrelation>;
+  } = {},
 ): Promise<MirrorProviderResponse> {
   if (!config.url) {
     throw new Error("provider url not configured");
   }
 
   const startedAt = Date.now();
+  deps.onRuntimeEvent?.("provider.call.started", {
+    trace_id: deps.correlation?.trace_id,
+    session_id: deps.correlation?.session_id,
+    action_id: deps.correlation?.action_id,
+    provider_id: deps.correlation?.provider_id,
+    url: config.url,
+    model: request.model,
+  });
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
 
@@ -34,11 +47,31 @@ export async function executeMirrorProviderRequest(
     const payload = (await response.json()) as MirrorProviderResponse;
     const durationMs = Date.now() - startedAt;
     recordLatency("provider_latency_ms", durationMs);
+    deps.onRuntimeEvent?.("provider.call.finished", {
+      trace_id: deps.correlation?.trace_id,
+      session_id: deps.correlation?.session_id,
+      action_id: deps.correlation?.action_id,
+      provider_id: deps.correlation?.provider_id,
+      url: config.url,
+      model: request.model,
+      latency_ms: durationMs,
+    });
     logMirrorEvent("provider.call", {
       url: config.url,
       latency_ms: durationMs,
     });
     return payload;
+  } catch (error) {
+    deps.onRuntimeEvent?.("provider.call.failed", {
+      trace_id: deps.correlation?.trace_id,
+      session_id: deps.correlation?.session_id,
+      action_id: deps.correlation?.action_id,
+      provider_id: deps.correlation?.provider_id,
+      url: config.url,
+      model: request.model,
+      error: String(error),
+    });
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }

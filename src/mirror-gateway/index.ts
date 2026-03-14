@@ -6,6 +6,7 @@ export {
   type MirrorGatewayHandlers,
 } from "./routes.js";
 export {
+  authorizeMirrorToolAccess,
   authorizeMirrorToolRequest,
   getMirrorOperatorToken,
   readMirrorRequestToken,

@@ -68,8 +68,9 @@ async function seedValidLore(loreDir: string, fileName: string, title: string, t
 }
 
 function createFetchBridge(remoteManager: MirrorSyncManager) {
-  return async (url: string, init?: RequestInit) => {
-    const parsed = new URL(url);
+  return async (url: string | URL | Request, init?: RequestInit) => {
+    const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+    const parsed = new URL(urlText);
     if (parsed.pathname === "/mirror-sync/announce" && init?.method === "POST") {
       const payload = parseRequestBodyJson<{ peer_id: string; base_url: string }>(init);
       const peer = await remoteManager.announcePeer(payload);
@@ -96,7 +97,7 @@ function createFetchBridge(remoteManager: MirrorSyncManager) {
       } as Response;
     }
 
-    throw new Error(`unexpected sync bridge request: ${url}`);
+    throw new Error(`unexpected sync bridge request: ${urlText}`);
   };
 }
 

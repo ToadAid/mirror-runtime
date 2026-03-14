@@ -15,7 +15,7 @@ describe("mirror standalone entry", () => {
     expect(writeSpy).toHaveBeenCalled();
     expect(String(writeSpy.mock.calls[0]?.[0])).toContain("Mirror Runtime");
     expect(String(writeSpy.mock.calls[0]?.[0])).toContain(
-      "status    Show the standalone Mirror runtime status snapshot.",
+      "status    Show the daemon-backed standalone Mirror runtime status snapshot.",
     );
     expect(String(writeSpy.mock.calls[0]?.[0])).toContain(
       "verify-lore Verify canonical lore files against a lore manifest.",
@@ -67,7 +67,7 @@ describe("mirror standalone entry", () => {
     const statusCode = await runMirrorEntry(["node", "mirror", "help", "status"]);
     expect(statusCode).toBe(0);
     expect(String(writeSpy.mock.calls[0]?.[0])).toContain("mirror status");
-    expect(String(writeSpy.mock.calls[0]?.[0])).toContain("--ndjson-path <path>");
+    expect(String(writeSpy.mock.calls[0]?.[0])).toContain("--json");
 
     writeSpy.mockClear();
 

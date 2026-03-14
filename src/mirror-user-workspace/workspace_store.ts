@@ -64,7 +64,16 @@ async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> 
   );
   try {
     await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    await fs.rename(tempPath, filePath);
+    try {
+      await fs.rename(tempPath, filePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" && code !== "EPERM") {
+        throw error;
+      }
+      await fs.rm(filePath, { force: true });
+      await fs.rename(tempPath, filePath);
+    }
   } catch (error) {
     await fs.rm(tempPath, { force: true });
     throw error;

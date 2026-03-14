@@ -320,14 +320,18 @@ export function buildAssistantMessage(
   modelInfo: { api: string; provider: string; id: string },
 ): AssistantMessage {
   const content: (TextContent | ToolCall)[] = [];
+  const reasoningMessage = response.message as typeof response.message & {
+    reasoning_content?: string;
+    reasoning_text?: string;
+  };
 
   // Ollama GLM and other reasoning models may return output in reasoning fields.
   // Check: content, reasoning, reasoning_content, reasoning_text (fallback chain)
   const text =
     response.message.content ||
     response.message.reasoning ||
-    (response.message as any).reasoning_content ||
-    (response.message as any).reasoning_text ||
+    reasoningMessage.reasoning_content ||
+    reasoningMessage.reasoning_text ||
     "";
   if (text) {
     content.push({ type: "text", text });

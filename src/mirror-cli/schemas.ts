@@ -250,14 +250,10 @@ export const MIRROR_CLI_COMMAND_HELP: MirrorCliCommandHelp[] = [
   },
   {
     command: "status",
-    usage: "mirror status [--ndjson-path <path>] [--db <path>] [--json]",
-    description: "Show the standalone Mirror runtime status snapshot.",
+    usage: "mirror status [--json]",
+    description: "Show the daemon-backed standalone Mirror runtime status snapshot.",
     args: [],
-    options: [
-      "--ndjson-path <path>: optional telemetry sink path override",
-      "--db <path>: optional telemetry SQLite index path override",
-      "--json: emit stable machine-readable JSON",
-    ],
+    options: ["--json: emit stable machine-readable JSON"],
     auth: "open",
   },
   {
@@ -266,8 +262,8 @@ export const MIRROR_CLI_COMMAND_HELP: MirrorCliCommandHelp[] = [
     description: "Verify canonical lore files against a lore manifest.",
     args: [],
     options: [
-      "--manifest <path>: lore manifest path (default: lore/manifest.json)",
-      "--dir <path>: canonical lore directory (default: lore/canonical)",
+      "--manifest <path>: lore manifest path (default: <MIRROR_LORE_DIR>/manifest.json)",
+      "--dir <path>: canonical lore directory (default: MIRROR_LORE_DIR or ./lore-scrolls)",
       "--json: emit stable machine-readable JSON",
     ],
     auth: "open",

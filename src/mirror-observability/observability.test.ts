@@ -8,9 +8,13 @@ import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
 import { reviewDraftForCanon } from "../mirror-review/index.js";
 import { createMirrorSyncHandlers, createMirrorSyncManager } from "../mirror-sync/index.js";
 import {
+  createMirrorObservabilityContext,
   createMirrorObservabilityHandlers,
+  getMirrorMetrics,
+  incrementMetric,
   resetMirrorDiagnostics,
   resetMirrorMetrics,
+  runWithMirrorObservabilityContext,
 } from "./index.js";
 
 const tempDirs: string[] = [];
@@ -104,7 +108,11 @@ async function seedLoreCorpus(loreDir: string): Promise<void> {
 function createMockResponse() {
   return {
     statusCode: 200,
+    headers: {} as Record<string, string>,
     body: undefined as unknown,
+    setHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+    },
     status(code: number) {
       this.statusCode = code;
       return this;
@@ -134,6 +142,24 @@ function validDraft(body: string): string {
 }
 
 describe("mirror observability", () => {
+  it("supports isolated runtime-scoped observability contexts", () => {
+    const runtimeContext = createMirrorObservabilityContext();
+    const observabilityHandlers = createMirrorObservabilityHandlers(runtimeContext);
+
+    runWithMirrorObservabilityContext(runtimeContext, () => {
+      incrementMetric("chat_requests");
+    });
+
+    const metricsRes = createMockResponse();
+    observabilityHandlers.metrics({} as never, metricsRes as never);
+    const scopedMetrics = metricsRes.body as {
+      counters: Record<string, number>;
+    };
+
+    expect(scopedMetrics.counters.chat_requests).toBe(1);
+    expect(getMirrorMetrics().counters.chat_requests).toBe(0);
+  });
+
   it("emits metrics and diagnostics through the wrapper layers", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);

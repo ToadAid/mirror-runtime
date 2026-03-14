@@ -6,6 +6,7 @@ import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { resolveOpenClawPackageRoot, resolveOpenClawPackageRootSync } from "./openclaw-root.js";
 
 const CONTROL_UI_DIST_PATH_SEGMENTS = ["dist", "control-ui", "index.html"] as const;
+const CORE_PACKAGE_NAMES = new Set(["mirror-runtime", "openclaw"]);
 
 export function resolveControlUiDistIndexPathForRoot(root: string): string {
   return path.join(root, ...CONTROL_UI_DIST_PATH_SEGMENTS);
@@ -101,7 +102,7 @@ export async function resolveControlUiDistIndexPath(
       try {
         const raw = fs.readFileSync(pkgJsonPath, "utf-8");
         const parsed = JSON.parse(raw) as { name?: unknown };
-        if (parsed.name === "openclaw") {
+        if (typeof parsed.name === "string" && CORE_PACKAGE_NAMES.has(parsed.name)) {
           return fs.existsSync(indexPath) ? indexPath : null;
         }
         // Stop at the first package boundary to avoid resolving through unrelated ancestors.
