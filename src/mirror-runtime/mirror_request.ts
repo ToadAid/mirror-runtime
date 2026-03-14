@@ -19,4 +19,10 @@ export type MirrorChatRequest = {
     user_id?: string;
     tool_context?: Record<string, unknown>;
   };
+  correlation?: {
+    trace_id?: string;
+    session_id?: string;
+    action_id?: string;
+    provider_id?: string;
+  };
 };

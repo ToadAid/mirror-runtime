@@ -56,6 +56,12 @@ export type MirrorGateway = {
       providerPlane?: MirrorProviderPlane;
       fetchImpl?: FetchLike;
       onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+      correlation?: {
+        trace_id?: string;
+        session_id?: string;
+        action_id?: string;
+        provider_id?: string;
+      };
     },
     context?: MirrorPolicyContext,
   ) => Promise<MirrorChatResponse>;
@@ -160,6 +166,7 @@ export function createMirrorGateway(
         providerPlane,
         fetchImpl: deps.fetchImpl,
         onRuntimeEvent: deps.onRuntimeEvent,
+        correlation: deps.correlation,
       });
     },
     async executeTool(toolName, input, context = { surface: "gateway" }) {

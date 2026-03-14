@@ -1,4 +1,8 @@
-import type { MirrorRuntimeCorrelation } from "../mirror-runtime/index.js";
+import {
+  mergeMirrorCorrelation,
+  withMirrorCorrelation,
+  type MirrorRuntimeCorrelation,
+} from "../mirror-runtime/index.js";
 import type { MirrorServiceConfig } from "../mirror-service/config.js";
 import type { FetchLike } from "./mirror_provider.js";
 import { executeMirrorProviderRequest } from "./mirror_provider.js";
@@ -230,29 +234,28 @@ export function createMirrorProviderPlane(
       for (const [index, entry] of candidates.entries()) {
         attempted.push(entry.descriptor.provider_id);
         const startedAt = Date.now();
-        deps.onRuntimeEvent?.("provider.selected", {
-          trace_id: deps.correlation?.trace_id,
-          session_id: deps.correlation?.session_id,
-          action_id: deps.correlation?.action_id,
+        const correlation = mergeMirrorCorrelation(deps.correlation, {
           provider_id: entry.descriptor.provider_id,
-          url: entry.descriptor.url,
-          fallback_candidate: index > 0,
         });
+        deps.onRuntimeEvent?.(
+          "provider.selected",
+          withMirrorCorrelation(
+            {
+              url: entry.descriptor.url,
+              fallback_candidate: index > 0,
+            },
+            correlation,
+          ),
+        );
         try {
           const response = await executeMirrorProviderRequest(
             request,
             toProviderConfig(entry.descriptor),
             {
               fetchImpl: deps.fetchImpl,
-              correlation: {
-                ...deps.correlation,
-                provider_id: entry.descriptor.provider_id,
-              },
+              correlation,
               onRuntimeEvent: (type, payload) => {
-                deps.onRuntimeEvent?.(type, {
-                  provider_id: entry.descriptor.provider_id,
-                  ...payload,
-                });
+                deps.onRuntimeEvent?.(type, withMirrorCorrelation(payload ?? {}, correlation));
               },
             },
           );
@@ -268,10 +271,7 @@ export function createMirrorProviderPlane(
               attempted_provider_ids: attempted,
               fallback_used: index > 0,
             },
-            correlation: {
-              ...deps.correlation,
-              provider_id: entry.descriptor.provider_id,
-            },
+            correlation,
             response,
           };
         } catch (error) {
@@ -279,14 +279,16 @@ export function createMirrorProviderPlane(
           entry.state.last_failure_at = new Date().toISOString();
           entry.state.failure_count += 1;
           lastError = error;
-          deps.onRuntimeEvent?.("provider.fallback", {
-            trace_id: deps.correlation?.trace_id,
-            session_id: deps.correlation?.session_id,
-            action_id: deps.correlation?.action_id,
-            provider_id: entry.descriptor.provider_id,
-            fallback_available: allowFallback && index < candidates.length - 1,
-            error: String(error),
-          });
+          deps.onRuntimeEvent?.(
+            "provider.fallback",
+            withMirrorCorrelation(
+              {
+                fallback_available: allowFallback && index < candidates.length - 1,
+                error: String(error),
+              },
+              correlation,
+            ),
+          );
           if (!allowFallback || index === candidates.length - 1) {
             throw error;
           }
