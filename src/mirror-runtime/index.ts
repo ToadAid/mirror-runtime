@@ -7,6 +7,7 @@ export {
 export {
   buildMirrorCorrelationFromPolicyContext,
   getMirrorTraceIdFromPolicyContext,
+  mergeMirrorCorrelation,
   resolveMirrorTraceId,
   withMirrorCorrelation,
   type MirrorRuntimeCorrelation,
