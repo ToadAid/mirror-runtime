@@ -394,7 +394,12 @@ describe("telegram forwarded bursts", () => {
         }
         expect(flushTimer).toBeTypeOf("function");
         await flushTimer?.();
-        expect(replySpy).toHaveBeenCalledTimes(1);
+        await vi.waitFor(
+          () => {
+            expect(replySpy).toHaveBeenCalledTimes(1);
+          },
+          { timeout: FORWARD_BURST_TEST_TIMEOUT_MS, interval: 2 },
+        );
 
         expect(runtimeError).not.toHaveBeenCalled();
         const payload = replySpy.mock.calls[0][0];
