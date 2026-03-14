@@ -21,8 +21,10 @@ on:
       - ".github/actions/setup-node-env/**"
       - ".github/actions/setup-pnpm-store-cache/**"
   pull_request:
-    # Keep PR checks reportable even when changes fall outside the narrow runtime paths.
-    # Required checks stay "Expected" forever if the whole workflow is skipped at trigger time.
+    # Canonical PR gate for Mirror Runtime work.
+    # Keep PR checks reportable even when changes fall outside the narrow runtime paths so
+    # GitHub required-check settings can point here without leaving runtime PRs stuck in
+    # perpetual "Expected" state.
 
 concurrency:
   group: mirror-runtime-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
