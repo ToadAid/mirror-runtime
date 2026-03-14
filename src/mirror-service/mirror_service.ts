@@ -2,12 +2,19 @@ import crypto from "node:crypto";
 import http from "node:http";
 import express from "express";
 import {
+  createMirrorActionRuntime,
+  createMirrorActionsFromTools,
+} from "../mirror-actions/index.js";
+import {
   createMirrorConsoleHandlers,
   createMirrorConsoleRouterAtBase,
   type MirrorConsoleHandlers,
 } from "../mirror-console/index.js";
-import type { MirrorGatewayHandlers } from "../mirror-gateway/index.js";
-import { createMirrorGatewayHandlers, createMirrorGatewayRouter } from "../mirror-gateway/index.js";
+import {
+  createMirrorGatewayHandlers,
+  createMirrorGatewayRouter,
+  type MirrorGatewayHandlers,
+} from "../mirror-gateway/index.js";
 import {
   createMirrorObservabilityHandlers,
   createMirrorObservabilityRouter,
@@ -24,6 +31,7 @@ import {
   type MirrorProviderPlane,
 } from "../mirror-provider/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
+import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncHandlers,
   createMirrorSyncManager,
@@ -31,10 +39,13 @@ import {
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
 import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
+import { createMirrorToolRegistry, getMirrorNativeSkillTools } from "../mirror/skills/index.js";
 import {
   createMirrordaemon,
+  getMirrordaemonActionsState,
   getMirrordaemonDebugState,
   getMirrordaemonHealthState,
+  getMirrordaemonProvidersState,
   getMirrordaemonRuntimeState,
   type Mirrordaemon,
 } from "../mirrordaemon/index.js";
@@ -116,9 +127,14 @@ export async function startMirrorService(
   });
   const observability = daemon.getObservability();
   const policy = createMirrorPolicyEngine();
+  const registry = createMirrorToolRegistry(getMirrorNativeSkillTools());
+  const actionRuntime = createMirrorActionRuntime(
+    createMirrorActionsFromTools(registry.listTools()),
+  );
 
-  const handlers = createMirrorGatewayHandlers(undefined, {
+  const handlers = createMirrorGatewayHandlers(registry, {
     providerPlane,
+    actionRuntime,
     fetchImpl: deps.fetchImpl,
     policy,
     onRuntimeEvent: daemon.publishRuntimeEvent,
@@ -244,6 +260,10 @@ export async function startMirrorService(
         : {};
     const sessionFromBody = typeof body.session_id === "string" ? body.session_id : undefined;
     const sessionFromHeader = req.header("x-mirror-session-id") ?? undefined;
+    const traceId = resolveMirrorTraceId(
+      req.header("x-mirror-trace-id") ?? undefined,
+      typeof body.trace_id === "string" ? body.trace_id : undefined,
+    );
     const sessionId = sessionFromHeader ?? sessionFromBody ?? crypto.randomUUID();
     const sessionUserId =
       typeof body.user_id === "string"
@@ -255,22 +275,28 @@ export async function startMirrorService(
     if (existing) {
       daemon.touchSession(sessionId, {
         user_id: sessionUserId,
-        metadata: { path: req.path, method: req.method },
+        metadata: { path: req.path, method: req.method, trace_id: traceId },
       });
     } else {
       daemon.createSession({
         session_id: sessionId,
         user_id: sessionUserId,
-        metadata: { path: req.path, method: req.method },
+        metadata: { path: req.path, method: req.method, trace_id: traceId },
       });
     }
     res.setHeader("x-mirror-session-id", sessionId);
+    res.setHeader("x-mirror-trace-id", traceId);
     next();
   });
   const healthHandler = (_req: express.Request, res: express.Response) => {
     const status: MirrorHealthStatus = getMirrordaemonHealthState(daemon, {
       port: boundPort,
       baseUrl: syncManager.getLocalBaseUrl(),
+      actionRuntime,
+      providerPlane,
+      wsConnections: runtimeWebSocket.getConnectionCount(),
+      sseAvailable: true,
+      wsAvailable: true,
       peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
     });
     daemon.publishRuntimeEvent("runtime.health.requested", {
@@ -308,6 +334,11 @@ export async function startMirrorService(
       getMirrordaemonRuntimeState(daemon, {
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
+        actionRuntime,
+        providerPlane,
+        wsConnections: runtimeWebSocket.getConnectionCount(),
+        sseAvailable: true,
+        wsAvailable: true,
       }),
     );
   });
@@ -320,6 +351,20 @@ export async function startMirrorService(
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
         peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
+      }),
+    );
+  });
+  app.get("/mirror/actions", (_req, res) => {
+    res.json(
+      getMirrordaemonActionsState(daemon, {
+        actionRuntime,
+      }),
+    );
+  });
+  app.get("/mirror/providers", (_req, res) => {
+    res.json(
+      getMirrordaemonProvidersState(daemon, {
+        providerPlane,
       }),
     );
   });

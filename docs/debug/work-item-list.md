@@ -2,8 +2,8 @@
 I’ll implement that item before moving to the next.
 
 1. Make console API requests daemon-backed.
-   Goal: /mirror/console/api/chat and /mirror/console/api/tools/_ must create/touch
-   daemon sessions exactly like /mirror/chat and /mirror/tools/_.
+   Goal: /mirror/console/api/chat and /mirror/console/api/tools/\* must create/touch
+   daemon sessions exactly like /mirror/chat and /mirror/tools/\_.
 2. Make CLI execution daemon-backed.
    Goal: mirror chat, mirror find, mirror fact, mirror interpret, mirror forge,
    mirror commit, mirror sync, mirror task, mirror reminder, mirror heartbeat, and

@@ -4,12 +4,12 @@
 
 import fs from "fs";
 import path from "path";
-import Database from "better-sqlite3";
+import type { Database as BetterSqliteDatabase } from "better-sqlite3";
 
 /**
  * Apply the schema to the database
  */
-export function applySchema(db: Database): void {
+export function applySchema(db: BetterSqliteDatabase): void {
   const schemaPath = path.join(__dirname, "schema.sql");
 
   if (fs.existsSync(schemaPath)) {

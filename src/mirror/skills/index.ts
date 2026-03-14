@@ -25,11 +25,6 @@ export type {
 export { mirrorChainTokenStateSkill } from "./builtins/chain_token_state/skill.js";
 
 export type {
-  ChainTokenBalanceInput,
-  ChainTokenBalanceResult,
-} from "./builtins/chain_token_balance/types.js";
-
-export type {
   ChainWalletProfileInput,
   ChainWalletProfileResult,
 } from "./builtins/chain_wallet_profile/types.js";

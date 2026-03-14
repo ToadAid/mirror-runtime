@@ -41,5 +41,5 @@ docker run -e MIRROR_BOUNDARY=1 toadai/mirror-runtime
 ## Documentation
 
 - [Architecture](./ARCHITECTURE.md) — High-level design
-- [Intercept Points](../notes/INTERCEPT_POINTS.md) — Boundary hook locations
-- [Mirror Module](../mirror/README.md) — Overview of mirror/ directory
+- Boundary hook locations are documented alongside the runtime implementation.
+- Mirror module overview lives under the canonical `src/mirror/**` source tree in this repo.

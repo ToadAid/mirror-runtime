@@ -10,6 +10,7 @@ export function createBootSnapshot(params: {
   providerPlane?: MirrorProviderPlane;
   surfaces?: MirrordaemonSurfaceName[];
   runtimeStartedAt?: string;
+  daemonSessionId: string;
 }): MirrordaemonBootSnapshot {
   const runtimeStartedAt = params.runtimeStartedAt ?? new Date().toISOString();
   const workspaceUsersRoot = resolveMirrorWorkspaceUsersRoot();
@@ -49,6 +50,7 @@ export function createBootSnapshot(params: {
   return {
     runtime_started_at: runtimeStartedAt,
     config: {
+      daemon_session_id: params.daemonSessionId,
       node_id: params.config.nodeId,
       port: params.config.port,
       base_url: params.config.baseUrl,

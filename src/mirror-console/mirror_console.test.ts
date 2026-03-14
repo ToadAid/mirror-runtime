@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { FetchLike } from "../mirror-provider/index.js";
 import { startMirrorService, type MirrorService } from "../mirror-service/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 
@@ -106,6 +107,9 @@ function createMockResponse() {
     statusCode: 200,
     headers: {} as Record<string, string>,
     body: undefined as unknown,
+    setHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+    },
     type(value: string) {
       this.headers["content-type"] = value;
       return this;
@@ -178,7 +182,7 @@ describe("mirror web console", () => {
 
     const consoleServer = await startConsoleHarness({
       loreDir,
-      fetchImpl: vi.fn(async (_url: string, init?: RequestInit) => {
+      fetchImpl: vi.fn<FetchLike>(async (_url: string | URL | Request, init?: RequestInit) => {
         const body = parseRequestBodyJson<{ messages: Array<{ content: string }> }>(init);
         expect(body.messages[0]?.content).toContain("Mirror canon context:");
         return {

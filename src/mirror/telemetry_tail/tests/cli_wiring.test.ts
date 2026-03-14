@@ -10,7 +10,11 @@ function getSubcommand(parent: Command, name: string): Command | undefined {
 }
 
 function getLongOptionFlags(command: Command): Set<string> {
-  return new Set(command.options.map((option) => option.long));
+  return new Set(
+    command.options
+      .map((option) => option.long)
+      .filter((option): option is string => typeof option === "string"),
+  );
 }
 
 describe("mirror cli wiring", () => {

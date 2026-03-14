@@ -1,3 +1,4 @@
+import type { MirrorRuntimeCorrelation } from "../mirror-runtime/index.js";
 import type { MirrorServiceConfig } from "../mirror-service/config.js";
 import type { FetchLike } from "./mirror_provider.js";
 import { executeMirrorProviderRequest } from "./mirror_provider.js";
@@ -48,6 +49,7 @@ export type MirrorProviderSelection = {
 export type MirrorProviderExecutionResult = {
   provider: MirrorProviderStatus;
   selection: MirrorProviderSelection;
+  correlation?: Partial<MirrorRuntimeCorrelation>;
   response: MirrorProviderResponse;
 };
 
@@ -62,6 +64,7 @@ export type MirrorProviderPlane = {
       fetchImpl?: FetchLike;
       onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
       selection?: MirrorProviderSelectionInput;
+      correlation?: Partial<MirrorRuntimeCorrelation>;
     },
   ) => Promise<MirrorProviderExecutionResult>;
 };
@@ -228,6 +231,9 @@ export function createMirrorProviderPlane(
         attempted.push(entry.descriptor.provider_id);
         const startedAt = Date.now();
         deps.onRuntimeEvent?.("provider.selected", {
+          trace_id: deps.correlation?.trace_id,
+          session_id: deps.correlation?.session_id,
+          action_id: deps.correlation?.action_id,
           provider_id: entry.descriptor.provider_id,
           url: entry.descriptor.url,
           fallback_candidate: index > 0,
@@ -238,6 +244,10 @@ export function createMirrorProviderPlane(
             toProviderConfig(entry.descriptor),
             {
               fetchImpl: deps.fetchImpl,
+              correlation: {
+                ...deps.correlation,
+                provider_id: entry.descriptor.provider_id,
+              },
               onRuntimeEvent: (type, payload) => {
                 deps.onRuntimeEvent?.(type, {
                   provider_id: entry.descriptor.provider_id,
@@ -258,6 +268,10 @@ export function createMirrorProviderPlane(
               attempted_provider_ids: attempted,
               fallback_used: index > 0,
             },
+            correlation: {
+              ...deps.correlation,
+              provider_id: entry.descriptor.provider_id,
+            },
             response,
           };
         } catch (error) {
@@ -266,6 +280,9 @@ export function createMirrorProviderPlane(
           entry.state.failure_count += 1;
           lastError = error;
           deps.onRuntimeEvent?.("provider.fallback", {
+            trace_id: deps.correlation?.trace_id,
+            session_id: deps.correlation?.session_id,
+            action_id: deps.correlation?.action_id,
             provider_id: entry.descriptor.provider_id,
             fallback_available: allowFallback && index < candidates.length - 1,
             error: String(error),

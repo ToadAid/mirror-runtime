@@ -5,15 +5,16 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import type { Database as BetterSqliteDatabase } from "better-sqlite3";
 import { applySchema } from "./schema.js";
 
-let dbInstance: Database.Database | null = null;
+let dbInstance: BetterSqliteDatabase | null = null;
 let dbPath: string | null = null;
 
 /**
  * Initialize the ledger
  */
-export function initLedger(config: { path?: string } = {}): Database {
+export function initLedger(config: { path?: string } = {}): BetterSqliteDatabase {
   if (dbInstance) {
     return dbInstance;
   }
@@ -43,7 +44,7 @@ export function initLedger(config: { path?: string } = {}): Database {
 /**
  * Get the database instance (lazy init)
  */
-export function getLedgerDb(): Database {
+export function getLedgerDb(): BetterSqliteDatabase {
   if (!dbInstance) {
     return initLedger();
   }
@@ -79,7 +80,7 @@ export function closeLedger(): void {
 /**
  * Get ledger statistics
  */
-export function getLedgerStats(): {
+export function getLedgerStats(_db?: BetterSqliteDatabase): {
   memory_count: number;
   mistake_count: number;
   unresolved_mistakes: number;

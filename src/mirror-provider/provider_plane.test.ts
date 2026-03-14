@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import { buildPrimaryProviderDescriptorFromConfig, createMirrorProviderPlane } from "./index.js";
+import type { FetchLike } from "./mirror_provider.js";
 
 describe("mirror provider plane", () => {
   it("builds a primary provider descriptor from service config", () => {
@@ -15,7 +16,7 @@ describe("mirror provider plane", () => {
   });
 
   it("tracks provider readiness and active selection", async () => {
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{ model: string }>(init);
       expect(body.model).toBe("test-model");
       return {
@@ -53,18 +54,27 @@ describe("mirror provider plane", () => {
         max_tokens: 4096,
         stream: false,
       },
-      { fetchImpl },
+      {
+        fetchImpl,
+        correlation: {
+          trace_id: "trace-1",
+          session_id: "session-1",
+          action_id: "action-1",
+        },
+      },
     );
 
     expect(execution.provider.provider_id).toBe("primary");
+    expect(execution.correlation?.provider_id).toBe("primary");
     expect(execution.selection.attempted_provider_ids).toEqual(["primary"]);
     expect(plane.getActiveProvider()?.ready).toBe(true);
     expect(plane.getActiveProvider()?.selected).toBe(true);
   });
 
   it("falls back to the next configured provider when allowed", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
-      if (url.includes("primary")) {
+    const fetchImpl: FetchLike = vi.fn(async (url: string | URL | Request) => {
+      const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlText.includes("primary")) {
         throw new Error("primary down");
       }
       return {
@@ -111,10 +121,18 @@ describe("mirror provider plane", () => {
         max_tokens: 4096,
         stream: false,
       },
-      { fetchImpl },
+      {
+        fetchImpl,
+        correlation: {
+          trace_id: "trace-2",
+          session_id: "session-2",
+          action_id: "action-2",
+        },
+      },
     );
 
     expect(execution.provider.provider_id).toBe("secondary");
+    expect(execution.correlation?.provider_id).toBe("secondary");
     expect(execution.selection.attempted_provider_ids).toEqual(["primary", "secondary"]);
     expect(execution.selection.fallback_used).toBe(true);
     expect(plane.getProvider("primary")?.last_error).toContain("primary down");

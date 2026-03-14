@@ -9,6 +9,7 @@ import {
   addRetrievalHistory,
   upsertUserReflection,
 } from "../mirror-memory/repository.js";
+import type { FetchLike } from "../mirror-provider/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import {
   executeMirrorChatRequest,
@@ -196,7 +197,7 @@ describe("mirror chat engine", () => {
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
 
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{
         model: string;
         messages: Array<{ role: string; content: string }>;
@@ -280,7 +281,7 @@ describe("mirror chat engine", () => {
     process.env.MIRROR_LORE_DIR = loreDir;
 
     const gateway = createMirrorGateway();
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{
         messages: Array<{ role: string; content: string }>;
       }>(init);

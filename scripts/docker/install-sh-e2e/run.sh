@@ -69,8 +69,9 @@ fi
 
 echo "==> Verify installed version"
 INSTALLED_VERSION="$(openclaw --version 2>/dev/null | head -n 1 | tr -d '\r')"
+INSTALLED_SEMVER="$(printf '%s\n' "$INSTALLED_VERSION" | sed -nE 's/.*([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}([.-][A-Za-z0-9.]+)?).*/\1/p' | head -n 1)"
 echo "installed=$INSTALLED_VERSION expected=$EXPECTED_VERSION"
-if [[ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]]; then
+if [[ -z "$INSTALLED_SEMVER" || "$INSTALLED_SEMVER" != "$EXPECTED_VERSION" ]]; then
   echo "ERROR: expected openclaw@$EXPECTED_VERSION, got openclaw@$INSTALLED_VERSION" >&2
   exit 1
 fi

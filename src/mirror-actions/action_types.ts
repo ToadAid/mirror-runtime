@@ -1,5 +1,6 @@
 import type { MirrorPolicyContext, MirrorPolicyEngine } from "../mirror-policy/index.js";
 import type { MirrorProviderPlane } from "../mirror-provider/index.js";
+import type { MirrorRuntimeCorrelation } from "../mirror-runtime/index.js";
 import type { MirrorToolInputSchema } from "../mirror/skills/index.js";
 
 export type MirrorActionAccess = "open" | "operator";
@@ -26,12 +27,16 @@ export type MirrorActionExecutionRequest = {
   context?: MirrorPolicyContext;
   policy?: MirrorPolicyEngine;
   providerPlane?: MirrorProviderPlane;
+  correlation?: Partial<MirrorRuntimeCorrelation>;
 };
 
 export type MirrorActionExecutionResult = {
   ok: true;
   execution_id: string;
+  action_id: string;
   action_name: string;
+  trace_id: string;
+  session_id?: string;
   started_at: string;
   finished_at: string;
   duration_ms: number;
@@ -41,7 +46,10 @@ export type MirrorActionExecutionResult = {
 export type MirrorActionFailureResult = {
   ok: false;
   execution_id: string;
+  action_id: string;
   action_name: string;
+  trace_id: string;
+  session_id?: string;
   started_at: string;
   finished_at: string;
   duration_ms: number;
@@ -52,6 +60,9 @@ export type MirrorActionLifecycleEvent =
   | {
       type: "started";
       execution_id: string;
+      action_id: string;
+      trace_id: string;
+      session_id?: string;
       action: MirrorActionDescriptor;
       input: Record<string, unknown>;
       context?: MirrorPolicyContext;
@@ -60,6 +71,9 @@ export type MirrorActionLifecycleEvent =
   | {
       type: "finished";
       execution_id: string;
+      action_id: string;
+      trace_id: string;
+      session_id?: string;
       action: MirrorActionDescriptor;
       context?: MirrorPolicyContext;
       timestamp: string;
@@ -68,6 +82,9 @@ export type MirrorActionLifecycleEvent =
   | {
       type: "failed";
       execution_id: string;
+      action_id: string;
+      trace_id: string;
+      session_id?: string;
       action: MirrorActionDescriptor;
       context?: MirrorPolicyContext;
       timestamp: string;

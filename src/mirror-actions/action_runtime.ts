@@ -3,6 +3,10 @@ import {
   buildMirrorActionPolicyTarget,
   ensureMirrorPolicyAllowed,
 } from "../mirror-policy/index.js";
+import {
+  buildMirrorCorrelationFromPolicyContext,
+  resolveMirrorTraceId,
+} from "../mirror-runtime/index.js";
 import type { MirrorAction, MirrorActionRuntime } from "./action_types.js";
 
 export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorActionRuntime {
@@ -47,10 +51,18 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
       }
 
       const execution_id = crypto.randomUUID();
+      const action_id = execution_id;
+      const baseCorrelation =
+        request.correlation ?? buildMirrorCorrelationFromPolicyContext(request.context);
+      const trace_id = resolveMirrorTraceId(baseCorrelation?.trace_id);
+      const session_id = baseCorrelation?.session_id;
       const started_at = new Date().toISOString();
       options.onLifecycleEvent?.({
         type: "started",
         execution_id,
+        action_id,
+        trace_id,
+        session_id,
         action: action.descriptor,
         input: request.input,
         context: request.context,
@@ -68,7 +80,10 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
         const result = {
           ok: true as const,
           execution_id,
+          action_id,
           action_name: action.descriptor.action_name,
+          trace_id,
+          session_id,
           started_at,
           finished_at,
           duration_ms: Date.now() - startedMs,
@@ -77,6 +92,9 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
         options.onLifecycleEvent?.({
           type: "finished",
           execution_id,
+          action_id,
+          trace_id,
+          session_id,
           action: action.descriptor,
           context: request.context,
           timestamp: finished_at,
@@ -88,7 +106,10 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
         const result = {
           ok: false as const,
           execution_id,
+          action_id,
           action_name: action.descriptor.action_name,
+          trace_id,
+          session_id,
           started_at,
           finished_at,
           duration_ms: Date.now() - startedMs,
@@ -97,6 +118,9 @@ export function createMirrorActionRuntime(actions: MirrorAction[] = []): MirrorA
         options.onLifecycleEvent?.({
           type: "failed",
           execution_id,
+          action_id,
+          trace_id,
+          session_id,
           action: action.descriptor,
           context: request.context,
           timestamp: finished_at,

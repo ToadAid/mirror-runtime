@@ -67,11 +67,7 @@ async function seedLoreCorpus(loreDir: string): Promise<void> {
   await fs.writeFile(path.join(indexDir, "FACT_UPDATES.md"), "# updates\n", "utf8");
 }
 
-async function requestJsonFromApp(
-  app: { handle: (req: unknown, res: unknown) => void },
-  method: string,
-  url: string,
-): Promise<unknown> {
+async function requestJsonFromApp(app: unknown, method: string, url: string): Promise<unknown> {
   return await new Promise((resolve, reject) => {
     const responseHeaders = new Map<string, string>();
     const req = {
@@ -117,7 +113,11 @@ async function requestJsonFromApp(
     };
 
     try {
-      app.handle(req, res);
+      if (typeof app === "function") {
+        (app as (req: unknown, res: unknown) => void)(req, res);
+      } else {
+        (app as { handle: (req: unknown, res: unknown) => void }).handle(req, res);
+      }
     } catch (error) {
       reject(error);
     }

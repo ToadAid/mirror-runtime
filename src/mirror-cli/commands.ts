@@ -137,6 +137,8 @@ const TOOL_BY_COMMAND: Record<
   interpret: "mirror.interpret-tweet",
   forge: "mirror.forge-scroll",
   commit: "mirror.commit-scroll",
+  status: "mirror.status",
+  "verify-lore": "mirror.verify-lore",
 };
 
 const UTILITY_TOOL_BY_ACTION = {
@@ -394,7 +396,7 @@ async function executeLegacyToolCommand(
   const tool = TOOL_BY_COMMAND[command];
   authorizeToolOrThrow(runtimeHost.gateway, tool, flags);
 
-  let payload: Record<string, unknown>;
+  let payload: Record<string, unknown> = {};
   switch (command) {
     case "find":
       payload = { query: requireText(positional.join(" "), "find") };
@@ -425,6 +427,9 @@ async function executeLegacyToolCommand(
         dry_run: getBooleanFlag(flags, "dry-run"),
         force: getBooleanFlag(flags, "force"),
       };
+      break;
+    case "status":
+    case "verify-lore":
       break;
   }
 

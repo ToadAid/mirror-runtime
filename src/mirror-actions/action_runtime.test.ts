@@ -55,6 +55,8 @@ describe("mirror action runtime", () => {
     );
 
     expect(result.ok).toBe(true);
+    expect(result.trace_id).toBeDefined();
+    expect(result.action_id).toBe(result.execution_id);
     expect(result.result.echoed).toBe("ok");
     expect(seen).toEqual(["started", "finished"]);
   });

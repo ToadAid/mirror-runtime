@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseRequestBodyJson } from "../test/request_init.js";
-import { executeMirrorProviderRequest } from "./mirror_provider.js";
+import { executeMirrorProviderRequest, type FetchLike } from "./mirror_provider.js";
 import { buildMirrorProviderHeaders } from "./provider_auth.js";
 
 describe("mirror provider runtime", () => {
@@ -17,7 +17,7 @@ describe("mirror provider runtime", () => {
   });
 
   it("executes a normalized provider request and returns a normalized response", async () => {
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{
         model: string;
         messages: Array<{ role: string; content: string }>;
@@ -61,7 +61,16 @@ describe("mirror provider runtime", () => {
         url: "http://brain.local/v1/chat/completions",
         authToken: "token",
       },
-      { fetchImpl, onRuntimeEvent },
+      {
+        fetchImpl,
+        onRuntimeEvent,
+        correlation: {
+          trace_id: "trace-1",
+          session_id: "session-1",
+          action_id: "action-1",
+          provider_id: "primary",
+        },
+      },
     );
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -69,6 +78,10 @@ describe("mirror provider runtime", () => {
     expect(onRuntimeEvent).toHaveBeenCalledWith(
       "provider.call.started",
       expect.objectContaining({
+        trace_id: "trace-1",
+        session_id: "session-1",
+        action_id: "action-1",
+        provider_id: "primary",
         url: "http://brain.local/v1/chat/completions",
         model: "test-model",
       }),
@@ -76,6 +89,10 @@ describe("mirror provider runtime", () => {
     expect(onRuntimeEvent).toHaveBeenCalledWith(
       "provider.call.finished",
       expect.objectContaining({
+        trace_id: "trace-1",
+        session_id: "session-1",
+        action_id: "action-1",
+        provider_id: "primary",
         url: "http://brain.local/v1/chat/completions",
         model: "test-model",
       }),

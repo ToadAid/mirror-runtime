@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
+import type { FetchLike } from "../mirror-provider/index.js";
 import { createMirrorRuntimeHost } from "../mirror-service/index.js";
 import { sha256File } from "../mirror/lore_manifest/hash.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
@@ -143,7 +144,7 @@ describe("mirror cli", () => {
     process.env.MIRROR_PROVIDER_URL = "http://brain.local/v1/chat/completions";
     process.env.MIRROR_PROVIDER_AUTH_TOKEN = "token";
 
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = parseRequestBodyJson<{
         messages: Array<{ role: string; content: string }>;
       }>(init);
@@ -341,7 +342,11 @@ describe("mirror cli", () => {
     const commitParsed = JSON.parse(commitOutput) as {
       ok: boolean;
       command: string;
-      commit_result: { committed: boolean; dry_run_preview?: { content: string } };
+      commit_result: {
+        committed: boolean;
+        dry_run_preview?: { content: string };
+        final_filename?: string;
+      };
     };
     expect(commitParsed.ok).toBe(true);
     expect(commitParsed.command).toBe("commit");
@@ -509,8 +514,10 @@ describe("mirror cli", () => {
         baseUrl: "http://127.0.0.1:7777",
       },
       {
-        fetchImpl: vi.fn(async (url: string, init?: RequestInit) => {
-          if (url.endsWith("/mirror-sync/announce")) {
+        fetchImpl: vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+          const urlText =
+            typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+          if (urlText.endsWith("/mirror-sync/announce")) {
             expect(init?.method).toBe("POST");
             return {
               ok: true,
@@ -518,7 +525,7 @@ describe("mirror cli", () => {
               json: async () => ({ ok: true }),
             } as Response;
           }
-          if (url.endsWith("/mirror-sync/updates")) {
+          if (urlText.endsWith("/mirror-sync/updates")) {
             return {
               ok: true,
               text: async () =>
@@ -536,7 +543,7 @@ describe("mirror cli", () => {
               }),
             } as Response;
           }
-          throw new Error(`unexpected sync url: ${url}`);
+          throw new Error(`unexpected sync url: ${urlText}`);
         }),
       },
     );
@@ -776,8 +783,10 @@ describe("mirror cli", () => {
         loreDir,
       },
       {
-        fetchImpl: vi.fn(async (url: string) => {
-          if (url.endsWith("/mirror-sync/updates")) {
+        fetchImpl: vi.fn(async (url: string | URL | Request) => {
+          const urlText =
+            typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+          if (urlText.endsWith("/mirror-sync/updates")) {
             return {
               ok: true,
               json: async () => ({
@@ -788,7 +797,7 @@ describe("mirror cli", () => {
               }),
             } as Response;
           }
-          throw new Error(`unexpected sync url: ${url}`);
+          throw new Error(`unexpected sync url: ${urlText}`);
         }),
       },
     );

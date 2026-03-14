@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createMirrorObservabilityContext } from "../mirror-observability/index.js";
 import type { MirrorProviderPlane } from "../mirror-provider/index.js";
 import type { MirrorServiceConfig } from "../mirror-service/config.js";
@@ -26,11 +27,13 @@ export function createMirrordaemon(params: {
   providerPlane?: MirrorProviderPlane;
   runtimeStartedAt?: string;
 }): Mirrordaemon {
+  const daemonSessionId = randomUUID();
   const bootSnapshot = createBootSnapshot({
     config: params.config,
     lifecycle: params.lifecycle,
     providerPlane: params.providerPlane,
     runtimeStartedAt: params.runtimeStartedAt,
+    daemonSessionId,
   });
   const observability = createMirrorObservabilityContext();
   const sessions = createSessionRegistry();

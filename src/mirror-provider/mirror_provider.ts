@@ -1,4 +1,5 @@
 import { logMirrorEvent, recordLatency } from "../mirror-observability/index.js";
+import type { MirrorRuntimeCorrelation } from "../mirror-runtime/index.js";
 import { buildMirrorProviderHeaders } from "./provider_auth.js";
 import type { MirrorProviderConfig, MirrorProviderRequest } from "./provider_request.js";
 import type { MirrorProviderResponse } from "./provider_response.js";
@@ -11,6 +12,7 @@ export async function executeMirrorProviderRequest(
   deps: {
     fetchImpl?: FetchLike;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+    correlation?: Partial<MirrorRuntimeCorrelation>;
   } = {},
 ): Promise<MirrorProviderResponse> {
   if (!config.url) {
@@ -19,6 +21,10 @@ export async function executeMirrorProviderRequest(
 
   const startedAt = Date.now();
   deps.onRuntimeEvent?.("provider.call.started", {
+    trace_id: deps.correlation?.trace_id,
+    session_id: deps.correlation?.session_id,
+    action_id: deps.correlation?.action_id,
+    provider_id: deps.correlation?.provider_id,
     url: config.url,
     model: request.model,
   });
@@ -42,6 +48,10 @@ export async function executeMirrorProviderRequest(
     const durationMs = Date.now() - startedAt;
     recordLatency("provider_latency_ms", durationMs);
     deps.onRuntimeEvent?.("provider.call.finished", {
+      trace_id: deps.correlation?.trace_id,
+      session_id: deps.correlation?.session_id,
+      action_id: deps.correlation?.action_id,
+      provider_id: deps.correlation?.provider_id,
       url: config.url,
       model: request.model,
       latency_ms: durationMs,
@@ -53,6 +63,10 @@ export async function executeMirrorProviderRequest(
     return payload;
   } catch (error) {
     deps.onRuntimeEvent?.("provider.call.failed", {
+      trace_id: deps.correlation?.trace_id,
+      session_id: deps.correlation?.session_id,
+      action_id: deps.correlation?.action_id,
+      provider_id: deps.correlation?.provider_id,
       url: config.url,
       model: request.model,
       error: String(error),

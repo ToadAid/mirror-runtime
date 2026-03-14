@@ -160,7 +160,7 @@ export function toMirrorCliJsonOutput(result: MirrorCliCommandResult): MirrorCli
       return {
         ok: false,
         command: result.command,
-        error: `Unsupported Mirror CLI JSON output for command: ${result.command satisfies never}`,
+        error: `Unsupported Mirror CLI JSON output for command: ${result.command}`,
       };
   }
 }

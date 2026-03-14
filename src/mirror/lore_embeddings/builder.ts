@@ -42,6 +42,10 @@ export async function buildLoreEmbeddingSources(
 ): Promise<MirrorEmbeddingSource[]> {
   const manifestRaw = await readFile(opts.manifestPath, "utf8");
   const manifest = parseManifest(manifestRaw, opts.manifestPath);
+  const manifestEntries =
+    "scrolls" in manifest
+      ? new Set(manifest.scrolls.map((entry) => entry.path))
+      : new Set<string>();
 
   const [signatureResult, hashReport, discovered] = await Promise.all([
     verifyManifestSignature({
@@ -60,7 +64,6 @@ export async function buildLoreEmbeddingSources(
     }),
   ]);
 
-  const manifestEntries = new Set(manifest.scrolls.map((entry) => entry.path));
   const missing = new Set(hashReport.missing);
   const mismatched = new Set(hashReport.mismatched.map((entry) => entry.path));
 

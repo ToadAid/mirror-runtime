@@ -108,7 +108,11 @@ async function seedLoreCorpus(loreDir: string): Promise<void> {
 function createMockResponse() {
   return {
     statusCode: 200,
+    headers: {} as Record<string, string>,
     body: undefined as unknown,
+    setHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+    },
     status(code: number) {
       this.statusCode = code;
       return this;

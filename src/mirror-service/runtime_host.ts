@@ -16,6 +16,7 @@ import {
   type MirrorProviderPlane,
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
+import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncManager,
   type MirrorSyncAnnounceInput,
@@ -151,8 +152,13 @@ export async function createMirrorRuntimeHost(
             session_id: sessionId,
           },
           metadata: {
+            trace_id: resolveMirrorTraceId(undefined),
             provider_url: runtimeDeps.provider.url,
           },
+        };
+        const correlation = {
+          trace_id: String(policyContext.metadata?.trace_id),
+          session_id: sessionId,
         };
         try {
           const ingressPolicy = await gateway.policy.evaluate({
@@ -161,12 +167,18 @@ export async function createMirrorRuntimeHost(
             context: policyContext,
           });
           if (!ingressPolicy.allowed) {
-            daemon.publishRuntimeEvent("policy.denied", {
-              session_id: sessionId,
-              phase: "ingress",
-              target: "chat",
-              code: ingressPolicy.decision.code,
-            });
+            daemon.publishRuntimeEvent(
+              "policy.denied",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  phase: "ingress",
+                  target: "chat",
+                  code: ingressPolicy.decision.code,
+                },
+                correlation,
+              ),
+            );
             throw new Error(ingressPolicy.decision.reason);
           }
           const providerPolicy = await gateway.policy.evaluate({
@@ -177,35 +189,61 @@ export async function createMirrorRuntimeHost(
             context: policyContext,
           });
           if (!providerPolicy.allowed) {
-            daemon.publishRuntimeEvent("policy.denied", {
-              session_id: sessionId,
-              phase: "provider",
-              target: "provider",
-              code: providerPolicy.decision.code,
-            });
+            daemon.publishRuntimeEvent(
+              "policy.denied",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  phase: "provider",
+                  target: "provider",
+                  code: providerPolicy.decision.code,
+                },
+                correlation,
+              ),
+            );
             throw new Error(providerPolicy.decision.reason);
           }
-          daemon.publishRuntimeEvent("chat.started", {
-            session_id: sessionId,
-            model: request.model,
-          });
+          daemon.publishRuntimeEvent(
+            "chat.started",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                model: request.model,
+              },
+              correlation,
+            ),
+          );
           return await gateway.executeChatWithProvider(request, {
             ...runtimeDeps,
             providerPlane: defaultProviderConfigured ? providerPlane : undefined,
-            onRuntimeEvent: daemon.publishRuntimeEvent,
+            onRuntimeEvent: (type, payload) => {
+              daemon.publishRuntimeEvent(type, withMirrorCorrelation(payload ?? {}, correlation));
+            },
           });
         } catch (error) {
-          daemon.publishRuntimeEvent("chat.failed", {
-            session_id: sessionId,
-            model: request.model,
-            error: String(error),
-          });
+          daemon.publishRuntimeEvent(
+            "chat.failed",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                model: request.model,
+                error: String(error),
+              },
+              correlation,
+            ),
+          );
           throw error;
         } finally {
-          daemon.publishRuntimeEvent("chat.finished", {
-            session_id: sessionId,
-            model: request.model,
-          });
+          daemon.publishRuntimeEvent(
+            "chat.finished",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                model: request.model,
+              },
+              correlation,
+            ),
+          );
           daemon.touchSession(sessionId, {
             user_id: userId,
             metadata: {
@@ -237,9 +275,14 @@ export async function createMirrorRuntimeHost(
             session_id: sessionId,
           },
           metadata: {
+            trace_id: resolveMirrorTraceId(undefined),
             action: context.action,
             tool: toolName,
           },
+        };
+        const correlation = {
+          trace_id: String(policyContext.metadata?.trace_id),
+          session_id: sessionId,
         };
         try {
           const action = gateway.actionRuntime.getAction(toolName);
@@ -253,44 +296,105 @@ export async function createMirrorRuntimeHost(
               context: policyContext,
               policy: gateway.policy,
               providerPlane,
+              correlation,
             },
             {
               onLifecycleEvent(event: MirrorActionLifecycleEvent) {
                 if (event.type === "started") {
-                  daemon.publishRuntimeEvent("tool.execution.started", {
-                    session_id: sessionId,
-                    tool: event.action.action_name,
-                  });
-                  daemon.publishRuntimeEvent("action.execution.started", {
-                    session_id: sessionId,
-                    action: event.action.action_name,
-                    execution_id: event.execution_id,
-                  });
+                  daemon.publishRuntimeEvent(
+                    "tool.execution.started",
+                    withMirrorCorrelation(
+                      {
+                        session_id: sessionId,
+                        tool: event.action.action_name,
+                      },
+                      {
+                        trace_id: event.trace_id,
+                        session_id: event.session_id,
+                        action_id: event.action_id,
+                      },
+                    ),
+                  );
+                  daemon.publishRuntimeEvent(
+                    "action.execution.started",
+                    withMirrorCorrelation(
+                      {
+                        session_id: sessionId,
+                        action: event.action.action_name,
+                        execution_id: event.execution_id,
+                      },
+                      {
+                        trace_id: event.trace_id,
+                        session_id: event.session_id,
+                        action_id: event.action_id,
+                      },
+                    ),
+                  );
                   return;
                 }
                 if (event.type === "finished") {
-                  daemon.publishRuntimeEvent("tool.execution.finished", {
-                    session_id: sessionId,
-                    tool: event.action.action_name,
-                  });
-                  daemon.publishRuntimeEvent("action.execution.finished", {
-                    session_id: sessionId,
-                    action: event.action.action_name,
-                    execution_id: event.execution_id,
-                  });
+                  daemon.publishRuntimeEvent(
+                    "tool.execution.finished",
+                    withMirrorCorrelation(
+                      {
+                        session_id: sessionId,
+                        tool: event.action.action_name,
+                      },
+                      {
+                        trace_id: event.trace_id,
+                        session_id: event.session_id,
+                        action_id: event.action_id,
+                      },
+                    ),
+                  );
+                  daemon.publishRuntimeEvent(
+                    "action.execution.finished",
+                    withMirrorCorrelation(
+                      {
+                        session_id: sessionId,
+                        action: event.action.action_name,
+                        execution_id: event.execution_id,
+                      },
+                      {
+                        trace_id: event.trace_id,
+                        session_id: event.session_id,
+                        action_id: event.action_id,
+                      },
+                    ),
+                  );
                   return;
                 }
-                daemon.publishRuntimeEvent("tool.execution.failed", {
-                  session_id: sessionId,
-                  tool: event.action.action_name,
-                  error: event.result.error,
-                });
-                daemon.publishRuntimeEvent("action.execution.failed", {
-                  session_id: sessionId,
-                  action: event.action.action_name,
-                  execution_id: event.execution_id,
-                  error: event.result.error,
-                });
+                daemon.publishRuntimeEvent(
+                  "tool.execution.failed",
+                  withMirrorCorrelation(
+                    {
+                      session_id: sessionId,
+                      tool: event.action.action_name,
+                      error: event.result.error,
+                    },
+                    {
+                      trace_id: event.trace_id,
+                      session_id: event.session_id,
+                      action_id: event.action_id,
+                    },
+                  ),
+                );
+                daemon.publishRuntimeEvent(
+                  "action.execution.failed",
+                  withMirrorCorrelation(
+                    {
+                      session_id: sessionId,
+                      action: event.action.action_name,
+                      execution_id: event.execution_id,
+                      error: event.result.error,
+                    },
+                    {
+                      trace_id: event.trace_id,
+                      session_id: event.session_id,
+                      action_id: event.action_id,
+                    },
+                  ),
+                );
               },
             },
           );
@@ -299,11 +403,21 @@ export async function createMirrorRuntimeHost(
               ? (result.result.review as { status?: unknown }).status
               : undefined;
           if (typeof reviewStatus === "string") {
-            daemon.publishRuntimeEvent("review.decision", {
-              session_id: sessionId,
-              tool: toolName,
-              status: reviewStatus,
-            });
+            daemon.publishRuntimeEvent(
+              "review.decision",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  tool: toolName,
+                  status: reviewStatus,
+                },
+                {
+                  trace_id: result.trace_id,
+                  session_id: result.session_id,
+                  action_id: result.action_id,
+                },
+              ),
+            );
           }
           return result.result;
         } catch (error) {
@@ -315,19 +429,31 @@ export async function createMirrorRuntimeHost(
               ? (error as { code: string }).code
               : undefined;
           if (code) {
-            daemon.publishRuntimeEvent("policy.denied", {
-              session_id: sessionId,
-              phase: "action",
-              target: "action",
-              action: toolName,
-              code,
-            });
+            daemon.publishRuntimeEvent(
+              "policy.denied",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  phase: "action",
+                  target: "action",
+                  action: toolName,
+                  code,
+                },
+                correlation,
+              ),
+            );
           }
-          daemon.publishRuntimeEvent("tool.execution.failed", {
-            session_id: sessionId,
-            tool: toolName,
-            error: String(error),
-          });
+          daemon.publishRuntimeEvent(
+            "tool.execution.failed",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                tool: toolName,
+                error: String(error),
+              },
+              correlation,
+            ),
+          );
           throw error;
         } finally {
           daemon.touchSession(sessionId, {
@@ -350,6 +476,7 @@ export async function createMirrorRuntimeHost(
             action,
           },
         });
+        const traceId = resolveMirrorTraceId(undefined);
         const policyDecision = await gateway.policy.evaluate({
           phase: "action",
           target: buildMirrorActionPolicyTarget(`sync.${action}`, input),
@@ -363,25 +490,42 @@ export async function createMirrorRuntimeHost(
               session_id: sessionId,
             },
             metadata: {
+              trace_id: traceId,
               action,
             },
           },
         });
+        const correlation = {
+          trace_id: traceId,
+          session_id: sessionId,
+        };
         try {
           if (!policyDecision.allowed) {
-            daemon.publishRuntimeEvent("policy.denied", {
-              session_id: sessionId,
-              phase: "action",
-              target: "action",
-              action: `sync.${action}`,
-              code: policyDecision.decision.code,
-            });
+            daemon.publishRuntimeEvent(
+              "policy.denied",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  phase: "action",
+                  target: "action",
+                  action: `sync.${action}`,
+                  code: policyDecision.decision.code,
+                },
+                correlation,
+              ),
+            );
             throw new Error(policyDecision.decision.reason);
           }
-          daemon.publishRuntimeEvent("sync.action.started", {
-            session_id: sessionId,
-            action,
-          });
+          daemon.publishRuntimeEvent(
+            "sync.action.started",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                action,
+              },
+              correlation,
+            ),
+          );
           switch (action) {
             case "peers":
               return { peers: syncManager.listPeers() };
@@ -410,17 +554,29 @@ export async function createMirrorRuntimeHost(
               } satisfies MirrorSyncPullInput);
           }
         } catch (error) {
-          daemon.publishRuntimeEvent("sync.action.failed", {
-            session_id: sessionId,
-            action,
-            error: String(error),
-          });
+          daemon.publishRuntimeEvent(
+            "sync.action.failed",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                action,
+                error: String(error),
+              },
+              correlation,
+            ),
+          );
           throw error;
         } finally {
-          daemon.publishRuntimeEvent("sync.action.finished", {
-            session_id: sessionId,
-            action,
-          });
+          daemon.publishRuntimeEvent(
+            "sync.action.finished",
+            withMirrorCorrelation(
+              {
+                session_id: sessionId,
+                action,
+              },
+              correlation,
+            ),
+          );
           daemon.touchSession(sessionId, {
             user_id: context.user_id,
             metadata: {

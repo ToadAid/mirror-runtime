@@ -15,7 +15,7 @@
 - ✅ **PR#1** — `docs/MIRROR_BOUNDARY.md` (boundary overlay documentation)
 - ✅ **PR#2** — NOOP hook placeholder in `src/plugin-sdk/mirror/lore_forge/`
 
-### Scope
+### Phase 3 Scope
 
 - Documentation only (no engine mutations)
 - Feature flags: `MIRROR_BOUNDARY`, `MIRROR_LORE_FORGE`

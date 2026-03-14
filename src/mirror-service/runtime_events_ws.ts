@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import type http from "node:http";
+import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Mirrordaemon, MirrordaemonRuntimeEvent } from "../mirrordaemon/index.js";
 
@@ -58,11 +59,7 @@ export type MirrorRuntimeWsEnvelope =
 export type MirrorRuntimeWebSocketServer = {
   path: typeof MIRROR_RUNTIME_WS_PATH;
   protocol: typeof MIRROR_RUNTIME_WS_PROTOCOL;
-  handleUpgrade: (
-    req: http.IncomingMessage,
-    socket: NodeJS.ReadWriteStream,
-    head: Buffer,
-  ) => boolean;
+  handleUpgrade: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
   getConnectionCount: () => number;
   close: () => Promise<void>;
 };
