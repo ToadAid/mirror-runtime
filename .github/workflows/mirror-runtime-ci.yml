@@ -51,7 +51,7 @@ jobs:
         run: pnpm package:mirror-runtime
 
       - name: Test Mirror runtime boundary
-        run: pnpm test:mirror && pnpm verify:mirror-runtime-dist
+        run: pnpm test:mirror && pnpm verify:mirror-runtime-dist && pnpm verify:mirror-runtime-bootstrap
 
       - name: Upload Mirror runtime dist artifact
         uses: actions/upload-artifact@v4
@@ -90,7 +90,6 @@ jobs:
           rm -rf /tmp/mirror-runtime-smoke
           mkdir -p /tmp/mirror-runtime-smoke
           tar -xzf dist/mirror-runtime-linux.tar.gz -C /tmp/mirror-runtime-smoke
-          ln -s "$PWD/node_modules" /tmp/mirror-runtime-smoke/mirror-runtime-linux/rootfs/opt/mirror-runtime/node_modules
 
       - name: Smoke packaged Mirror CLI entry
         run: /tmp/mirror-runtime-smoke/mirror-runtime-linux/rootfs/opt/mirror-runtime/bin/mirror help

@@ -148,6 +148,7 @@
     "ui:build": "node scripts/ui.js build",
     "ui:dev": "node scripts/ui.js dev",
     "ui:install": "node scripts/ui.js install",
+    "verify:mirror-runtime-bootstrap": "node --import tsx scripts/verify-mirror-runtime-bootstrap.ts",
     "verify:mirror-runtime-dist": "node --import tsx scripts/verify-mirror-runtime-dist.ts"
   },
   "dependencies": {

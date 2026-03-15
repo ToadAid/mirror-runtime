@@ -21,6 +21,15 @@ describe("mirror package boundary", () => {
     expect(packageJson.scripts?.["test:mirror"]).toBe(
       "vitest run --config vitest.mirror.config.ts",
     );
+    expect(packageJson.scripts?.["package:mirror-runtime"]).toBe(
+      "pnpm build:mirror && node --import tsx scripts/assemble-mirror-runtime-dist.ts",
+    );
+    expect(packageJson.scripts?.["verify:mirror-runtime-dist"]).toBe(
+      "node --import tsx scripts/verify-mirror-runtime-dist.ts",
+    );
+    expect(packageJson.scripts?.["verify:mirror-runtime-bootstrap"]).toBe(
+      "node --import tsx scripts/verify-mirror-runtime-bootstrap.ts",
+    );
     expect(packageJson.scripts?.["smoke:mirror"]).toBe(
       "node --import tsx scripts/ci-mirror-smoke.ts",
     );
@@ -49,5 +58,38 @@ describe("mirror package boundary", () => {
     expect(packageJson.scripts?.build).toBe("pnpm --dir ../.. build:mirror");
     expect(packageJson.scripts?.smoke).toBe("pnpm --dir ../.. smoke:mirror");
     expect(packageJson.scripts?.test).toBe("pnpm --dir ../.. test:mirror");
+  });
+
+  it("documents and assembles a repo-independent runtime payload", () => {
+    const assembleScript = fs.readFileSync(
+      path.join(process.cwd(), "scripts/assemble-mirror-runtime-dist.ts"),
+      "utf8",
+    );
+    const verifyScript = fs.readFileSync(
+      path.join(process.cwd(), "scripts/verify-mirror-runtime-dist.ts"),
+      "utf8",
+    );
+    const packagingReadme = fs.readFileSync(
+      path.join(process.cwd(), "packaging/mirror-runtime/README.md"),
+      "utf8",
+    );
+    const workflow = fs.readFileSync(
+      path.join(process.cwd(), ".github/workflows/mirror-runtime-ci.yml"),
+      "utf8",
+    );
+    const installerScript = fs.readFileSync(
+      path.join(process.cwd(), "packaging/mirror-runtime/install-mirror-runtime.sh"),
+      "utf8",
+    );
+
+    expect(assembleScript).toContain('"node_modules"');
+    expect(assembleScript).toContain('"install-mirror-runtime.sh"');
+    expect(assembleScript).toContain("workspaceNodeModulesRoot");
+    expect(verifyScript).toContain("node_modules must not be a symlink");
+    expect(verifyScript).not.toContain('path.join(root, "node_modules")');
+    expect(packagingReadme).toContain("node_modules/");
+    expect(installerScript).toContain("systemctl --user daemon-reload");
+    expect(installerScript).toContain("Mirror Runtime installed");
+    expect(workflow).not.toContain('ln -s "$PWD/node_modules"');
   });
 });
