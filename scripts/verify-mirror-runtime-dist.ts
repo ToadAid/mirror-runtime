@@ -32,19 +32,23 @@ async function runMirrorHelp(packageRoot: string): Promise<void> {
   const entryModule = (await import(
     pathToFileURL(path.join(packageRoot, "dist", "mirror-entry.js")).href
   )) as MirrorEntryModule;
-  let stdout = "";
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+  let combinedOutput = "";
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const captureWrite = (chunk: string | Uint8Array) => {
+    combinedOutput += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
     return true;
-  }) as typeof process.stdout.write;
+  };
+  process.stdout.write = captureWrite as typeof process.stdout.write;
+  process.stderr.write = captureWrite as typeof process.stderr.write;
   try {
     const code = await entryModule.runMirrorEntry(["node", "mirror", "help"]);
-    if (code !== 0 || !stdout.includes("Mirror Runtime")) {
-      throw new Error(`mirror help failed: code=${code} stdout=${stdout}`);
+    if (code !== 0 || !combinedOutput.includes("Mirror Runtime")) {
+      throw new Error(`mirror help failed: code=${code} output=${combinedOutput}`);
     }
   } finally {
-    process.stdout.write = originalWrite;
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
   }
 }
 
@@ -193,6 +197,22 @@ async function smokePackagedRuntime(packageRoot: string): Promise<void> {
   }
 }
 
+async function assertRepoIndependentPackage(packageRoot: string): Promise<void> {
+  const nodeModulesPath = path.join(packageRoot, "node_modules");
+  const nodeModulesStat = await fs.lstat(nodeModulesPath);
+  if (!nodeModulesStat.isDirectory()) {
+    throw new Error("Packaged runtime is missing a concrete node_modules directory");
+  }
+  if (nodeModulesStat.isSymbolicLink()) {
+    throw new Error("Packaged runtime node_modules must not be a symlink");
+  }
+  const realNodeModulesPath = await fs.realpath(nodeModulesPath);
+  const packageRootRealPath = await fs.realpath(packageRoot);
+  if (!realNodeModulesPath.startsWith(`${packageRootRealPath}${path.sep}`)) {
+    throw new Error("Packaged runtime node_modules resolves outside the extracted package root");
+  }
+}
+
 async function prepareExtractedPackage(): Promise<{
   packageRoot: string;
   cleanup: () => Promise<void>;
@@ -208,11 +228,6 @@ async function prepareExtractedPackage(): Promise<{
     "mirror-runtime",
   );
 
-  // Phase 1 boundary validation extracts the packaged tree and wires in the
-  // workspace dependency closure. A later installer phase can materialize the
-  // dependency graph directly under the runtime root using the packaged manifest.
-  await fs.symlink(path.join(root, "node_modules"), path.join(packageRoot, "node_modules"), "dir");
-
   return {
     packageRoot,
     cleanup: async () => {
@@ -224,9 +239,13 @@ async function prepareExtractedPackage(): Promise<{
 async function main(): Promise<void> {
   const extracted = await prepareExtractedPackage();
   try {
+    await fs.access(
+      path.join(extractionRootFromPackageRoot(extracted.packageRoot), "install-mirror-runtime.sh"),
+    );
     await assertPathExists(extracted.packageRoot, path.join("bin", "mirror"));
     await assertPathExists(extracted.packageRoot, "mirror.mjs");
     await assertPathExists(extracted.packageRoot, "package.json");
+    await assertPathExists(extracted.packageRoot, "node_modules");
     await assertPathExists(extracted.packageRoot, path.join("dist", "mirror-entry.js"));
     await assertPathExists(extracted.packageRoot, path.join("dist", "mirror-package.js"));
     await assertPathExists(extracted.packageRoot, path.join("dist", "schema.sql"));
@@ -250,6 +269,7 @@ async function main(): Promise<void> {
       ),
     );
 
+    await assertRepoIndependentPackage(extracted.packageRoot);
     await runMirrorHelp(extracted.packageRoot);
     await smokePackagedRuntime(extracted.packageRoot);
   } finally {
