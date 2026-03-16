@@ -142,6 +142,7 @@ const TOOL_BY_COMMAND: Record<
   forge: "mirror.forge-scroll",
   commit: "mirror.commit-scroll",
   status: "mirror.status",
+  doctor: "mirror.doctor",
   "verify-lore": "mirror.verify-lore",
 };
 
