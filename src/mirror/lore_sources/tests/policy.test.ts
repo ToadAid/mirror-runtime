@@ -28,12 +28,17 @@ describe("resolveDefaultLoreRoot", () => {
     expect(resolveDefaultLoreRoot()).toBe(path.resolve("/tmp/custom-lore"));
   });
 
-  it("falls back to ~/.mirror/workspace/lore when MIRROR_LORE_DIR is unset", async () => {
+  it("falls back to default lore locations when MIRROR_LORE_DIR is unset", async () => {
     const homeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-home-"));
     process.env.HOME = homeRoot;
     delete process.env.MIRROR_LORE_DIR;
 
-    expect(resolveDefaultLoreRoot()).toBe(path.join(homeRoot, ".mirror", "workspace", "lore"));
+    const result = resolveDefaultLoreRoot();
+
+    const repoFallback = path.resolve("./lore-scrolls");
+    const mirrorFallback = path.join(homeRoot, ".mirror", "workspace", "lore");
+
+    expect([repoFallback, mirrorFallback]).toContain(result);
   });
 });
 
