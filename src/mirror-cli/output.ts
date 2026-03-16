@@ -1,3 +1,4 @@
+import { formatMirrorDoctorHuman } from "../mirror/doctor/index.js";
 import { formatVerifyLoreHuman } from "../mirror/lore_manifest/index.js";
 import { formatMirrorStatusHuman } from "../mirror/status/format.js";
 import type { MirrorCliCommandResult } from "./commands.js";
@@ -19,6 +20,10 @@ export function formatMirrorCliResult(result: MirrorCliCommandResult, json = fal
 
   if (result.kind === "status") {
     return formatMirrorStatusHuman(result.status);
+  }
+
+  if (result.kind === "doctor") {
+    return formatMirrorDoctorHuman(result.report);
   }
 
   if (result.kind === "verify-lore") {
