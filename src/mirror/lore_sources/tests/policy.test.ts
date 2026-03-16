@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDefaultLorePolicy, resolveDefaultLoreRoot } from "../policy.js";
@@ -26,13 +28,12 @@ describe("resolveDefaultLoreRoot", () => {
     expect(resolveDefaultLoreRoot()).toBe(path.resolve("/tmp/custom-lore"));
   });
 
-  it("falls back to ~/.mirror/workspace/lore when MIRROR_LORE_DIR is unset", () => {
-    process.env.HOME = "/tmp/openclaw-test-home";
+  it("falls back to ~/.mirror/workspace/lore when MIRROR_LORE_DIR is unset", async () => {
+    const homeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-home-"));
+    process.env.HOME = homeRoot;
     delete process.env.MIRROR_LORE_DIR;
 
-    expect(resolveDefaultLoreRoot()).toBe(
-      path.join(process.env.HOME, ".mirror", "workspace", "lore"),
-    );
+    expect(resolveDefaultLoreRoot()).toBe(path.join(homeRoot, ".mirror", "workspace", "lore"));
   });
 });
 
