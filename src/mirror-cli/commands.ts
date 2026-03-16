@@ -4,6 +4,7 @@ import type { MirrorGateway } from "../mirror-gateway/index.js";
 import type { MirrorProviderConfig } from "../mirror-provider/index.js";
 import type { MirrorChatResponse } from "../mirror-runtime/index.js";
 import type { MirrorRuntimeHost, MirrorService } from "../mirror-service/index.js";
+import { runMirrorDoctor, type MirrorDoctorReport } from "../mirror/doctor/index.js";
 import {
   resolveDefaultLoreManifestPath,
   verifyLoreManifest,
@@ -20,6 +21,7 @@ export type MirrorCliCommandName =
   | "forge"
   | "commit"
   | "status"
+  | "doctor"
   | "verify-lore"
   | "serve"
   | "sync"
@@ -65,6 +67,7 @@ export type MirrorCliParsedArgs = {
 export type MirrorCliCommandResult =
   | { kind: "chat"; command: "chat"; response: MirrorChatResponse }
   | { kind: "status"; command: "status"; status: Awaited<ReturnType<typeof getMirrorStatus>> }
+  | { kind: "doctor"; command: "doctor"; report: MirrorDoctorReport }
   | {
       kind: "verify-lore";
       command: "verify-lore";
@@ -95,6 +98,7 @@ const COMMANDS = new Set<MirrorCliCommandName>([
   "forge",
   "commit",
   "status",
+  "doctor",
   "verify-lore",
   "serve",
   "sync",
@@ -726,6 +730,17 @@ async function executeMonkCommand(
   return { kind: "tool", command: "monk", action, tool, result };
 }
 
+async function executeDoctorCommand(
+  _flags: Record<string, string | boolean>,
+): Promise<MirrorCliCommandResult> {
+  const report = await runMirrorDoctor();
+  return {
+    kind: "doctor",
+    command: "doctor",
+    report,
+  };
+}
+
 export async function executeMirrorCliCommand(
   parsed: MirrorCliParsedArgs,
   deps: {
@@ -755,6 +770,10 @@ export async function executeMirrorCliCommand(
 
   if (parsed.command === "status") {
     return executeStatusCommand(deps.runtimeHost, parsed.flags);
+  }
+
+  if (parsed.command === "doctor") {
+    return executeDoctorCommand(parsed.flags);
   }
 
   if (parsed.command === "verify-lore") {

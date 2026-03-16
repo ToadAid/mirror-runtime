@@ -1,17 +1,17 @@
 {
   "name": "mirror-runtime",
   "version": "2026.2.25",
-  "description": "Mirror Runtime standalone package with quarantined OpenClaw compatibility wrappers",
+  "description": "Mirror Runtime standalone package",
   "keywords": [],
-  "homepage": "https://github.com/openclaw/openclaw#readme",
+  "homepage": "https://github.com/toadaid/mirror-runtime#readme",
   "bugs": {
-    "url": "https://github.com/openclaw/openclaw/issues"
+    "url": "https://github.com/toadaid/mirror-runtime/issues"
   },
   "license": "MIT",
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openclaw/openclaw.git"
+    "url": "git+https://github.com/toadaid/mirror-runtime.git"
   },
   "bin": {
     "mirror": "mirror.mjs",
