@@ -66,6 +66,23 @@ export type MirrorCliJsonStatus = {
   status: Record<string, unknown>;
 };
 
+export type MirrorCliJsonDoctor = {
+  ok: true;
+  command: "doctor";
+  report: {
+    ts: string;
+    overall: string;
+    checks: Array<{
+      id: string;
+      name: string;
+      status: string;
+      message?: string;
+      error?: string;
+      fix_available?: boolean;
+    }>;
+  };
+};
+
 export type MirrorCliJsonVerifyLore = {
   ok: true;
   command: "verify-lore";
@@ -152,6 +169,7 @@ export type MirrorCliJsonSuccess =
   | MirrorCliJsonForge
   | MirrorCliJsonCommit
   | MirrorCliJsonStatus
+  | MirrorCliJsonDoctor
   | MirrorCliJsonVerifyLore
   | MirrorCliJsonServe
   | MirrorCliJsonSync
@@ -180,8 +198,8 @@ export const MIRROR_CLI_COMMAND_HELP: MirrorCliCommandHelp[] = [
     args: ["<text>: required user prompt"],
     options: [
       "--model <model>: optional model id (default: mirror-default)",
-      "--provider-url <url>: override MIRROR_PROVIDER_URL",
-      "--provider-token <token>: override MIRROR_PROVIDER_AUTH_TOKEN",
+      "--provider-url <url>: override the configured provider URL",
+      "--provider-token <token>: override the configured provider token",
       "--user-id <id>: optional retrieval/memory user id",
       "--json: emit stable machine-readable JSON",
     ],
@@ -252,6 +270,14 @@ export const MIRROR_CLI_COMMAND_HELP: MirrorCliCommandHelp[] = [
     command: "status",
     usage: "mirror status [--json]",
     description: "Show the daemon-backed standalone Mirror runtime status snapshot.",
+    args: [],
+    options: ["--json: emit stable machine-readable JSON"],
+    auth: "open",
+  },
+  {
+    command: "doctor",
+    usage: "mirror doctor [--json]",
+    description: "Run diagnostic checks on the Mirror runtime and environment.",
     args: [],
     options: ["--json: emit stable machine-readable JSON"],
     auth: "open",
