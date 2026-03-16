@@ -73,12 +73,10 @@ export type MirrorCliJsonDoctor = {
     ts: string;
     overall: string;
     checks: Array<{
-      id: string;
-      name: string;
+      key: string;
       status: string;
-      message?: string;
-      error?: string;
-      fix_available?: boolean;
+      message: string;
+      details?: Record<string, unknown>;
     }>;
   };
 };
