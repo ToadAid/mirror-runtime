@@ -17,6 +17,7 @@ const originalMirrorProviderAuthToken = process.env.MIRROR_PROVIDER_AUTH_TOKEN;
 const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
 const originalMirrorUserWorkspaceDir = process.env.MIRROR_USER_WORKSPACE_DIR;
 const originalMirrorUserId = process.env.MIRROR_USER_ID;
+const originalHome = process.env.HOME;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -54,6 +55,11 @@ afterEach(async () => {
     delete process.env.MIRROR_USER_ID;
   } else {
     process.env.MIRROR_USER_ID = originalMirrorUserId;
+  }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
   }
 
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
@@ -174,6 +180,53 @@ describe("mirror cli", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(output).toContain("Mirror Chat");
     expect(output).toContain("Cancelled.");
+  });
+
+  it("loads chat provider config from env when overrides are unset", async () => {
+    const homeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-cli-home-"));
+    tempDirs.push(homeRoot);
+    process.env.HOME = homeRoot;
+
+    process.env.MIRROR_PROVIDER_URL = "http://brain.local/v1/chat/completions";
+    process.env.MIRROR_PROVIDER_AUTH_TOKEN = "token";
+
+    const loreDir = path.join(homeRoot, ".mirror", "workspace", "lore");
+    await fs.mkdir(loreDir, { recursive: true });
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const fetchImpl: FetchLike = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = parseRequestBodyJson<{
+        messages: Array<{ role: string; content: string }>;
+      }>(init);
+      expect(body.messages[0]?.content).toContain("Mirror canon context:");
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_cli_env",
+          object: "chat.completion",
+          created: 1,
+          model: "mirror-default",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Env provider path OK." },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    });
+
+    const output = await runMirrorCli(["mirror", "chat", "What happened to the patience vault?"], {
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url] = vi.mocked(fetchImpl).mock.calls[0];
+    expect(url).toBe("http://brain.local/v1/chat/completions");
+    expect(output).toContain("Env provider path OK.");
   });
 
   it("supports read commands for find and fact", async () => {
