@@ -21,6 +21,7 @@ const rootfsRoot = path.join(outputRoot, "rootfs");
 const runtimeRoot = path.join(rootfsRoot, "opt", "mirror-runtime");
 const systemdRoot = path.join(rootfsRoot, "usr", "lib", "systemd", "user");
 const packageAssetsRoot = path.join(root, "packaging", "mirror-runtime");
+const workspaceNodeModulesRoot = path.join(root, "node_modules");
 
 const requiredDistFiles = ["mirror-entry.js", "mirror-package.js", "schema.sql"] as const;
 
@@ -38,6 +39,13 @@ async function copyFileToRuntime(relativeSource: string, relativeTarget: string)
   await fs.copyFile(source, target);
 }
 
+async function copyFileToOutput(relativeSource: string, relativeTarget: string): Promise<void> {
+  const source = path.join(root, relativeSource);
+  const target = path.join(outputRoot, relativeTarget);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.copyFile(source, target);
+}
+
 async function writeLauncherScript(): Promise<void> {
   const launcherPath = path.join(runtimeRoot, "bin", "mirror");
   const content = `#!/usr/bin/env bash
@@ -49,6 +57,15 @@ exec node "\${RUNTIME_ROOT}/dist/mirror-entry.js" "$@"
   await fs.mkdir(path.dirname(launcherPath), { recursive: true });
   await fs.writeFile(launcherPath, content, "utf8");
   await fs.chmod(launcherPath, 0o755);
+}
+
+async function copyRuntimeDependencies(): Promise<void> {
+  await fs.access(workspaceNodeModulesRoot);
+  await fs.cp(workspaceNodeModulesRoot, path.join(runtimeRoot, "node_modules"), {
+    recursive: true,
+    force: true,
+    verbatimSymlinks: true,
+  });
 }
 
 async function readRootPackageJson(): Promise<RootPackageJson> {
@@ -88,12 +105,15 @@ async function writeManifest(pkg: RootPackageJson): Promise<void> {
     archive: "mirror-runtime-linux.tar.gz",
     runtime_root: "rootfs/opt/mirror-runtime",
     service_unit: "rootfs/usr/lib/systemd/user/mirror-runtime.service",
+    bootstrap_script: "install-mirror-runtime.sh",
     required_runtime_files: [
+      "install-mirror-runtime.sh",
       "rootfs/opt/mirror-runtime/bin/mirror",
       "rootfs/opt/mirror-runtime/mirror.mjs",
       "rootfs/opt/mirror-runtime/dist/mirror-entry.js",
       "rootfs/opt/mirror-runtime/dist/mirror-package.js",
       "rootfs/opt/mirror-runtime/dist/schema.sql",
+      "rootfs/opt/mirror-runtime/node_modules",
       "rootfs/opt/mirror-runtime/package.json",
     ],
     conventions: {
@@ -142,6 +162,7 @@ async function main(): Promise<void> {
   for (const file of requiredDistFiles) {
     await copyFileToRuntime(path.join("dist", file), path.join("dist", file));
   }
+  await copyRuntimeDependencies();
   await copyFileToRuntime(
     path.relative(root, path.join(packageAssetsRoot, "mirror-runtime.env.example")),
     path.join("share", "examples", "mirror-runtime.env.example"),
@@ -155,6 +176,11 @@ async function main(): Promise<void> {
     path.join(packageAssetsRoot, "mirror-runtime.service"),
     path.join(systemdRoot, "mirror-runtime.service"),
   );
+  await copyFileToOutput(
+    path.relative(root, path.join(packageAssetsRoot, "install-mirror-runtime.sh")),
+    "install-mirror-runtime.sh",
+  );
+  await fs.chmod(path.join(outputRoot, "install-mirror-runtime.sh"), 0o755);
 
   await writeRuntimePackageJson(pkg);
   await writeManifest(pkg);

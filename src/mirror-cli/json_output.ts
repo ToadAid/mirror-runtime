@@ -44,6 +44,14 @@ export function toMirrorCliJsonOutput(result: MirrorCliCommandResult): MirrorCli
     };
   }
 
+  if (result.kind === "doctor") {
+    return {
+      ok: true,
+      command: "doctor",
+      report: result.report,
+    };
+  }
+
   if (result.kind === "verify-lore") {
     return {
       ok: true,

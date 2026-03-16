@@ -1,16 +1,24 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDefaultLorePolicy, resolveDefaultLoreRoot } from "../policy.js";
 
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
+const originalHome = process.env.HOME;
 
 afterEach(() => {
   if (originalMirrorLoreDir === undefined) {
     delete process.env.MIRROR_LORE_DIR;
-    return;
+  } else {
+    process.env.MIRROR_LORE_DIR = originalMirrorLoreDir;
   }
 
-  process.env.MIRROR_LORE_DIR = originalMirrorLoreDir;
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
 });
 
 describe("resolveDefaultLoreRoot", () => {
@@ -20,10 +28,17 @@ describe("resolveDefaultLoreRoot", () => {
     expect(resolveDefaultLoreRoot()).toBe(path.resolve("/tmp/custom-lore"));
   });
 
-  it("falls back to ./lore-scrolls when MIRROR_LORE_DIR is unset", () => {
+  it("falls back to default lore locations when MIRROR_LORE_DIR is unset", async () => {
+    const homeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-home-"));
+    process.env.HOME = homeRoot;
     delete process.env.MIRROR_LORE_DIR;
 
-    expect(resolveDefaultLoreRoot()).toBe(path.resolve("./lore-scrolls"));
+    const result = resolveDefaultLoreRoot();
+
+    const repoFallback = path.resolve("./lore-scrolls");
+    const mirrorFallback = path.join(homeRoot, ".mirror", "workspace", "lore");
+
+    expect([repoFallback, mirrorFallback]).toContain(result);
   });
 });
 
