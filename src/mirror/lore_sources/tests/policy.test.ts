@@ -3,14 +3,20 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getDefaultLorePolicy, resolveDefaultLoreRoot } from "../policy.js";
 
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
+const originalHome = process.env.HOME;
 
 afterEach(() => {
   if (originalMirrorLoreDir === undefined) {
     delete process.env.MIRROR_LORE_DIR;
-    return;
+  } else {
+    process.env.MIRROR_LORE_DIR = originalMirrorLoreDir;
   }
 
-  process.env.MIRROR_LORE_DIR = originalMirrorLoreDir;
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
 });
 
 describe("resolveDefaultLoreRoot", () => {
@@ -20,10 +26,13 @@ describe("resolveDefaultLoreRoot", () => {
     expect(resolveDefaultLoreRoot()).toBe(path.resolve("/tmp/custom-lore"));
   });
 
-  it("falls back to ./lore-scrolls when MIRROR_LORE_DIR is unset", () => {
+  it("falls back to ~/.mirror/workspace/lore when MIRROR_LORE_DIR is unset", () => {
+    process.env.HOME = "/tmp/openclaw-test-home";
     delete process.env.MIRROR_LORE_DIR;
 
-    expect(resolveDefaultLoreRoot()).toBe(path.resolve("./lore-scrolls"));
+    expect(resolveDefaultLoreRoot()).toBe(
+      path.join(process.env.HOME, ".mirror", "workspace", "lore"),
+    );
   });
 });
 
