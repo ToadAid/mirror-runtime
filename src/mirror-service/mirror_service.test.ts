@@ -25,6 +25,7 @@ const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
 const originalMirrorNodeId = process.env.MIRROR_NODE_ID;
 const originalMirrorBaseUrl = process.env.MIRROR_BASE_URL;
 const originalMirrorUserWorkspaceDir = process.env.MIRROR_USER_WORKSPACE_DIR;
+const originalHome = process.env.HOME;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -67,6 +68,11 @@ afterEach(async () => {
   } else {
     process.env.MIRROR_USER_WORKSPACE_DIR = originalMirrorUserWorkspaceDir;
   }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
   closeMirrorMemoryDb();
   if (originalMirrorMemoryDbPath === undefined) {
     delete process.env.MIRROR_MEMORY_DB_PATH;
@@ -80,6 +86,13 @@ afterEach(async () => {
 async function createTempLoreDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-service-"));
   tempDirs.push(dir);
+  return dir;
+}
+
+async function createTempHome(prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  process.env.HOME = dir;
   return dir;
 }
 
@@ -192,6 +205,72 @@ async function requestJsonFromApp(
       },
       end(payload?: unknown) {
         resolve(payload);
+        return this;
+      },
+    };
+
+    try {
+      if (typeof app === "function") {
+        (app as (req: unknown, res: unknown) => void)(req, res);
+      } else {
+        (app as { handle: (req: unknown, res: unknown) => void }).handle(req, res);
+      }
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function requestResponseFromApp(
+  app: unknown,
+  method: string,
+  url: string,
+  options: {
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
+): Promise<{ statusCode: number; body: unknown }> {
+  return await new Promise((resolve, reject) => {
+    const reqHeaders = { ...options.headers };
+    const req = {
+      method,
+      url,
+      headers: reqHeaders,
+      body: options.body,
+      header(name: string) {
+        const value = reqHeaders[name] ?? reqHeaders[name.toLowerCase()];
+        return typeof value === "string" ? value : undefined;
+      },
+    };
+    const headers = new Map<string, string>();
+    const res = {
+      statusCode: 200,
+      body: undefined as unknown,
+      setHeader(name: string, value: string) {
+        headers.set(name.toLowerCase(), value);
+      },
+      getHeader(name: string) {
+        return headers.get(name.toLowerCase());
+      },
+      removeHeader(name: string) {
+        headers.delete(name.toLowerCase());
+      },
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        resolve({ statusCode: this.statusCode, body: payload });
+        return this;
+      },
+      send(payload: unknown) {
+        this.body = payload;
+        resolve({ statusCode: this.statusCode, body: payload });
+        return this;
+      },
+      end(payload?: unknown) {
+        resolve({ statusCode: this.statusCode, body: payload });
         return this;
       },
     };
@@ -511,10 +590,82 @@ describe("mirror service", () => {
     }
   });
 
+  it("fails closed for mutable network-exposed routes when operator auth is unconfigured", async () => {
+    await createTempHome("mirror-service-unconfigured-home-");
+    const loreDir = await createTempLoreDir();
+    const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-service-users-"));
+    tempDirs.push(usersRoot);
+    process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+    delete process.env.MIRROR_OPERATOR_TOKEN;
+    await seedLoreCorpus(loreDir);
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const syncPull = await requestResponseFromApp(service.app, "POST", "/mirror-sync/pull", {
+        body: {
+          peer_id: "peer-a",
+        },
+      });
+      expect(syncPull).toEqual({
+        statusCode: 503,
+        body: {
+          code: "mutable_surface_auth_unconfigured",
+          error: "Mirror operator auth is not configured",
+        },
+      });
+
+      const createTask = await requestResponseFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.task.create",
+        {
+          body: {
+            user_id: "alice",
+            title: "Daily planning",
+          },
+        },
+      );
+      expect(createTask).toEqual({
+        statusCode: 503,
+        body: {
+          code: "mutable_surface_auth_unconfigured",
+          error: "Mirror operator auth is not configured",
+        },
+      });
+
+      const listTasks = await requestResponseFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.task.list",
+        {
+          body: {
+            user_id: "alice",
+          },
+        },
+      );
+      expect(listTasks.statusCode).toBe(200);
+      expect(listTasks.body).toEqual({
+        tool: "mirror.task.list",
+        result: {
+          tasks: [],
+        },
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("exposes sync handlers on the main service surface", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService({
       port: 0,
@@ -531,6 +682,12 @@ describe("mirror service", () => {
           body: {
             peer_id: "peer-1",
             base_url: "http://127.0.0.1:7999",
+          },
+          header(name: string) {
+            if (name.toLowerCase() === "x-mirror-operator-token") {
+              return "secret";
+            }
+            return undefined;
           },
         } as never,
         announceRes as never,
@@ -853,6 +1010,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService(
       {
@@ -909,6 +1067,9 @@ describe("mirror service", () => {
       });
 
       await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
         body: {
           peer_id: "peer-1",
           base_url: "http://127.0.0.1:7999",
@@ -962,6 +1123,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService(
       {
@@ -1018,6 +1180,9 @@ describe("mirror service", () => {
         },
       });
       await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
         body: {
           peer_id: "peer-1",
           base_url: "http://127.0.0.1:7999",
@@ -1064,6 +1229,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService(
       {
@@ -1138,6 +1304,9 @@ describe("mirror service", () => {
         },
       });
       await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
         body: {
           peer_id: "peer-1",
           base_url: "http://127.0.0.1:7999",

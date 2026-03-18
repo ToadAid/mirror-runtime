@@ -255,6 +255,7 @@ describe("mirror web console", () => {
     tempDirs.push(usersRoot);
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
     process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
 
     const consoleServer = await startConsoleHarness({ loreDir });
@@ -265,7 +266,8 @@ describe("mirror web console", () => {
         {
           params: { tool_name: "mirror.task.create" },
           body: { user_id: "alice", title: "Check reminders" },
-          header: () => undefined,
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
         } as never,
         createTaskRes as never,
       );
@@ -295,6 +297,7 @@ describe("mirror web console", () => {
     tempDirs.push(usersRoot);
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
     process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
 
     const consoleServer = await startConsoleHarness({ loreDir });
@@ -314,7 +317,8 @@ describe("mirror web console", () => {
         {
           params: { tool_name: "mirror.monk.note" },
           body: { user_id: "alice", note: "Follow up on the next task." },
-          header: () => undefined,
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
         } as never,
         noteRes as never,
       );
@@ -360,6 +364,7 @@ describe("mirror web console", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const consoleServer = await startConsoleHarness({ loreDir });
 
@@ -368,6 +373,8 @@ describe("mirror web console", () => {
       await consoleServer.consoleHandlers.syncPull(
         {
           body: { base_url: "http://127.0.0.1:7999" },
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
         } as never,
         announceRes as never,
       );

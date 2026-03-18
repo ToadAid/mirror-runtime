@@ -6,6 +6,7 @@ const OPERATOR_HEADER = "x-mirror-operator-token";
 
 export type MirrorGatewayAuthDecision = {
   allowed: boolean;
+  code?: string;
   statusCode?: number;
   error?: string;
 };
@@ -64,6 +65,37 @@ export function authorizeMirrorToolAccess(
   }
 
   return { allowed: true };
+}
+
+export function authorizeMirrorMutableSurfaceAccess(
+  providedToken: string | null,
+): MirrorGatewayAuthDecision {
+  const expected = getMirrorOperatorToken();
+  if (!expected) {
+    return {
+      allowed: false,
+      code: "mutable_surface_auth_unconfigured",
+      statusCode: 503,
+      error: "Mirror operator auth is not configured",
+    };
+  }
+
+  if (providedToken !== expected) {
+    return {
+      allowed: false,
+      code: "mutable_surface_auth_required",
+      statusCode: 403,
+      error: "Mirror operator authorization required",
+    };
+  }
+
+  return { allowed: true };
+}
+
+export function authorizeMirrorSettingsWriteRequest(
+  req: express.Request,
+): MirrorGatewayAuthDecision {
+  return authorizeMirrorMutableSurfaceAccess(readMirrorRequestToken(req));
 }
 
 export function authorizeMirrorToolRequest(
