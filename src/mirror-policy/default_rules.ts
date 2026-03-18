@@ -1,4 +1,12 @@
-import { authorizeMirrorToolAccess } from "../mirror-gateway/auth.js";
+import {
+  authorizeMirrorMutableSurfaceAccess,
+  authorizeMirrorToolAccess,
+} from "../mirror-gateway/auth.js";
+import {
+  isMirrorLocalOnlySurface,
+  isMirrorMutableActionName,
+  isMirrorNetworkExposedSurface,
+} from "./mutable_surfaces.js";
 import type { MirrorPolicyDecision, MirrorPolicyRule } from "./policy_types.js";
 
 function denyDecision(params: {
@@ -45,6 +53,39 @@ export function createMirrorOperatorAccessPolicyRule(): MirrorPolicyRule {
   };
 }
 
+export function createMirrorMutableSurfacePolicyRule(): MirrorPolicyRule {
+  return {
+    name: "mirror.mutable-surface-access",
+    evaluate(input) {
+      if (input.target.kind !== "action") {
+        return null;
+      }
+      if (isMirrorLocalOnlySurface(input.context.surface)) {
+        return null;
+      }
+      if (!isMirrorNetworkExposedSurface(input.context.surface)) {
+        return null;
+      }
+      if (!isMirrorMutableActionName(input.target.action_name)) {
+        return null;
+      }
+
+      const decision = authorizeMirrorMutableSurfaceAccess(input.context.request_token ?? null);
+      if (decision.allowed) {
+        return null;
+      }
+
+      return denyDecision({
+        code: decision.code ?? "mutable_surface_auth_required",
+        reason: decision.error ?? "Mirror operator authorization required",
+        statusCode: decision.statusCode,
+        rule: "mirror.mutable-surface-access",
+        tags: ["action", "mutable"],
+      });
+    },
+  };
+}
+
 export function createDefaultMirrorPolicyRules(): MirrorPolicyRule[] {
-  return [createMirrorOperatorAccessPolicyRule()];
+  return [createMirrorMutableSurfacePolicyRule(), createMirrorOperatorAccessPolicyRule()];
 }

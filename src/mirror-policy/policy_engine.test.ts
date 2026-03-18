@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildMirrorActionPolicyTarget,
@@ -19,13 +22,28 @@ function buildContext(overrides: Partial<MirrorPolicyContext> = {}): MirrorPolic
 }
 
 const originalOperatorToken = process.env.MIRROR_OPERATOR_TOKEN;
+const originalHome = process.env.HOME;
+const tempDirs: string[] = [];
 
-afterEach(() => {
+async function createTempHome(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-policy-"));
+  tempDirs.push(dir);
+  process.env.HOME = dir;
+  return dir;
+}
+
+afterEach(async () => {
   if (originalOperatorToken === undefined) {
     delete process.env.MIRROR_OPERATOR_TOKEN;
-    return;
+  } else {
+    process.env.MIRROR_OPERATOR_TOKEN = originalOperatorToken;
   }
-  process.env.MIRROR_OPERATOR_TOKEN = originalOperatorToken;
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
 describe("mirror policy engine", () => {
@@ -75,7 +93,8 @@ describe("mirror policy engine", () => {
     expect(result.decision.code).toBe("allowed");
   });
 
-  it("allows chat, provider, action, and adapter targets by default", async () => {
+  it("allows chat, provider, read-only action, and adapter targets by default", async () => {
+    await createTempHome();
     const engine = createMirrorPolicyEngine();
 
     await expect(
@@ -103,9 +122,9 @@ describe("mirror policy engine", () => {
     await expect(
       engine.evaluate({
         phase: "action",
-        target: buildMirrorActionPolicyTarget("sync.pull", { peer_id: "peer-a" }),
+        target: buildMirrorActionPolicyTarget("sync.updates", { requested_paths: [] }),
         context: buildContext({
-          surface: "cli",
+          surface: "service",
         }),
       }),
     ).resolves.toMatchObject({ allowed: true });
@@ -127,6 +146,40 @@ describe("mirror policy engine", () => {
         }),
       }),
     ).resolves.toMatchObject({ allowed: true });
+  });
+
+  it("denies mutable network-exposed actions when operator auth is unconfigured", async () => {
+    await createTempHome();
+    delete process.env.MIRROR_OPERATOR_TOKEN;
+    const engine = createMirrorPolicyEngine();
+
+    const result = await engine.evaluate({
+      phase: "action",
+      target: buildMirrorActionPolicyTarget("sync.pull", { peer_id: "peer-a" }),
+      context: buildContext({
+        surface: "sync",
+      }),
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.decision.code).toBe("mutable_surface_auth_unconfigured");
+  });
+
+  it("allows mutable actions from the CLI local-only surface", async () => {
+    await createTempHome();
+    delete process.env.MIRROR_OPERATOR_TOKEN;
+    const engine = createMirrorPolicyEngine();
+
+    const result = await engine.evaluate({
+      phase: "action",
+      target: buildMirrorActionPolicyTarget("sync.pull", { peer_id: "peer-a" }),
+      context: buildContext({
+        surface: "cli",
+      }),
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision.code).toBe("allowed");
   });
 
   it("throws a typed error when a policy result is denied", async () => {

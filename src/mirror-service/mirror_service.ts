@@ -10,6 +10,7 @@ import {
   createMirrorConsoleRouterAtBase,
   type MirrorConsoleHandlers,
 } from "../mirror-console/index.js";
+import { readMirrorRequestToken } from "../mirror-gateway/auth.js";
 import {
   createMirrorGatewayHandlers,
   createMirrorGatewayRouter,
@@ -164,6 +165,7 @@ export async function startMirrorService(
     const policyContext: MirrorPolicyContext = {
       surface: "sync",
       route: typeof req.path === "string" ? req.path : "",
+      request_token: readMirrorRequestToken(req),
       session: {
         session_id: header("x-mirror-session-id") ?? undefined,
       },

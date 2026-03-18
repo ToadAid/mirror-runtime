@@ -9,6 +9,7 @@ const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
 const originalMirrorOperatorToken = process.env.MIRROR_OPERATOR_TOKEN;
 const originalMirrorUserWorkspaceDir = process.env.MIRROR_USER_WORKSPACE_DIR;
+const originalHome = process.env.HOME;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -26,6 +27,11 @@ afterEach(async () => {
   } else {
     process.env.MIRROR_USER_WORKSPACE_DIR = originalMirrorUserWorkspaceDir;
   }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
 
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
@@ -33,6 +39,13 @@ afterEach(async () => {
 async function createTempLoreDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-gateway-"));
   tempDirs.push(dir);
+  return dir;
+}
+
+async function createTempHome(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-gateway-home-"));
+  tempDirs.push(dir);
+  process.env.HOME = dir;
   return dir;
 }
 
@@ -144,6 +157,7 @@ describe("mirror gateway", () => {
   });
 
   it("blocks unauthorized write tools", async () => {
+    await createTempHome();
     process.env.MIRROR_OPERATOR_TOKEN = "secret";
     const handlers = createMirrorGatewayHandlers();
     const res = createMockResponse();
@@ -208,6 +222,7 @@ describe("mirror gateway", () => {
   });
 
   it("routes personal utility tools without touching canon", async () => {
+    await createTempHome();
     const loreDir = await createTempLoreDir();
     const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-gateway-users-"));
     tempDirs.push(usersRoot);
@@ -228,7 +243,18 @@ describe("mirror gateway", () => {
       ) as never,
       createTaskRes as never,
     );
-    expect(createTaskRes.statusCode).toBe(200);
+    expect(createTaskRes.statusCode).toBe(503);
+    expect(createTaskRes.body).toEqual({
+      error: "Mirror operator auth is not configured",
+      code: "mutable_surface_auth_unconfigured",
+    });
+
+    const listTaskRes = createMockResponse();
+    await handlers.executeTool(
+      createRequest({ tool_name: "mirror.task.list" }, { user_id: "alice" }) as never,
+      listTaskRes as never,
+    );
+    expect(listTaskRes.statusCode).toBe(200);
 
     const dueReminderRes = createMockResponse();
     await handlers.executeTool(
