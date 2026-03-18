@@ -583,9 +583,8 @@ describe("mirror service", () => {
 
       service.consoleHandlers.loadConsole({} as never, res as never);
 
-      expect(String(res.body)).toContain("Mirror Runtime Web UI");
-      expect(String(res.body)).toContain("/mirror/chat");
-      expect(String(res.body)).toContain("/mirror/runtime/events");
+      expect(String(res.body)).toContain("Mirror Console");
+      expect(String(res.body)).toContain("/mirror/console/api/tools/");
     } finally {
       await service.shutdown();
     }

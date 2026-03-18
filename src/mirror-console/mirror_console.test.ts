@@ -158,23 +158,18 @@ describe("mirror web console", () => {
       const res = createMockResponse();
       consoleServer.consoleHandlers.loadConsole({} as never, res as never);
 
-      expect(String(res.body)).toContain("Mirror Runtime Web UI");
-      expect(String(res.body)).toContain("Dashboard");
-      expect(String(res.body)).toContain("Chat");
-      expect(String(res.body)).toContain("Events");
-      expect(String(res.body)).toContain("Workspace");
-      expect(String(res.body)).toContain("Provider");
-      expect(String(res.body)).toContain("Settings");
-      expect(String(res.body)).toContain("Connector Mode");
-      expect(String(res.body)).toContain("Telegram");
-      expect(String(res.body)).toContain("WhatsApp");
-      expect(String(res.body)).toContain("connector-status-telegram-bot");
-      expect(String(res.body)).toContain("connector-status-telegram-poll");
-      expect(String(res.body)).toContain("connector-status-telegram-error");
-      expect(String(res.body)).toContain("/mirror/chat");
-      expect(String(res.body)).toContain("/mirror/runtime/events");
-      expect(String(res.body)).toContain("/mirror/settings");
-      expect(String(res.body)).toContain("/mirror/settings/credentials");
+      expect(String(res.body)).toContain("Mirror Console");
+      expect(String(res.body)).toContain("Ask Mirror");
+      expect(String(res.body)).toContain("Tasks");
+      expect(String(res.body)).toContain("Reminders");
+      expect(String(res.body)).toContain("Heartbeat");
+      expect(String(res.body)).toContain("Monk Assistance");
+      expect(String(res.body)).toContain("Sync");
+      expect(String(res.body)).toContain("Operations");
+      expect(String(res.body)).toContain("/mirror/console/api/tools/");
+      expect(String(res.body)).toContain("/mirror/console/api/sync/peers");
+      expect(String(res.body)).toContain("/mirror/console/api/ops/metrics");
+      expect(String(res.body)).toContain("/mirror/console/api/graph/related");
     } finally {
       await consoleServer.shutdown();
     }
