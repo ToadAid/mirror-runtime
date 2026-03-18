@@ -19,12 +19,18 @@ import {
 
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
+const originalMirrorOperatorToken = process.env.MIRROR_OPERATOR_TOKEN;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
     delete process.env.MIRROR_LORE_DIR;
   } else {
     process.env.MIRROR_LORE_DIR = originalMirrorLoreDir;
+  }
+  if (originalMirrorOperatorToken === undefined) {
+    delete process.env.MIRROR_OPERATOR_TOKEN;
+  } else {
+    process.env.MIRROR_OPERATOR_TOKEN = originalMirrorOperatorToken;
   }
 
   closeMirrorMemoryDb();
@@ -164,6 +170,7 @@ describe("mirror observability", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const gatewayHandlers = createMirrorGatewayHandlers(undefined, {
       provider: {
@@ -215,7 +222,8 @@ describe("mirror observability", () => {
       {
         params: { tool_name: "mirror.task.create" },
         body: { user_id: "alice", title: "Review open work" },
-        header: () => undefined,
+        header: (name: string) =>
+          name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
       } as never,
       createMockResponse() as never,
     );

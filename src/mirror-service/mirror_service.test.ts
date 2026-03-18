@@ -25,6 +25,7 @@ const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
 const originalMirrorNodeId = process.env.MIRROR_NODE_ID;
 const originalMirrorBaseUrl = process.env.MIRROR_BASE_URL;
 const originalMirrorUserWorkspaceDir = process.env.MIRROR_USER_WORKSPACE_DIR;
+const originalHome = process.env.HOME;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -67,6 +68,11 @@ afterEach(async () => {
   } else {
     process.env.MIRROR_USER_WORKSPACE_DIR = originalMirrorUserWorkspaceDir;
   }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
   closeMirrorMemoryDb();
   if (originalMirrorMemoryDbPath === undefined) {
     delete process.env.MIRROR_MEMORY_DB_PATH;
@@ -80,6 +86,13 @@ afterEach(async () => {
 async function createTempLoreDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-service-"));
   tempDirs.push(dir);
+  return dir;
+}
+
+async function createTempHome(prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  process.env.HOME = dir;
   return dir;
 }
 
@@ -570,18 +583,21 @@ describe("mirror service", () => {
 
       service.consoleHandlers.loadConsole({} as never, res as never);
 
-      expect(String(res.body)).toContain("Mirror Console");
-      expect(String(res.body)).toContain("/mirror/console/api/tools/");
+      expect(String(res.body)).toContain("Mirror Runtime Web UI");
+      expect(String(res.body)).toContain("/mirror/chat");
+      expect(String(res.body)).toContain("/mirror/runtime/events");
     } finally {
       await service.shutdown();
     }
   });
 
   it("fails closed for mutable network-exposed routes when operator auth is unconfigured", async () => {
+    await createTempHome("mirror-service-unconfigured-home-");
     const loreDir = await createTempLoreDir();
     const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-service-users-"));
     tempDirs.push(usersRoot);
     process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+    delete process.env.MIRROR_OPERATOR_TOKEN;
     await seedLoreCorpus(loreDir);
 
     const service = await startMirrorService({
@@ -1214,6 +1230,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService(
       {
@@ -1288,6 +1305,9 @@ describe("mirror service", () => {
         },
       });
       await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
         body: {
           peer_id: "peer-1",
           base_url: "http://127.0.0.1:7999",

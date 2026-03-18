@@ -158,18 +158,23 @@ describe("mirror web console", () => {
       const res = createMockResponse();
       consoleServer.consoleHandlers.loadConsole({} as never, res as never);
 
-      expect(String(res.body)).toContain("Mirror Console");
-      expect(String(res.body)).toContain("Ask Mirror");
-      expect(String(res.body)).toContain("Tasks");
-      expect(String(res.body)).toContain("Reminders");
-      expect(String(res.body)).toContain("Heartbeat");
-      expect(String(res.body)).toContain("Monk Assistance");
-      expect(String(res.body)).toContain("Sync");
-      expect(String(res.body)).toContain("Operations");
-      expect(String(res.body)).toContain("/mirror/console/api/tools/");
-      expect(String(res.body)).toContain("/mirror/console/api/sync/peers");
-      expect(String(res.body)).toContain("/mirror/console/api/ops/metrics");
-      expect(String(res.body)).toContain("/mirror/console/api/graph/related");
+      expect(String(res.body)).toContain("Mirror Runtime Web UI");
+      expect(String(res.body)).toContain("Dashboard");
+      expect(String(res.body)).toContain("Chat");
+      expect(String(res.body)).toContain("Events");
+      expect(String(res.body)).toContain("Workspace");
+      expect(String(res.body)).toContain("Provider");
+      expect(String(res.body)).toContain("Settings");
+      expect(String(res.body)).toContain("Connector Mode");
+      expect(String(res.body)).toContain("Telegram");
+      expect(String(res.body)).toContain("WhatsApp");
+      expect(String(res.body)).toContain("connector-status-telegram-bot");
+      expect(String(res.body)).toContain("connector-status-telegram-poll");
+      expect(String(res.body)).toContain("connector-status-telegram-error");
+      expect(String(res.body)).toContain("/mirror/chat");
+      expect(String(res.body)).toContain("/mirror/runtime/events");
+      expect(String(res.body)).toContain("/mirror/settings");
+      expect(String(res.body)).toContain("/mirror/settings/credentials");
     } finally {
       await consoleServer.shutdown();
     }
@@ -255,6 +260,7 @@ describe("mirror web console", () => {
     tempDirs.push(usersRoot);
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
     process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
 
     const consoleServer = await startConsoleHarness({ loreDir });
@@ -265,7 +271,8 @@ describe("mirror web console", () => {
         {
           params: { tool_name: "mirror.task.create" },
           body: { user_id: "alice", title: "Check reminders" },
-          header: () => undefined,
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
         } as never,
         createTaskRes as never,
       );
@@ -295,6 +302,7 @@ describe("mirror web console", () => {
     tempDirs.push(usersRoot);
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
     process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
 
     const consoleServer = await startConsoleHarness({ loreDir });
@@ -314,7 +322,8 @@ describe("mirror web console", () => {
         {
           params: { tool_name: "mirror.monk.note" },
           body: { user_id: "alice", note: "Follow up on the next task." },
-          header: () => undefined,
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
         } as never,
         noteRes as never,
       );
@@ -360,6 +369,7 @@ describe("mirror web console", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const consoleServer = await startConsoleHarness({ loreDir });
 
@@ -368,6 +378,8 @@ describe("mirror web console", () => {
       await consoleServer.consoleHandlers.syncPull(
         {
           body: { base_url: "http://127.0.0.1:7999" },
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
         } as never,
         announceRes as never,
       );

@@ -40,7 +40,6 @@ import {
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
 import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
-import { getMirrorWorkspaceSummary } from "../mirror-user-workspace/index.js";
 import { createMirrorToolRegistry, getMirrorNativeSkillTools } from "../mirror/skills/index.js";
 import {
   createMirrordaemon,
@@ -326,7 +325,6 @@ export async function startMirrorService(
         peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
       }),
     getBaseUrl: () => syncManager.getLocalBaseUrl(),
-    getWorkspace: async () => await getMirrorWorkspaceSummary(),
   });
   app.use(createMirrorGatewayRouter("/mirror", handlers));
   app.use(createMirrorConsoleRouterAtBase("/mirror/console", consoleHandlers));
