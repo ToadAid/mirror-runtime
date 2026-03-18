@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { runMirrorCli } from "../mirror-cli/index.js";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
+import { writeMirrorSettingsFilesSync } from "../mirror-settings/load.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import {
   loadMirrorServiceConfig,
@@ -25,6 +26,7 @@ const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
 const originalMirrorNodeId = process.env.MIRROR_NODE_ID;
 const originalMirrorBaseUrl = process.env.MIRROR_BASE_URL;
 const originalMirrorUserWorkspaceDir = process.env.MIRROR_USER_WORKSPACE_DIR;
+const originalHome = process.env.HOME;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -67,6 +69,11 @@ afterEach(async () => {
   } else {
     process.env.MIRROR_USER_WORKSPACE_DIR = originalMirrorUserWorkspaceDir;
   }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
   closeMirrorMemoryDb();
   if (originalMirrorMemoryDbPath === undefined) {
     delete process.env.MIRROR_MEMORY_DB_PATH;
@@ -83,9 +90,26 @@ async function createTempLoreDir(): Promise<string> {
   return dir;
 }
 
+async function createTempHome(prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  process.env.HOME = dir;
+  return dir;
+}
+
 async function createTempMemoryDbPath(): Promise<string> {
   const dir = await createTempLoreDir();
   return path.join(dir, "mirror-memory.sqlite");
+}
+
+function fetchTarget(input: string | URL | Request): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
 }
 
 async function seedLoreCorpus(loreDir: string): Promise<void> {
@@ -192,6 +216,72 @@ async function requestJsonFromApp(
       },
       end(payload?: unknown) {
         resolve(payload);
+        return this;
+      },
+    };
+
+    try {
+      if (typeof app === "function") {
+        (app as (req: unknown, res: unknown) => void)(req, res);
+      } else {
+        (app as { handle: (req: unknown, res: unknown) => void }).handle(req, res);
+      }
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function requestResponseFromApp(
+  app: unknown,
+  method: string,
+  url: string,
+  options: {
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
+): Promise<{ statusCode: number; body: unknown }> {
+  return await new Promise((resolve, reject) => {
+    const reqHeaders = { ...options.headers };
+    const req = {
+      method,
+      url,
+      headers: reqHeaders,
+      body: options.body,
+      header(name: string) {
+        const value = reqHeaders[name] ?? reqHeaders[name.toLowerCase()];
+        return typeof value === "string" ? value : undefined;
+      },
+    };
+    const headers = new Map<string, string>();
+    const res = {
+      statusCode: 200,
+      body: undefined as unknown,
+      setHeader(name: string, value: string) {
+        headers.set(name.toLowerCase(), value);
+      },
+      getHeader(name: string) {
+        return headers.get(name.toLowerCase());
+      },
+      removeHeader(name: string) {
+        headers.delete(name.toLowerCase());
+      },
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        resolve({ statusCode: this.statusCode, body: payload });
+        return this;
+      },
+      send(payload: unknown) {
+        this.body = payload;
+        resolve({ statusCode: this.statusCode, body: payload });
+        return this;
+      },
+      end(payload?: unknown) {
+        resolve({ statusCode: this.statusCode, body: payload });
         return this;
       },
     };
@@ -381,6 +471,75 @@ describe("mirror service", () => {
     expect(config.baseUrl).toBe("http://127.0.0.1:7777");
   });
 
+  it("loads service config from structured settings files", async () => {
+    const home = await createTempHome("mirror-service-settings-");
+    process.env.MIRROR_ENV_FILE = path.join(
+      home,
+      ".config",
+      "mirror-runtime",
+      "mirror-runtime.env",
+    );
+
+    writeMirrorSettingsFilesSync({
+      mirror: {
+        version: 1,
+        runtime: {
+          port: 18181,
+          node_id: "mirror-settings-node",
+          base_url: "http://127.0.0.1:18181",
+          web_ui_enabled: true,
+        },
+        workspace: {
+          root: path.join(home, ".mirror", "workspace"),
+        },
+        onboarding: {},
+      },
+      providers: {
+        version: 1,
+        default_provider_id: "primary",
+        providers: [
+          {
+            id: "primary",
+            kind: "ollama",
+            label: "Local Ollama",
+            url: "http://127.0.0.1:11434/v1/chat/completions",
+            model: "llama3.2",
+            enabled: true,
+            credential_id: "provider:primary",
+          },
+        ],
+      },
+      connectors: {
+        version: 1,
+        mode: "local_ui",
+        local_web_ui: { enabled: true },
+        connectors: {},
+      },
+      credentials: {
+        version: 1,
+        credentials: {
+          "provider:primary": {
+            type: "bearer_token",
+            value: "ollama",
+          },
+          "operator:local": {
+            type: "operator_token",
+            value: "secret",
+          },
+        },
+      },
+    });
+
+    const config = loadMirrorServiceConfig();
+
+    expect(config.port).toBe(18181);
+    expect(config.providerUrl).toBe("http://127.0.0.1:11434/v1/chat/completions");
+    expect(config.providerAuthToken).toBe("ollama");
+    expect(config.operatorToken).toBe("secret");
+    expect(config.nodeId).toBe("mirror-settings-node");
+    expect(config.baseUrl).toBe("http://127.0.0.1:18181");
+  });
+
   it("starts a gateway server and responds on gateway routes", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
@@ -504,8 +663,574 @@ describe("mirror service", () => {
 
       service.consoleHandlers.loadConsole({} as never, res as never);
 
-      expect(String(res.body)).toContain("Mirror Console");
-      expect(String(res.body)).toContain("/mirror/console/api/tools/");
+      expect(String(res.body)).toContain("Mirror Runtime Web UI");
+      expect(String(res.body)).toContain("/mirror/chat");
+      expect(String(res.body)).toContain("/mirror/runtime/events");
+      expect(String(res.body)).toContain('data-tab="settings"');
+      expect(String(res.body)).toContain("Connector Mode");
+      expect(String(res.body)).toContain("Telegram");
+      expect(String(res.body)).toContain("WhatsApp");
+      expect(String(res.body)).toContain("/mirror/settings");
+      expect(String(res.body)).toContain("/mirror/settings/credentials");
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("exposes settings read and write endpoints with operator token auth", async () => {
+    const home = await createTempHome("mirror-service-settings-api-");
+    process.env.MIRROR_ENV_FILE = path.join(
+      home,
+      ".config",
+      "mirror-runtime",
+      "mirror-runtime.env",
+    );
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    writeMirrorSettingsFilesSync({
+      mirror: {
+        version: 1,
+        runtime: {
+          port: 17777,
+          node_id: "mirror-api-node",
+          web_ui_enabled: true,
+        },
+        workspace: {
+          root: path.join(home, ".mirror", "workspace"),
+        },
+        onboarding: {},
+      },
+      providers: {
+        version: 1,
+        default_provider_id: "primary",
+        providers: [
+          {
+            id: "primary",
+            kind: "custom",
+            label: "Primary Provider",
+            url: "http://brain.local/v1/chat/completions",
+            model: "mirror-default",
+            enabled: true,
+            credential_id: "provider:primary",
+          },
+        ],
+      },
+      connectors: {
+        version: 1,
+        mode: "local_ui",
+        local_web_ui: { enabled: true },
+        connectors: {},
+      },
+      credentials: {
+        version: 1,
+        credentials: {
+          "provider:primary": {
+            type: "bearer_token",
+            value: "token",
+          },
+          "operator:local": {
+            type: "operator_token",
+            value: "secret",
+          },
+        },
+      },
+    });
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const settingsResponse = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/settings",
+      )) as {
+        credentials: Record<string, { type: string; configured: boolean }>;
+        resolved: {
+          runtime: { port: number };
+          provider: { active: { id: string } | null };
+        };
+      };
+
+      expect(settingsResponse.credentials["provider:primary"]).toEqual({
+        type: "bearer_token",
+        configured: true,
+      });
+      expect(settingsResponse.credentials["operator:local"]).toEqual({
+        type: "operator_token",
+        configured: true,
+      });
+      expect(settingsResponse.resolved.runtime.port).toBe(17777);
+      expect(settingsResponse.resolved.provider.active?.id).toBe("primary");
+
+      const unauthorizedResponse = await requestJsonFromApp(
+        service.app,
+        "PUT",
+        "/mirror/settings",
+        {
+          body: {
+            mirror: {
+              version: 1,
+              runtime: {
+                port: 18888,
+                web_ui_enabled: true,
+              },
+              workspace: {
+                root: path.join(home, ".mirror", "workspace"),
+              },
+              onboarding: {},
+            },
+          },
+        },
+      );
+      expect(unauthorizedResponse).toEqual({
+        code: "mutable_surface_auth_required",
+        error: "Mirror operator authorization required",
+      });
+
+      const updatedResponse = (await requestJsonFromApp(service.app, "PUT", "/mirror/settings", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
+        body: {
+          mirror: {
+            version: 1,
+            runtime: {
+              port: 18888,
+              node_id: "mirror-api-node",
+              web_ui_enabled: true,
+            },
+            workspace: {
+              root: path.join(home, ".mirror", "workspace"),
+            },
+            onboarding: {},
+          },
+          connectors: {
+            version: 1,
+            mode: "connectors",
+            local_web_ui: { enabled: true },
+            connectors: {
+              telegram: {
+                enabled: true,
+                setup_state: "configured",
+                credential_id: "telegram:default",
+              },
+              whatsapp: {
+                enabled: false,
+                setup_state: "unconfigured",
+                credential_id: null,
+              },
+            },
+          },
+        },
+      })) as {
+        ok: boolean;
+        restart_required: boolean;
+        mirror: { runtime: { port: number } };
+        connectors: {
+          mode: string;
+          connectors: {
+            telegram?: { enabled?: boolean; setup_state?: string; credential_id?: string | null };
+          };
+        };
+      };
+      expect(updatedResponse.ok).toBe(true);
+      expect(updatedResponse.restart_required).toBe(true);
+      expect(updatedResponse.mirror.runtime.port).toBe(18888);
+      expect(updatedResponse.connectors.mode).toBe("connectors");
+      expect(updatedResponse.connectors.connectors.telegram).toEqual({
+        enabled: true,
+        setup_state: "configured",
+        credential_id: "telegram:default",
+      });
+
+      const credentialsResponse = (await requestJsonFromApp(
+        service.app,
+        "PUT",
+        "/mirror/settings/credentials",
+        {
+          headers: {
+            authorization: "Bearer secret",
+          },
+          body: {
+            credentials: {
+              "telegram:default": {
+                type: "bot_token",
+                value: "123:abc",
+              },
+            },
+          },
+        },
+      )) as {
+        ok: boolean;
+        credentials: Record<string, { type: string; configured: boolean }>;
+      };
+      expect(credentialsResponse.ok).toBe(true);
+      expect(credentialsResponse.credentials["telegram:default"]).toEqual({
+        type: "bot_token",
+        configured: true,
+      });
+
+      const refreshedSettingsResponse = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/settings",
+      )) as {
+        connectors: {
+          mode: string;
+          connectors: {
+            telegram?: { enabled?: boolean; setup_state?: string; credential_id?: string | null };
+          };
+        };
+        credentials: Record<string, { type: string; configured: boolean }>;
+      };
+      expect(refreshedSettingsResponse.connectors.mode).toBe("connectors");
+      expect(refreshedSettingsResponse.connectors.connectors.telegram).toEqual({
+        enabled: true,
+        setup_state: "configured",
+        credential_id: "telegram:default",
+      });
+      expect(refreshedSettingsResponse.credentials["telegram:default"]).toEqual({
+        type: "bot_token",
+        configured: true,
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("fails closed for mutable network-exposed routes when operator auth is unconfigured", async () => {
+    await createTempHome("mirror-service-secure-defaults-");
+    const loreDir = await createTempLoreDir();
+    const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-service-users-"));
+    tempDirs.push(usersRoot);
+    process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+    await seedLoreCorpus(loreDir);
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const settingsWrite = await requestResponseFromApp(service.app, "PUT", "/mirror/settings", {
+        body: {
+          mirror: {
+            version: 1,
+            runtime: {
+              port: 18888,
+              web_ui_enabled: true,
+            },
+            workspace: {
+              root: path.join(process.env.HOME!, ".mirror", "workspace"),
+            },
+            onboarding: {},
+          },
+        },
+      });
+      expect(settingsWrite).toEqual({
+        statusCode: 503,
+        body: {
+          code: "mutable_surface_auth_unconfigured",
+          error: "Mirror operator auth is not configured",
+        },
+      });
+
+      const syncPull = await requestResponseFromApp(service.app, "POST", "/mirror-sync/pull", {
+        body: {
+          peer_id: "peer-a",
+        },
+      });
+      expect(syncPull).toEqual({
+        statusCode: 503,
+        body: {
+          code: "mutable_surface_auth_unconfigured",
+          error: "Mirror operator auth is not configured",
+        },
+      });
+
+      const createTask = await requestResponseFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.task.create",
+        {
+          body: {
+            user_id: "alice",
+            title: "Daily planning",
+          },
+        },
+      );
+      expect(createTask).toEqual({
+        statusCode: 503,
+        body: {
+          code: "mutable_surface_auth_unconfigured",
+          error: "Mirror operator auth is not configured",
+        },
+      });
+
+      const listTasks = await requestResponseFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.task.list",
+        {
+          body: {
+            user_id: "alice",
+          },
+        },
+      );
+      expect(listTasks.statusCode).toBe(200);
+      expect(listTasks.body).toEqual({
+        tool: "mirror.task.list",
+        result: {
+          tasks: [],
+        },
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("starts Telegram runtime from structured settings and surfaces running status", async () => {
+    const home = await createTempHome("mirror-service-telegram-home-");
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    delete process.env.MIRROR_PROVIDER_URL;
+    delete process.env.MIRROR_PROVIDER_AUTH_TOKEN;
+
+    writeMirrorSettingsFilesSync({
+      mirror: {
+        version: 1,
+        runtime: {
+          port: 17777,
+          node_id: "mirror-telegram-node",
+          base_url: null,
+          web_ui_enabled: true,
+        },
+        workspace: {
+          root: path.join(home, ".mirror", "workspace"),
+        },
+        onboarding: {},
+      },
+      providers: {
+        version: 1,
+        default_provider_id: "primary",
+        providers: [
+          {
+            id: "primary",
+            kind: "ollama",
+            label: "Local Ollama",
+            url: "http://brain.local/v1/chat/completions",
+            model: "mirror-default",
+            enabled: true,
+            credential_id: "provider:primary",
+          },
+        ],
+      },
+      connectors: {
+        version: 1,
+        mode: "connectors",
+        local_web_ui: {
+          enabled: true,
+        },
+        connectors: {
+          telegram: {
+            enabled: true,
+            setup_state: "configured",
+            credential_id: "telegram:default",
+          },
+          whatsapp: {
+            enabled: false,
+            setup_state: "unconfigured",
+            credential_id: null,
+          },
+        },
+      },
+      credentials: {
+        version: 1,
+        credentials: {
+          "provider:primary": {
+            type: "bearer_token",
+            value: "provider-token",
+          },
+          "telegram:default": {
+            type: "bot_token",
+            value: "telegram-token",
+          },
+        },
+      },
+    });
+
+    const telegramReplies: Array<{
+      chat_id: number;
+      reply_to_message_id: number;
+      text: string;
+    }> = [];
+    let getUpdatesCalls = 0;
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const target = fetchTarget(url);
+      if (target === "http://brain.local/v1/chat/completions") {
+        const body = parseRequestBodyJson<{ messages: Array<{ content: string }> }>(init);
+        expect(body.messages.at(-1)?.content).toBe("hello from telegram");
+        return {
+          ok: true,
+          json: async () => ({
+            id: "resp_telegram_service",
+            object: "chat.completion",
+            created: 1,
+            model: "mirror-default",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "telegram reply" },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+        } as Response;
+      }
+      const body =
+        init?.body && typeof init.body === "string"
+          ? (JSON.parse(init.body) as {
+              chat_id?: number;
+              reply_to_message_id?: number;
+              text?: string;
+            })
+          : {};
+      if (target.endsWith("/getMe")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            result: {
+              id: 1,
+              is_bot: true,
+              username: "mirror_bot",
+            },
+          }),
+        } as Response;
+      }
+      if (target.endsWith("/getUpdates")) {
+        getUpdatesCalls += 1;
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            result:
+              getUpdatesCalls === 1
+                ? [
+                    {
+                      update_id: 1,
+                      message: {
+                        message_id: 99,
+                        text: "hello from telegram",
+                        chat: {
+                          id: 42,
+                          type: "private",
+                        },
+                        from: {
+                          id: 77,
+                          username: "alice",
+                          first_name: "Alice",
+                        },
+                      },
+                    },
+                  ]
+                : [],
+          }),
+        } as Response;
+      }
+      if (target.endsWith("/sendMessage")) {
+        telegramReplies.push({
+          chat_id: body.chat_id ?? 0,
+          reply_to_message_id: body.reply_to_message_id ?? 0,
+          text: body.text ?? "",
+        });
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            result: { message_id: 100 },
+          }),
+        } as Response;
+      }
+      throw new Error(`unexpected fetch url: ${target}`);
+    });
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+      },
+      {
+        fetchImpl,
+      },
+    );
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const settingsResponse = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/settings",
+      )) as {
+        resolved: {
+          connectors: {
+            telegram: {
+              state: string;
+              running: boolean;
+              detail: string | null;
+              last_successful_poll_at: string | null;
+              updates_processed: number;
+              bot: {
+                id: number;
+                username: string | null;
+              } | null;
+            };
+          };
+        };
+      };
+      expect(settingsResponse.resolved.connectors.telegram.state).toBe("running");
+      expect(settingsResponse.resolved.connectors.telegram.running).toBe(true);
+      expect(settingsResponse.resolved.connectors.telegram.detail).toContain("@mirror_bot");
+      expect(settingsResponse.resolved.connectors.telegram.last_successful_poll_at).toBeTruthy();
+      expect(settingsResponse.resolved.connectors.telegram.updates_processed).toBe(1);
+      expect(settingsResponse.resolved.connectors.telegram.bot).toEqual({
+        id: 1,
+        username: "mirror_bot",
+        display_name: "mirror_bot",
+      });
+
+      const runtime = (await requestJsonFromApp(service.app, "GET", "/mirror/runtime")) as {
+        connectors: {
+          telegram: {
+            state: string;
+            running: boolean;
+            last_successful_poll_at: string | null;
+            updates_processed: number;
+          };
+        };
+      };
+      expect(runtime.connectors.telegram.state).toBe("running");
+      expect(runtime.connectors.telegram.running).toBe(true);
+      expect(runtime.connectors.telegram.last_successful_poll_at).toBeTruthy();
+      expect(runtime.connectors.telegram.updates_processed).toBe(1);
+      expect(telegramReplies).toEqual([
+        {
+          chat_id: 42,
+          reply_to_message_id: 99,
+          text: "telegram reply",
+        },
+      ]);
     } finally {
       await service.shutdown();
     }
@@ -515,6 +1240,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService({
       port: 0,
@@ -531,6 +1257,12 @@ describe("mirror service", () => {
           body: {
             peer_id: "peer-1",
             base_url: "http://127.0.0.1:7999",
+          },
+          header(name: string) {
+            if (name.toLowerCase() === "x-mirror-operator-token") {
+              return "secret";
+            }
+            return undefined;
           },
         } as never,
         announceRes as never,
@@ -853,6 +1585,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService(
       {
@@ -909,6 +1642,9 @@ describe("mirror service", () => {
       });
 
       await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
         body: {
           peer_id: "peer-1",
           base_url: "http://127.0.0.1:7999",
@@ -962,6 +1698,7 @@ describe("mirror service", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
     const service = await startMirrorService(
       {
@@ -1018,6 +1755,9 @@ describe("mirror service", () => {
         },
       });
       await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
         body: {
           peer_id: "peer-1",
           base_url: "http://127.0.0.1:7999",

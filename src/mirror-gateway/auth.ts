@@ -1,11 +1,12 @@
 import type express from "express";
+import { loadMirrorSettingsSync } from "../mirror-settings/index.js";
 import type { MirrorSkillTool } from "../mirror/skills/index.js";
 
-const OPERATOR_TOKEN_ENV = "MIRROR_OPERATOR_TOKEN";
 const OPERATOR_HEADER = "x-mirror-operator-token";
 
 export type MirrorGatewayAuthDecision = {
   allowed: boolean;
+  code?: string;
   statusCode?: number;
   error?: string;
 };
@@ -19,8 +20,7 @@ function readBearerToken(value: string | undefined): string | null {
 }
 
 export function getMirrorOperatorToken(): string | null {
-  const value = process.env[OPERATOR_TOKEN_ENV];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return loadMirrorSettingsSync().operator_token;
 }
 
 export function readMirrorRequestToken(req: express.Request): string | null {
@@ -64,6 +64,37 @@ export function authorizeMirrorToolAccess(
   }
 
   return { allowed: true };
+}
+
+export function authorizeMirrorMutableSurfaceAccess(
+  providedToken: string | null,
+): MirrorGatewayAuthDecision {
+  const expected = getMirrorOperatorToken();
+  if (!expected) {
+    return {
+      allowed: false,
+      code: "mutable_surface_auth_unconfigured",
+      statusCode: 503,
+      error: "Mirror operator auth is not configured",
+    };
+  }
+
+  if (providedToken !== expected) {
+    return {
+      allowed: false,
+      code: "mutable_surface_auth_required",
+      statusCode: 403,
+      error: "Mirror operator authorization required",
+    };
+  }
+
+  return { allowed: true };
+}
+
+export function authorizeMirrorSettingsWriteRequest(
+  req: express.Request,
+): MirrorGatewayAuthDecision {
+  return authorizeMirrorMutableSurfaceAccess(readMirrorRequestToken(req));
 }
 
 export function authorizeMirrorToolRequest(

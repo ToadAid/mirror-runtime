@@ -1,7 +1,13 @@
 export {
   createDefaultMirrorPolicyRules,
+  createMirrorMutableSurfacePolicyRule,
   createMirrorOperatorAccessPolicyRule,
 } from "./default_rules.js";
+export {
+  isMirrorLocalOnlySurface,
+  isMirrorMutableActionName,
+  isMirrorNetworkExposedSurface,
+} from "./mutable_surfaces.js";
 export {
   createMirrorPolicyEngine,
   ensureMirrorPolicyAllowed,
