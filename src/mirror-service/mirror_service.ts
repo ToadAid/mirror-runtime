@@ -10,11 +10,7 @@ import {
   createMirrorConsoleRouterAtBase,
   type MirrorConsoleHandlers,
 } from "../mirror-console/index.js";
-import {
-  authorizeMirrorSettingsWriteRequest,
-  readMirrorRequestToken,
-  type MirrorGatewayAuthDecision,
-} from "../mirror-gateway/auth.js";
+import { readMirrorRequestToken } from "../mirror-gateway/auth.js";
 import {
   createMirrorGatewayHandlers,
   createMirrorGatewayRouter,
@@ -26,9 +22,7 @@ import {
   runWithMirrorObservabilityContext,
 } from "../mirror-observability/index.js";
 import {
-  buildMirrorChatPolicyTarget,
   buildMirrorActionPolicyTarget,
-  buildMirrorProviderPolicyTarget,
   createMirrorPolicyEngine,
   type MirrorPolicyContext,
 } from "../mirror-policy/index.js";
@@ -38,30 +32,13 @@ import {
   type MirrorProviderPlane,
 } from "../mirror-provider/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
-import {
-  executeMirrorChatWithProviderPlane,
-  resolveMirrorTraceId,
-  withMirrorCorrelation,
-} from "../mirror-runtime/index.js";
-import {
-  loadMirrorSettingsSync,
-  redactMirrorCredentials,
-  writeMirrorSettingsFilesSync,
-  type MirrorConnectorsSettingsFile,
-  type MirrorCoreSettingsFile,
-  type MirrorCredentialsSettingsFile,
-  type MirrorProvidersSettingsFile,
-} from "../mirror-settings/index.js";
+import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncHandlers,
   createMirrorSyncManager,
   createMirrorSyncRouter,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
-import {
-  createMirrorTelegramRuntime,
-  type MirrorTelegramRuntime,
-} from "../mirror-telegram/index.js";
 import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
 import { getMirrorWorkspaceSummary } from "../mirror-user-workspace/index.js";
 import { createMirrorToolRegistry, getMirrorNativeSkillTools } from "../mirror/skills/index.js";
@@ -72,7 +49,6 @@ import {
   getMirrordaemonHealthState,
   getMirrordaemonProvidersState,
   getMirrordaemonRuntimeState,
-  type MirrordaemonConnectorRuntimeStatus,
   type Mirrordaemon,
 } from "../mirrordaemon/index.js";
 import { loadMirrorServiceConfig, type MirrorServiceConfig } from "./config.js";
@@ -94,7 +70,6 @@ export type MirrorService = {
   daemon: Mirrordaemon;
   config: MirrorServiceConfig;
   lifecycle: MirrorServiceLifecycle;
-  telegramRuntime: MirrorTelegramRuntime;
   port: number;
   shutdown: () => Promise<void>;
 };
@@ -121,26 +96,6 @@ export type MirrorHealthStatus = {
   sync: {
     peers_known: number;
   };
-  connectors: {
-    telegram: {
-      state: string;
-      enabled: boolean;
-      configured: boolean;
-      running: boolean;
-      updated_at: string;
-      last_error: string | null;
-      last_error_at: string | null;
-      last_error_summary: string | null;
-      last_successful_poll_at: string | null;
-      updates_processed: number;
-      bot: {
-        id: number;
-        username: string | null;
-        display_name: string | null;
-      } | null;
-      detail: string | null;
-    };
-  };
   observability: {
     metrics_available: true;
     diagnostics_available: true;
@@ -156,26 +111,11 @@ function shouldTrackMirrorSession(pathname: string): boolean {
   );
 }
 
-function denyMirrorSettingsWrite(
-  res: express.Response,
-  decision: MirrorGatewayAuthDecision,
-): express.Response {
-  return res.status(decision.statusCode ?? 403).json({
-    code:
-      decision.code ??
-      (decision.statusCode === 503
-        ? "mutable_surface_auth_unconfigured"
-        : "mutable_surface_auth_required"),
-    error: decision.error ?? "Mirror operator authorization required",
-  });
-}
-
 export async function startMirrorService(
   overrides: Partial<MirrorServiceConfig> = {},
   deps: { fetchImpl?: FetchLike } = {},
 ): Promise<MirrorService> {
   const config = loadMirrorServiceConfig(overrides);
-  const bootSettings = loadMirrorSettingsSync();
   const lifecycle = await initializeMirrorServiceLifecycle(config);
   const providerPlane = createMirrorProviderPlane([
     {
@@ -207,211 +147,6 @@ export async function startMirrorService(
     baseUrl: config.baseUrl,
     fetchImpl: deps.fetchImpl,
     onRuntimeEvent: daemon.publishRuntimeEvent,
-  });
-  const connectorRuntime: {
-    telegram: MirrordaemonConnectorRuntimeStatus;
-  } = {
-    telegram: {
-      state: "disabled",
-      enabled: false,
-      configured: false,
-      running: false,
-      updated_at: new Date().toISOString(),
-      last_error: null,
-      last_error_at: null,
-      last_error_summary: null,
-      last_successful_poll_at: null,
-      updates_processed: 0,
-      bot: null,
-      detail: null,
-    },
-  };
-  const telegramRuntime = await createMirrorTelegramRuntime({
-    settings: bootSettings,
-    fetchImpl: deps.fetchImpl,
-    onStatusChange(status) {
-      connectorRuntime.telegram = status;
-    },
-    onRuntimeEvent(type, payload) {
-      daemon.publishRuntimeEvent(type, payload);
-    },
-    async onMessage(message) {
-      const text = message.text.trim();
-      if (text.length === 0) {
-        return null;
-      }
-
-      const userId = `telegram:${message.from?.id ?? message.chat_id}`;
-      const sessionId = `telegram:${message.chat_id}`;
-      const traceId = resolveMirrorTraceId(undefined);
-      const activeProvider = providerPlane.getActiveProvider();
-      const existing = daemon.getSession(sessionId);
-      if (existing) {
-        daemon.touchSession(sessionId, {
-          user_id: userId,
-          metadata: {
-            surface: "telegram",
-            chat_id: message.chat_id,
-            chat_type: message.chat_type,
-            trace_id: traceId,
-          },
-        });
-      } else {
-        daemon.createSession({
-          session_id: sessionId,
-          user_id: userId,
-          metadata: {
-            surface: "telegram",
-            chat_id: message.chat_id,
-            chat_type: message.chat_type,
-            trace_id: traceId,
-          },
-        });
-      }
-
-      const request = {
-        model: bootSettings.provider.active?.model ?? "mirror-default",
-        user_id: userId,
-        messages: [{ role: "user" as const, content: text }],
-        session: {
-          session_id: sessionId,
-          user_id: userId,
-          tool_context: {
-            surface: "telegram",
-            chat_id: message.chat_id,
-            chat_type: message.chat_type,
-          },
-        },
-        correlation: {
-          trace_id: traceId,
-          session_id: sessionId,
-        },
-      };
-      const policyContext: MirrorPolicyContext = {
-        surface: "adapter",
-        actor: {
-          user_id: userId,
-          external_user_id: message.from ? String(message.from.id) : String(message.chat_id),
-          display_name: message.from?.display_name,
-        },
-        session: {
-          session_id: sessionId,
-          external_session_id: String(message.chat_id),
-          conversation_id: String(message.chat_id),
-          channel_id: String(message.chat_id),
-        },
-        adapter: {
-          adapter_id: "telegram",
-          surface: "telegram",
-          transport: "polling",
-          capabilities: ["chat", "policy_context", "session_resume"],
-        },
-        metadata: {
-          trace_id: traceId,
-          telegram_chat_id: message.chat_id,
-          telegram_chat_type: message.chat_type,
-          telegram_update_id: message.update_id,
-        },
-      };
-
-      const ingressDecision = await policy.evaluate({
-        phase: "ingress",
-        target: buildMirrorChatPolicyTarget(request),
-        context: policyContext,
-      });
-      if (!ingressDecision.allowed) {
-        daemon.publishRuntimeEvent(
-          "policy.denied",
-          withMirrorCorrelation(
-            {
-              phase: "ingress",
-              target: "chat",
-              code: ingressDecision.decision.code,
-              route: "telegram",
-            },
-            request.correlation,
-          ),
-        );
-        throw new Error(ingressDecision.decision.reason);
-      }
-
-      const providerDecision = await policy.evaluate({
-        phase: "provider",
-        target: buildMirrorProviderPolicyTarget(request, {
-          url: activeProvider?.url ?? "",
-        }),
-        context: {
-          ...policyContext,
-          metadata: {
-            ...policyContext.metadata,
-            provider_url: activeProvider?.url ?? "",
-          },
-        },
-      });
-      if (!providerDecision.allowed) {
-        daemon.publishRuntimeEvent(
-          "policy.denied",
-          withMirrorCorrelation(
-            {
-              phase: "provider",
-              target: "provider",
-              code: providerDecision.decision.code,
-              route: "telegram",
-            },
-            request.correlation,
-          ),
-        );
-        throw new Error(providerDecision.decision.reason);
-      }
-
-      daemon.publishRuntimeEvent(
-        "chat.started",
-        withMirrorCorrelation(
-          {
-            route: "telegram",
-            model: request.model,
-          },
-          request.correlation,
-        ),
-      );
-      try {
-        const response = await executeMirrorChatWithProviderPlane(request, {
-          providerPlane,
-          fetchImpl: deps.fetchImpl,
-          onRuntimeEvent: (type, payload) => {
-            daemon.publishRuntimeEvent(
-              type,
-              withMirrorCorrelation(payload ?? {}, request.correlation),
-            );
-          },
-          correlation: request.correlation,
-        });
-        daemon.publishRuntimeEvent(
-          "chat.finished",
-          withMirrorCorrelation(
-            {
-              route: "telegram",
-              model: response.model,
-              finish_reason: response.choices[0]?.finish_reason,
-            },
-            request.correlation,
-          ),
-        );
-        return response.choices[0]?.message?.content?.trim() || null;
-      } catch (error) {
-        daemon.publishRuntimeEvent(
-          "chat.failed",
-          withMirrorCorrelation(
-            {
-              route: "telegram",
-              error: error instanceof Error ? error.message : String(error),
-            },
-            request.correlation,
-          ),
-        );
-        throw error;
-      }
-    },
   });
   const rawSyncHandlers = createMirrorSyncHandlers(syncManager);
   async function evaluateSyncPolicy(
@@ -566,7 +301,6 @@ export async function startMirrorService(
       sseAvailable: true,
       wsAvailable: true,
       peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
-      connectorRuntime,
     });
     daemon.publishRuntimeEvent("runtime.health.requested", {
       path: "/mirror/health",
@@ -584,14 +318,12 @@ export async function startMirrorService(
       getMirrordaemonRuntimeState(daemon, {
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
-        connectorRuntime,
       }),
     getHealth: () =>
       getMirrordaemonHealthState(daemon, {
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
         peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
-        connectorRuntime,
       }),
     getBaseUrl: () => syncManager.getLocalBaseUrl(),
     getWorkspace: async () => await getMirrorWorkspaceSummary(),
@@ -601,7 +333,6 @@ export async function startMirrorService(
   app.use(createMirrorUiApiRouter(uiApiHandlers));
   app.use(createMirrorObservabilityRouter(observabilityHandlers));
   app.use(createMirrorSyncRouter(syncManager, syncHandlers));
-  app.get("/mirror/ui/app", consoleHandlers.loadConsole);
   app.get("/mirror/runtime", (_req, res) => {
     res.json(
       getMirrordaemonRuntimeState(daemon, {
@@ -612,7 +343,6 @@ export async function startMirrorService(
         wsConnections: runtimeWebSocket.getConnectionCount(),
         sseAvailable: true,
         wsAvailable: true,
-        connectorRuntime,
       }),
     );
   });
@@ -625,7 +355,6 @@ export async function startMirrorService(
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
         peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
-        connectorRuntime,
       }),
     );
   });
@@ -642,103 +371,6 @@ export async function startMirrorService(
         providerPlane,
       }),
     );
-  });
-  app.get("/mirror/workspace", async (_req, res) => {
-    res.json(await getMirrorWorkspaceSummary());
-  });
-  app.get("/mirror/settings", (_req, res) => {
-    const settings = loadMirrorSettingsSync();
-    res.json({
-      mirror: settings.files.mirror,
-      providers: settings.files.providers,
-      connectors: settings.files.connectors,
-      credentials: redactMirrorCredentials(settings.files.credentials),
-      resolved: {
-        runtime: settings.runtime,
-        workspace: settings.workspace,
-        provider: {
-          default_provider_id: settings.provider.default_provider_id,
-          active: settings.provider.active
-            ? {
-                id: settings.provider.active.id,
-                kind: settings.provider.active.kind,
-                label: settings.provider.active.label,
-                url: settings.provider.active.url,
-                model: settings.provider.active.model,
-                enabled: settings.provider.active.enabled,
-                credential_id: settings.provider.active.credential_id,
-              }
-            : null,
-        },
-        connectors: connectorRuntime,
-      },
-    });
-  });
-  app.put("/mirror/settings", (req, res) => {
-    const authDecision = authorizeMirrorSettingsWriteRequest(req);
-    if (!authDecision.allowed) {
-      return denyMirrorSettingsWrite(res, authDecision);
-    }
-    const body =
-      req.body && typeof req.body === "object" && !Array.isArray(req.body)
-        ? (req.body as {
-            mirror?: MirrorCoreSettingsFile;
-            providers?: MirrorProvidersSettingsFile;
-            connectors?: MirrorConnectorsSettingsFile;
-          })
-        : null;
-    if (!body) {
-      return res.status(400).json({ error: "Mirror settings request body must be an object" });
-    }
-    const next = writeMirrorSettingsFilesSync({
-      mirror: body.mirror,
-      providers: body.providers,
-      connectors: body.connectors,
-    });
-    daemon.publishRuntimeEvent("settings.updated", {
-      mirror: Boolean(body.mirror),
-      providers: Boolean(body.providers),
-      connectors: Boolean(body.connectors),
-    });
-    return res.json({
-      ok: true,
-      restart_required: true,
-      mirror: next.mirror,
-      providers: next.providers,
-      connectors: next.connectors,
-    });
-  });
-  app.put("/mirror/settings/credentials", (req, res) => {
-    const authDecision = authorizeMirrorSettingsWriteRequest(req);
-    if (!authDecision.allowed) {
-      return denyMirrorSettingsWrite(res, authDecision);
-    }
-    const body =
-      req.body && typeof req.body === "object" && !Array.isArray(req.body)
-        ? (req.body as { credentials?: MirrorCredentialsSettingsFile["credentials"] })
-        : null;
-    if (!body || !body.credentials || typeof body.credentials !== "object") {
-      return res.status(400).json({ error: "Mirror credentials payload must be an object" });
-    }
-    const settings = loadMirrorSettingsSync();
-    const nextCredentials: MirrorCredentialsSettingsFile = {
-      ...settings.files.credentials,
-      credentials: {
-        ...settings.files.credentials.credentials,
-        ...body.credentials,
-      },
-    };
-    writeMirrorSettingsFilesSync({
-      credentials: nextCredentials,
-    });
-    daemon.publishRuntimeEvent("settings.credentials.updated", {
-      keys: Object.keys(body.credentials),
-    });
-    return res.json({
-      ok: true,
-      restart_required: true,
-      credentials: redactMirrorCredentials(nextCredentials),
-    });
   });
   app.get("/mirror/runtime/events", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
@@ -788,10 +420,8 @@ export async function startMirrorService(
     daemon,
     config: { ...config, port },
     lifecycle,
-    telegramRuntime,
     port,
     async shutdown() {
-      await telegramRuntime.shutdown();
       await runtimeWebSocket.close();
       if (!server.listening) {
         await lifecycle.shutdown();

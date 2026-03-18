@@ -1,7 +1,7 @@
 import type express from "express";
-import { loadMirrorSettingsSync } from "../mirror-settings/index.js";
 import type { MirrorSkillTool } from "../mirror/skills/index.js";
 
+const OPERATOR_TOKEN_ENV = "MIRROR_OPERATOR_TOKEN";
 const OPERATOR_HEADER = "x-mirror-operator-token";
 
 export type MirrorGatewayAuthDecision = {
@@ -20,7 +20,8 @@ function readBearerToken(value: string | undefined): string | null {
 }
 
 export function getMirrorOperatorToken(): string | null {
-  return loadMirrorSettingsSync().operator_token;
+  const value = process.env[OPERATOR_TOKEN_ENV];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 export function readMirrorRequestToken(req: express.Request): string | null {
