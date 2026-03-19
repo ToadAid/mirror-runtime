@@ -7,6 +7,7 @@ import {
   type MirrorAdapterToolRequestEnvelope,
 } from "../mirror-adapters/index.js";
 import { createMirrorPolicyEngine, MirrorPolicyDeniedError } from "../mirror-policy/index.js";
+import type { FetchLike } from "../mirror-provider/index.js";
 import { createMirrorGateway, createMirrorGatewayHandlers } from "./index.js";
 
 const tempDirs: string[] = [];
@@ -166,6 +167,14 @@ function createAdapterToolEnvelope(params: {
       input: params.input,
     },
   };
+}
+
+function parseRequestBodyJson<T>(init?: RequestInit): T {
+  const body = init?.body;
+  if (typeof body !== "string") {
+    throw new Error("Expected JSON string request body");
+  }
+  return JSON.parse(body) as T;
 }
 
 describe("mirror gateway", () => {
@@ -470,6 +479,107 @@ describe("mirror gateway", () => {
     expect(res.statusCode).toBe(200);
     expect(body.tool).toBe("mirror.find-scroll");
     expect(body.result.candidates[0]?.path).toBe("TOBY_L1219_Rune3_PatienceVaultCancelled.md");
+  });
+
+  it("routes the public gateway chat helper through the canonical adapter path", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+    const fetchImpl: FetchLike = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = parseRequestBodyJson<{
+        model: string;
+        messages: Array<{ role: string; content: string }>;
+      }>(init);
+
+      expect(body.model).toBe("test-model");
+      expect(body.messages.at(-1)?.content).toBe("hello");
+
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_gateway_chat",
+          object: "chat.completion",
+          created: 1,
+          model: "test-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "acknowledged" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    };
+
+    const response = await gateway.executeChatWithProvider(
+      {
+        model: "test-model",
+        session: { user_id: "user-1" },
+        messages: [{ role: "user", content: "hello" }],
+      },
+      {
+        provider: {
+          url: "http://brain.local/v1/chat/completions",
+          authToken: "token",
+        },
+        fetchImpl,
+      },
+    );
+
+    expect(response.model).toBe("test-model");
+    expect(response.choices[0]?.message.content).toBe("acknowledged");
+  });
+
+  it("preserves retrieval-backed chat through the public gateway chat helper", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+    const fetchImpl: FetchLike = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = parseRequestBodyJson<{
+        messages: Array<{ role: string; content: string }>;
+      }>(init);
+
+      expect(body.messages[0]?.content).toContain("Mirror canon context:");
+
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_gateway_chat_retrieval",
+          object: "chat.completion",
+          created: 1,
+          model: "test-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Cancelled." },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    };
+
+    const response = await gateway.executeChatWithProvider(
+      {
+        model: "test-model",
+        session: { user_id: "user-1" },
+        messages: [{ role: "user", content: "patience vault" }],
+      },
+      {
+        provider: {
+          url: "http://brain.local/v1/chat/completions",
+          authToken: "token",
+        },
+        fetchImpl,
+      },
+    );
+
+    expect(response.choices[0]?.message.content).toBe("Cancelled.");
   });
 
   it("preserves current behavior for read-only adapter tool requests", async () => {
