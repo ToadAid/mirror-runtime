@@ -7,6 +7,7 @@ import {
 import {
   buildAdapterChatResponseEnvelope,
   buildAdapterToolResponseEnvelope,
+  buildCliChatAdapterEnvelope,
   normalizeAdapterDescriptor,
   toMirrorChatRequestFromAdapter,
   toMirrorToolExecutionFromAdapter,
@@ -336,7 +337,41 @@ export function createMirrorGateway(
       return executeMirrorChatRequest(request, deps);
     },
     async executeChatWithProvider(request, deps, context = { surface: "gateway" }) {
-      return await executeChatWithProviderInternal(request, deps, context);
+      const envelope = buildCliChatAdapterEnvelope({
+        model: request.model,
+        messages: request.messages,
+        userId: request.user_id ?? request.session?.user_id ?? context.actor?.user_id,
+        command: context.command ?? "chat",
+        action: typeof context.metadata?.action === "string" ? context.metadata.action : undefined,
+        temperature: request.temperature,
+        maxTokens: request.max_tokens,
+        stream: request.stream,
+        preferredProvider: request.provider?.provider_id,
+      });
+      const response = await executeAdapterRequestInternal(
+        {
+          ...envelope,
+          // Public gateway helper calls are programmatic, not local CLI ingress.
+          context: {
+            ...envelope.context,
+            adapter: {
+              ...envelope.context.adapter,
+              adapter_id: "mirror-gateway",
+              surface: "custom",
+              transport: "programmatic",
+            },
+          },
+          request: {
+            ...envelope.request,
+            messages: request.messages.map((message) => ({ ...message })),
+          },
+        },
+        deps,
+      );
+      if (response.kind !== "chat.response") {
+        throw new Error(`Unexpected Mirror adapter response kind: ${response.kind}`);
+      }
+      return response.response;
     },
     async executeTool(toolName, input, context = { surface: "gateway" }) {
       return await executeToolInternal(toolName, input, context);
