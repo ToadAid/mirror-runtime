@@ -386,6 +386,48 @@ describe("mirror gateway", () => {
     } satisfies Partial<MirrorPolicyDeniedError>);
   });
 
+  it("blocks the public gateway direct chat helper when adapter policy denies it", async () => {
+    await createTempHome();
+    const gateway = createMirrorGateway("/mirror", {
+      policy: createMirrorPolicyEngine([
+        {
+          name: "deny.adapter",
+          evaluate(input) {
+            if (input.phase !== "adapter" || input.target.kind !== "adapter") {
+              return null;
+            }
+            return {
+              allowed: false,
+              code: "adapter_blocked",
+              reason: "Adapter blocked by test policy",
+              statusCode: 451,
+              rule: "deny.adapter",
+            };
+          },
+        },
+      ]),
+    });
+
+    await expect(
+      gateway.executeChat(
+        {
+          model: "test-model",
+          session: { user_id: "user-1" },
+          messages: [{ role: "user", content: "hello" }],
+        },
+        {
+          invokeModel: async () => {
+            throw new Error("invokeModel should not run");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "adapter_blocked",
+      statusCode: 451,
+      message: "Adapter blocked by test policy",
+    } satisfies Partial<MirrorPolicyDeniedError>);
+  });
+
   it("rejects unauthorized mutable adapter tool requests", async () => {
     await createTempHome();
     process.env.MIRROR_OPERATOR_TOKEN = "secret";
@@ -481,6 +523,79 @@ describe("mirror gateway", () => {
     expect(body.result.candidates[0]?.path).toBe("TOBY_L1219_Rune3_PatienceVaultCancelled.md");
   });
 
+  it("routes the public gateway direct chat helper through the canonical adapter boundary", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+
+    const response = await gateway.executeChat(
+      {
+        model: "test-model",
+        session: { user_id: "user-1" },
+        messages: [{ role: "user", content: "hello" }],
+      },
+      {
+        invokeModel: async (request) => {
+          expect(request.model).toBe("test-model");
+          expect(request.messages.at(-1)?.content).toBe("hello");
+          return {
+            id: "resp_gateway_direct_chat",
+            object: "chat.completion",
+            created: 1,
+            model: "test-model",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "acknowledged" },
+                finish_reason: "stop",
+              },
+            ],
+          };
+        },
+      },
+    );
+
+    expect(response.model).toBe("test-model");
+    expect(response.choices[0]?.message.content).toBe("acknowledged");
+  });
+
+  it("preserves retrieval-backed chat through the public gateway direct helper", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+
+    const response = await gateway.executeChat(
+      {
+        model: "test-model",
+        session: { user_id: "user-1" },
+        messages: [{ role: "user", content: "patience vault" }],
+      },
+      {
+        invokeModel: async (request) => {
+          expect(request.messages[0]?.content).toContain("Mirror canon context:");
+          return {
+            id: "resp_gateway_direct_chat_retrieval",
+            object: "chat.completion",
+            created: 1,
+            model: "test-model",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "Cancelled." },
+                finish_reason: "stop",
+              },
+            ],
+          };
+        },
+      },
+    );
+
+    expect(response.choices[0]?.message.content).toBe("Cancelled.");
+  });
   it("routes the public gateway chat helper through the canonical adapter path", async () => {
     await createTempHome();
     const loreDir = await createTempLoreDir();
