@@ -65,7 +65,12 @@ export async function handleBrainChatEndpoint(
         `brain chat: ${prepared.requestId} ${adapterResponse.response.usage?.total_tokens || 0} tokens`,
       );
       if (prepared.diagnostics) {
-        log.debug("brain chat retrieval diagnostics", prepared.diagnostics);
+        log.debug(
+          "brain chat retrieval diagnostics",
+          typeof prepared.diagnostics === "object" && prepared.diagnostics !== null
+            ? (prepared.diagnostics as Record<string, unknown>)
+            : { diagnostics: prepared.diagnostics },
+        );
       }
       return adapterResponse.response as CompatChatResponse;
     });

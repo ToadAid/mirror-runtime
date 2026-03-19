@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import type { MirrorActionLifecycleEvent } from "../mirror-actions/index.js";
 import type {
-  MirrorAdapterChatResponseEnvelope,
   MirrorAdapterRequestEnvelope,
   MirrorAdapterResponseEnvelope,
 } from "../mirror-adapters/index.js";
@@ -134,14 +133,13 @@ export async function createMirrorRuntimeHost(
     gateway,
     providerPlane,
     syncManager,
-    async executeChatWithProvider(request, runtimeDeps) {
+    async executeChatWithProvider(this: MirrorRuntimeHost, request, runtimeDeps) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
         const envelope = buildCliChatAdapterEnvelope({
           model: request.model,
           messages: request.messages,
           userId: request.user_id ?? request.session?.user_id,
           command: "chat",
-          action: request.session?.metadata?.action as string | undefined,
           temperature: request.temperature,
           maxTokens: request.max_tokens,
           stream: request.stream,
@@ -170,7 +168,7 @@ export async function createMirrorRuntimeHost(
         if (response.kind !== "chat.response") {
           throw new Error(`Unexpected Mirror adapter response kind: ${response.kind}`);
         }
-        return (response as MirrorAdapterChatResponseEnvelope).response;
+        return response.response;
       });
     },
     async executeAdapterRequest(envelope, runtimeDeps = {}) {

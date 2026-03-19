@@ -10,7 +10,6 @@ import {
   createMirrorGatewayRouter,
 } from "../../../mirror-gateway/index.js";
 import { type FetchLike } from "../../../mirror-provider/index.js";
-import type { MirrorChatResponse } from "../../../mirror-runtime/index.js";
 import { createMirrorRuntimeHost, type MirrorRuntimeHost } from "../../../mirror-service/index.js";
 import type { RuntimeEnv } from "../../../runtime.js";
 import {
