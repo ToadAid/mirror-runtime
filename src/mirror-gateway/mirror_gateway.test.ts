@@ -370,11 +370,11 @@ describe("mirror gateway", () => {
           input: { query: "patience vault" },
         }),
       ),
-    ).rejects.toMatchObject<Partial<MirrorPolicyDeniedError>>({
+    ).rejects.toMatchObject({
       code: "adapter_blocked",
       statusCode: 451,
       message: "Adapter blocked by test policy",
-    });
+    } satisfies Partial<MirrorPolicyDeniedError>);
   });
 
   it("rejects unauthorized mutable adapter tool requests", async () => {
@@ -392,11 +392,11 @@ describe("mirror gateway", () => {
           input: { user_id: "traveler-1", title: "Daily planning" },
         }),
       ),
-    ).rejects.toMatchObject<Partial<MirrorPolicyDeniedError>>({
+    ).rejects.toMatchObject({
       code: "mutable_surface_auth_required",
       statusCode: 403,
       message: "Mirror operator authorization required",
-    });
+    } satisfies Partial<MirrorPolicyDeniedError>);
   });
 
   it("allows authorized mutable adapter tool requests", async () => {
@@ -418,6 +418,9 @@ describe("mirror gateway", () => {
     );
 
     expect(response.kind).toBe("tool.response");
+    if (response.kind !== "tool.response") {
+      throw new Error(`Unexpected adapter response kind: ${response.kind}`);
+    }
     expect(response.response.tool_name).toBe("mirror.task.create");
     expect(response.response.result).toMatchObject({
       task: {
@@ -441,6 +444,9 @@ describe("mirror gateway", () => {
     );
 
     expect(response.kind).toBe("tool.response");
+    if (response.kind !== "tool.response") {
+      throw new Error(`Unexpected adapter response kind: ${response.kind}`);
+    }
     expect(response.response.tool_name).toBe("mirror.find-scroll");
     expect(response.response.result).toMatchObject({
       candidates: [{ path: "TOBY_L1219_Rune3_PatienceVaultCancelled.md" }],
