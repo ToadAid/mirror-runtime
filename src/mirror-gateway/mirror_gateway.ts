@@ -192,12 +192,6 @@ export function createMirrorGateway(
   );
   const toolRegistry = createMirrorToolRegistryFromActionRuntime(actionRuntime);
   const policy = options.policy ?? createMirrorPolicyEngine();
-  const handlers = createMirrorGatewayHandlers(toolRegistry, {
-    actionRuntime,
-    policy,
-    providerPlane: options.providerPlane,
-  });
-  const router = createMirrorGatewayRouter(basePath, handlers);
 
   async function executeChatWithProviderInternal(
     request: MirrorChatRequest,
@@ -266,6 +260,61 @@ export function createMirrorGateway(
     return result.result;
   }
 
+  async function executeAdapterRequestInternal(
+    envelope: MirrorAdapterRequestEnvelope,
+    deps: {
+      provider?: MirrorProviderConfig;
+      providerPlane?: MirrorProviderPlane;
+      fetchImpl?: FetchLike;
+      onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+      correlation?: {
+        trace_id?: string;
+        session_id?: string;
+        action_id?: string;
+        provider_id?: string;
+      };
+    } = {},
+  ): Promise<MirrorAdapterResponseEnvelope> {
+    const context = buildAdapterPolicyContext(envelope);
+    ensureMirrorPolicyAllowed(
+      await policy.evaluate({
+        phase: "adapter",
+        target: buildMirrorAdapterPolicyTarget({
+          adapter: context.adapter ?? normalizeAdapterDescriptor(envelope.context.adapter),
+          envelopeKind: envelope.kind,
+        }),
+        context,
+      }),
+    );
+
+    if (envelope.kind === "chat.request") {
+      const response = await executeChatWithProviderInternal(
+        toMirrorChatRequestFromAdapter(envelope),
+        deps,
+        context,
+      );
+      return buildAdapterChatResponseEnvelope({
+        request: envelope,
+        response,
+      });
+    }
+
+    const execution = toMirrorToolExecutionFromAdapter(envelope);
+    const result = await executeToolInternal(execution.toolName, execution.input, context);
+    return buildAdapterToolResponseEnvelope({
+      request: envelope,
+      result,
+    });
+  }
+
+  const handlers = createMirrorGatewayHandlers(toolRegistry, {
+    actionRuntime,
+    policy,
+    providerPlane: options.providerPlane,
+    executeAdapterRequest: executeAdapterRequestInternal,
+  });
+  const router = createMirrorGatewayRouter(basePath, handlers);
+
   return {
     actionRuntime,
     registry: toolRegistry,
@@ -274,36 +323,7 @@ export function createMirrorGateway(
     handlers,
     router,
     async executeAdapterRequest(envelope, deps = {}) {
-      const context = buildAdapterPolicyContext(envelope);
-      ensureMirrorPolicyAllowed(
-        await policy.evaluate({
-          phase: "adapter",
-          target: buildMirrorAdapterPolicyTarget({
-            adapter: context.adapter ?? normalizeAdapterDescriptor(envelope.context.adapter),
-            envelopeKind: envelope.kind,
-          }),
-          context,
-        }),
-      );
-
-      if (envelope.kind === "chat.request") {
-        const response = await executeChatWithProviderInternal(
-          toMirrorChatRequestFromAdapter(envelope),
-          deps,
-          context,
-        );
-        return buildAdapterChatResponseEnvelope({
-          request: envelope,
-          response,
-        });
-      }
-
-      const execution = toMirrorToolExecutionFromAdapter(envelope);
-      const result = await executeToolInternal(execution.toolName, execution.input, context);
-      return buildAdapterToolResponseEnvelope({
-        request: envelope,
-        result,
-      });
+      return await executeAdapterRequestInternal(envelope, deps);
     },
     async executeChat(request, deps, context = { surface: "gateway" }) {
       ensureMirrorPolicyAllowed(
