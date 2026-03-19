@@ -213,6 +213,19 @@ export function createMirrorGatewayHandlers(
     }
   }
 
+  function readIngressRoutePath(req: express.Request): string {
+    if (typeof req.path === "string" && req.path.length > 0) {
+      return req.path;
+    }
+    if (typeof req.originalUrl === "string" && req.originalUrl.length > 0) {
+      return req.originalUrl;
+    }
+    if (typeof req.url === "string" && req.url.length > 0) {
+      return req.url;
+    }
+    return "";
+  }
+
   function readIngressAdapterDescriptor(routePath: string): {
     adapterId: "mirror-service-http" | "mirror-console-http";
     surface: "service" | "console";
@@ -252,7 +265,7 @@ export function createMirrorGatewayHandlers(
         };
         res.setHeader("x-mirror-trace-id", correlation.trace_id);
         if (options.executeAdapterRequest) {
-          const adapterDescriptor = readIngressAdapterDescriptor(req.path);
+          const adapterDescriptor = readIngressAdapterDescriptor(readIngressRoutePath(req));
           incrementMetric("chat_requests");
           logMirrorEvent("chat.pipeline", { route: "mirror.chat" });
           options.onRuntimeEvent?.(
@@ -447,7 +460,7 @@ export function createMirrorGatewayHandlers(
       try {
         res.setHeader("x-mirror-trace-id", correlation.trace_id);
         if (options.executeAdapterRequest) {
-          const adapterDescriptor = readIngressAdapterDescriptor(req.path);
+          const adapterDescriptor = readIngressAdapterDescriptor(readIngressRoutePath(req));
           const actionId = crypto.randomUUID();
           const executionId = crypto.randomUUID();
           options.onRuntimeEvent?.(
