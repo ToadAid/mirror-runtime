@@ -47,9 +47,6 @@ export async function startRuntimeServer(
   const { gateway, providerPlane, daemon } = runtimeHost;
   const handlers = createMirrorGatewayHandlers(gateway.registry, {
     providerPlane,
-    actionRuntime: gateway.actionRuntime,
-    fetchImpl: deps.fetchImpl,
-    policy: gateway.policy,
     onRuntimeEvent: daemon.publishRuntimeEvent,
     executeAdapterRequest: async (envelope) => await runtimeHost.executeAdapterRequest(envelope),
   });

@@ -109,9 +109,6 @@ export async function startMirrorService(
 
   const handlers = createMirrorGatewayHandlers(gateway.registry, {
     providerPlane,
-    actionRuntime,
-    fetchImpl: deps.fetchImpl,
-    policy,
     onRuntimeEvent: daemon.publishRuntimeEvent,
     executeAdapterRequest: async (envelope) => await runtimeHost.executeAdapterRequest(envelope),
   });
