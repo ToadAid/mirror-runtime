@@ -5,7 +5,17 @@ import {
   type MirrorActionRuntime,
 } from "../mirror-actions/index.js";
 import {
+  buildAdapterChatResponseEnvelope,
+  buildAdapterToolResponseEnvelope,
+  normalizeAdapterDescriptor,
+  toMirrorChatRequestFromAdapter,
+  toMirrorToolExecutionFromAdapter,
+  type MirrorAdapterRequestEnvelope,
+  type MirrorAdapterResponseEnvelope,
+} from "../mirror-adapters/index.js";
+import {
   buildMirrorChatPolicyTarget,
+  buildMirrorAdapterPolicyTarget,
   buildMirrorProviderPolicyTarget,
   createMirrorPolicyEngine,
   ensureMirrorPolicyAllowed,
@@ -44,6 +54,21 @@ export type MirrorGateway = {
   providerPlane?: MirrorProviderPlane;
   handlers: MirrorGatewayHandlers;
   router: ReturnType<typeof createMirrorGatewayRouter>;
+  executeAdapterRequest: (
+    envelope: MirrorAdapterRequestEnvelope,
+    deps?: {
+      provider?: MirrorProviderConfig;
+      providerPlane?: MirrorProviderPlane;
+      fetchImpl?: FetchLike;
+      onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+      correlation?: {
+        trace_id?: string;
+        session_id?: string;
+        action_id?: string;
+        provider_id?: string;
+      };
+    },
+  ) => Promise<MirrorAdapterResponseEnvelope>;
   executeChat: (
     request: MirrorChatRequest,
     deps: { invokeModel: (request: MirrorModelRequest) => Promise<MirrorChatResponse> },
@@ -104,22 +129,136 @@ function resolveProviderPlane(
   ]);
 }
 
+function readAdapterRequestToken(
+  envelope: MirrorAdapterRequestEnvelope,
+): string | null | undefined {
+  const token = envelope.context.policy?.facts?.mirror_operator_token;
+  return typeof token === "string" && token.trim().length > 0 ? token.trim() : null;
+}
+
+function buildAdapterPolicyContext(envelope: MirrorAdapterRequestEnvelope): MirrorPolicyContext {
+  const actor = envelope.context.actor;
+  const session = envelope.context.session;
+  const runtime = envelope.context.runtime;
+
+  return {
+    surface: "adapter",
+    request_token: readAdapterRequestToken(envelope),
+    actor: actor
+      ? {
+          user_id: actor.user_id,
+          external_user_id: actor.external_user_id,
+          display_name: actor.display_name,
+          is_operator: actor.is_operator,
+          roles: actor.roles ? [...actor.roles] : undefined,
+          metadata: actor.metadata ? { ...actor.metadata } : undefined,
+        }
+      : undefined,
+    session: session
+      ? {
+          session_id: session.session_id ?? session.external_session_id,
+          external_session_id: session.external_session_id,
+          conversation_id: session.conversation_id,
+          thread_id: session.thread_id,
+          channel_id: session.channel_id,
+          metadata: session.metadata ? { ...session.metadata } : undefined,
+        }
+      : undefined,
+    adapter: normalizeAdapterDescriptor(envelope.context.adapter),
+    metadata: {
+      trace_id: runtime?.trace_id ?? runtime?.correlation_id ?? envelope.envelope_id,
+      correlation_id: runtime?.correlation_id,
+      priority: runtime?.priority,
+      envelope_id: envelope.envelope_id,
+      envelope_kind: envelope.kind,
+      requested_mode: envelope.context.policy?.requested_mode,
+    },
+  };
+}
+
 export function createMirrorGateway(
   basePath = "/mirror",
-  options: { providerPlane?: MirrorProviderPlane } = {},
+  options: { providerPlane?: MirrorProviderPlane; policy?: MirrorPolicyEngine } = {},
 ): MirrorGateway {
   const registry = createMirrorToolRegistry(getMirrorNativeSkillTools());
   const actionRuntime = createMirrorActionRuntime(
     createMirrorActionsFromTools(registry.listTools()),
   );
   const toolRegistry = createMirrorToolRegistryFromActionRuntime(actionRuntime);
-  const policy = createMirrorPolicyEngine();
+  const policy = options.policy ?? createMirrorPolicyEngine();
   const handlers = createMirrorGatewayHandlers(toolRegistry, {
     actionRuntime,
     policy,
     providerPlane: options.providerPlane,
   });
   const router = createMirrorGatewayRouter(basePath, handlers);
+
+  async function executeChatWithProviderInternal(
+    request: MirrorChatRequest,
+    deps: {
+      provider?: MirrorProviderConfig;
+      providerPlane?: MirrorProviderPlane;
+      fetchImpl?: FetchLike;
+      onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+      correlation?: {
+        trace_id?: string;
+        session_id?: string;
+        action_id?: string;
+        provider_id?: string;
+      };
+    },
+    context: MirrorPolicyContext = { surface: "gateway" },
+  ): Promise<MirrorChatResponse> {
+    const providerPlane = resolveProviderPlane(deps, options.providerPlane);
+    ensureMirrorPolicyAllowed(
+      await policy.evaluate({
+        phase: "ingress",
+        target: buildMirrorChatPolicyTarget(request),
+        context,
+      }),
+    );
+    ensureMirrorPolicyAllowed(
+      await policy.evaluate({
+        phase: "provider",
+        target: buildMirrorProviderPolicyTarget(request, {
+          url: providerPlane.getActiveProvider()?.url ?? deps.provider?.url ?? "",
+        }),
+        context: {
+          ...context,
+          metadata: {
+            ...context.metadata,
+            provider_url: providerPlane.getActiveProvider()?.url ?? deps.provider?.url ?? "",
+          },
+        },
+      }),
+    );
+    return executeMirrorChatWithProviderPlane(request, {
+      providerPlane,
+      fetchImpl: deps.fetchImpl,
+      onRuntimeEvent: deps.onRuntimeEvent,
+      correlation: deps.correlation,
+    });
+  }
+
+  async function executeToolInternal(
+    toolName: string,
+    input: Record<string, unknown>,
+    context: MirrorPolicyContext = { surface: "gateway" },
+  ): Promise<Record<string, unknown>> {
+    const tool = registry.getTool(toolName);
+    const action = actionRuntime.getAction(toolName);
+    if (!tool || !action) {
+      throw new Error(`Unknown Mirror tool: ${toolName}`);
+    }
+    const result = await actionRuntime.executeAction({
+      action_name: toolName,
+      input,
+      context,
+      policy,
+      providerPlane: options.providerPlane,
+    });
+    return result.result;
+  }
 
   return {
     actionRuntime,
@@ -128,6 +267,38 @@ export function createMirrorGateway(
     providerPlane: options.providerPlane,
     handlers,
     router,
+    async executeAdapterRequest(envelope, deps = {}) {
+      const context = buildAdapterPolicyContext(envelope);
+      ensureMirrorPolicyAllowed(
+        await policy.evaluate({
+          phase: "adapter",
+          target: buildMirrorAdapterPolicyTarget({
+            adapter: context.adapter ?? normalizeAdapterDescriptor(envelope.context.adapter),
+            envelopeKind: envelope.kind,
+          }),
+          context,
+        }),
+      );
+
+      if (envelope.kind === "chat.request") {
+        const response = await executeChatWithProviderInternal(
+          toMirrorChatRequestFromAdapter(envelope),
+          deps,
+          context,
+        );
+        return buildAdapterChatResponseEnvelope({
+          request: envelope,
+          response,
+        });
+      }
+
+      const execution = toMirrorToolExecutionFromAdapter(envelope);
+      const result = await executeToolInternal(execution.toolName, execution.input, context);
+      return buildAdapterToolResponseEnvelope({
+        request: envelope,
+        result,
+      });
+    },
     async executeChat(request, deps, context = { surface: "gateway" }) {
       ensureMirrorPolicyAllowed(
         await policy.evaluate({
@@ -139,50 +310,10 @@ export function createMirrorGateway(
       return executeMirrorChatRequest(request, deps);
     },
     async executeChatWithProvider(request, deps, context = { surface: "gateway" }) {
-      const providerPlane = resolveProviderPlane(deps, options.providerPlane);
-      ensureMirrorPolicyAllowed(
-        await policy.evaluate({
-          phase: "ingress",
-          target: buildMirrorChatPolicyTarget(request),
-          context,
-        }),
-      );
-      ensureMirrorPolicyAllowed(
-        await policy.evaluate({
-          phase: "provider",
-          target: buildMirrorProviderPolicyTarget(request, {
-            url: providerPlane.getActiveProvider()?.url ?? deps.provider?.url ?? "",
-          }),
-          context: {
-            ...context,
-            metadata: {
-              ...context.metadata,
-              provider_url: providerPlane.getActiveProvider()?.url ?? deps.provider?.url ?? "",
-            },
-          },
-        }),
-      );
-      return executeMirrorChatWithProviderPlane(request, {
-        providerPlane,
-        fetchImpl: deps.fetchImpl,
-        onRuntimeEvent: deps.onRuntimeEvent,
-        correlation: deps.correlation,
-      });
+      return await executeChatWithProviderInternal(request, deps, context);
     },
     async executeTool(toolName, input, context = { surface: "gateway" }) {
-      const tool = registry.getTool(toolName);
-      const action = actionRuntime.getAction(toolName);
-      if (!tool || !action) {
-        throw new Error(`Unknown Mirror tool: ${toolName}`);
-      }
-      const result = await actionRuntime.executeAction({
-        action_name: toolName,
-        input,
-        context,
-        policy,
-        providerPlane: options.providerPlane,
-      });
-      return result.result;
+      return await executeToolInternal(toolName, input, context);
     },
   };
 }
