@@ -1,10 +1,7 @@
 import crypto from "node:crypto";
 import type express from "express";
-import type {
-  MirrorAdapterChatRequestEnvelope,
-  MirrorChatMessage,
-  MirrorChatRequest,
-} from "../../../mirror-runtime/index.js";
+import type { MirrorAdapterChatRequestEnvelope } from "../../../mirror-adapters/index.js";
+import type { MirrorChatMessage, MirrorChatRequest } from "../../../mirror-runtime/index.js";
 import { prepareMirrorChatRequest, resolveMirrorTraceId } from "../../../mirror-runtime/index.js";
 
 export type CompatChatMessage = {

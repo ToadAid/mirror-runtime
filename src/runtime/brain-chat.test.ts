@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CompatChatRequest } from "../compat/openclaw/runtime/brain_chat_compat.js";
 import { closeMirrorMemoryDb, initMirrorMemoryDb } from "../mirror-memory/db.js";
 import {
   addObservation,
@@ -271,10 +272,10 @@ describe("handleBrainChatEndpoint", () => {
         }),
       } as Response;
     });
-    const request = {
+    const request: CompatChatRequest = {
       model: "test-model",
       messages: [{ role: "user", content: "Repeat this request exactly once." }],
-    } as const;
+    };
 
     const first = await handleBrainChatEndpoint(
       { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
