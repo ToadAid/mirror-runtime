@@ -399,6 +399,30 @@ describe("mirror gateway", () => {
     } satisfies Partial<MirrorPolicyDeniedError>);
   });
 
+  it("routes exported gateway handlers through canonical mutable-surface policy", async () => {
+    await createTempHome();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+    const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-gateway-users-"));
+    tempDirs.push(usersRoot);
+    process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+    const gateway = createMirrorGateway();
+    const res = createMockResponse();
+
+    await gateway.handlers.executeTool(
+      createRequest(
+        { tool_name: "mirror.task.create" },
+        { user_id: "traveler-1", title: "Daily planning" },
+      ) as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({
+      error: "Mirror operator authorization required",
+      code: "mutable_surface_auth_required",
+    });
+  });
+
   it("allows authorized mutable adapter tool requests", async () => {
     await createTempHome();
     process.env.MIRROR_OPERATOR_TOKEN = "secret";
@@ -427,6 +451,25 @@ describe("mirror gateway", () => {
         title: "Daily planning",
       },
     });
+  });
+
+  it("preserves read-only behavior through exported gateway handlers", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+    const res = createMockResponse();
+
+    await gateway.handlers.executeTool(
+      createRequest({ tool_name: "mirror.find-scroll" }, { query: "patience vault" }) as never,
+      res as never,
+    );
+
+    const body = res.body as { tool: string; result: { candidates: Array<{ path: string }> } };
+    expect(res.statusCode).toBe(200);
+    expect(body.tool).toBe("mirror.find-scroll");
+    expect(body.result.candidates[0]?.path).toBe("TOBY_L1219_Rune3_PatienceVaultCancelled.md");
   });
 
   it("preserves current behavior for read-only adapter tool requests", async () => {
