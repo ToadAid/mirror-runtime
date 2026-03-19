@@ -115,6 +115,9 @@ describe("mirror runtime host adapter boundary", () => {
       const response = await runtimeHost.executeAdapterRequest(createAdapterEnvelope());
 
       expect(response.kind).toBe("tool.response");
+      if (response.kind !== "tool.response") {
+        throw new Error(`Unexpected adapter response kind: ${response.kind}`);
+      }
       expect(response.response.tool_name).toBe("mirror.find-scroll");
       expect(response.response.result).toMatchObject({
         candidates: [{ path: "TOBY_L1219_Rune3_PatienceVaultCancelled.md" }],

@@ -1,4 +1,8 @@
 import { readFile } from "node:fs/promises";
+import {
+  buildCliChatAdapterEnvelope,
+  buildCliToolAdapterEnvelope,
+} from "../mirror-adapters/index.js";
 import { authorizeMirrorToolRequest } from "../mirror-gateway/auth.js";
 import type { MirrorGateway } from "../mirror-gateway/index.js";
 import type { MirrorProviderConfig } from "../mirror-provider/index.js";
@@ -319,6 +323,31 @@ function buildProviderConfig(
   };
 }
 
+async function executeCliToolViaAdapter(params: {
+  runtimeHost: MirrorRuntimeHost;
+  tool: string;
+  payload: Record<string, unknown>;
+  userId?: string;
+  operatorToken?: string;
+  command: MirrorCliCommandName;
+  action?: MirrorCliActionName;
+}): Promise<Record<string, unknown>> {
+  const response = await params.runtimeHost.executeAdapterRequest(
+    buildCliToolAdapterEnvelope({
+      toolName: params.tool,
+      input: params.payload,
+      userId: params.userId,
+      operatorToken: params.operatorToken ?? null,
+      command: params.command,
+      action: params.action,
+    }),
+  );
+  if (response.kind !== "tool.response") {
+    throw new Error(`Unexpected Mirror adapter response kind: ${response.kind}`);
+  }
+  return response.response.result;
+}
+
 function parseJsonFlag(flags: Record<string, string | boolean>): boolean {
   return flags.json === true;
 }
@@ -438,16 +467,19 @@ async function executeLegacyToolCommand(
       break;
   }
 
-  const result = await runtimeHost.executeTool(tool, payload, {
-    user_id: typeof payload.user_id === "string" ? payload.user_id : undefined,
+  const adapterResult = await executeCliToolViaAdapter({
+    runtimeHost,
+    tool,
+    payload,
+    userId: typeof payload.user_id === "string" ? payload.user_id : undefined,
+    operatorToken: buildCliRequestToken(flags),
     command,
-    operator_token: buildCliRequestToken(flags),
   });
   return {
     kind: "tool",
     command,
     tool,
-    result,
+    result: adapterResult,
   };
 }
 
@@ -577,11 +609,14 @@ async function executeTaskCommand(
     payload.task_id = requireText(getFlagValue(flags, "id"), `task ${action} --id`);
   }
 
-  const result = await runtimeHost.executeTool(tool, payload, {
-    user_id: userId,
+  const result = await executeCliToolViaAdapter({
+    runtimeHost,
+    tool,
+    payload,
+    userId,
+    operatorToken: buildCliRequestToken(flags),
     command: "task",
     action,
-    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "task", action, tool, result };
 }
@@ -625,11 +660,14 @@ async function executeReminderCommand(
     payload.now = getFlagValue(flags, "now");
   }
 
-  const result = await runtimeHost.executeTool(tool, payload, {
-    user_id: userId,
+  const result = await executeCliToolViaAdapter({
+    runtimeHost,
+    tool,
+    payload,
+    userId,
+    operatorToken: buildCliRequestToken(flags),
     command: "reminder",
     action,
-    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "reminder", action, tool, result };
 }
@@ -665,11 +703,14 @@ async function executeHeartbeatCommand(
     payload.now = getFlagValue(flags, "now");
   }
 
-  const result = await runtimeHost.executeTool(tool, payload, {
-    user_id: userId,
+  const result = await executeCliToolViaAdapter({
+    runtimeHost,
+    tool,
+    payload,
+    userId,
+    operatorToken: buildCliRequestToken(flags),
     command: "heartbeat",
     action,
-    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "heartbeat", action, tool, result };
 }
@@ -722,11 +763,14 @@ async function executeMonkCommand(
     payload.context_notes = parseTags({ tags: flags["context-notes"] ?? flags.tags });
   }
 
-  const result = await runtimeHost.executeTool(tool, payload, {
-    user_id: userId,
+  const result = await executeCliToolViaAdapter({
+    runtimeHost,
+    tool,
+    payload,
+    userId,
+    operatorToken: buildCliRequestToken(flags),
     command: "monk",
     action,
-    operator_token: buildCliRequestToken(flags),
   });
   return { kind: "tool", command: "monk", action, tool, result };
 }
@@ -784,18 +828,23 @@ export async function executeMirrorCliCommand(
   if (parsed.command === "chat") {
     const message = requireText(parsed.positional.join(" "), "chat");
     const provider = buildProviderConfig(parsed.flags, deps.provider);
-    const response = await deps.runtimeHost.executeChatWithProvider(
-      {
+    const adapterResponse = await deps.runtimeHost.executeAdapterRequest(
+      buildCliChatAdapterEnvelope({
         model: getFlagValue(parsed.flags, "model") ?? "mirror-default",
-        user_id: resolveUserId(parsed.flags),
         messages: [{ role: "user", content: message }],
-      },
+        userId: resolveUserId(parsed.flags),
+        command: "chat",
+        preferredProvider: provider.url,
+      }),
       { provider, fetchImpl: deps.fetchImpl },
     );
+    if (adapterResponse.kind !== "chat.response") {
+      throw new Error(`Unexpected Mirror adapter response kind: ${adapterResponse.kind}`);
+    }
     return {
       kind: "chat",
       command: "chat",
-      response,
+      response: adapterResponse.response,
     };
   }
 

@@ -142,6 +142,68 @@ async function seedLoreCorpus(loreDir: string): Promise<void> {
 }
 
 describe("mirror cli", () => {
+  it("routes chat through runtimeHost.executeAdapterRequest", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const runtimeHost = await createMirrorRuntimeHost({
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+    const executeAdapterRequestSpy = vi.spyOn(runtimeHost, "executeAdapterRequest");
+    const executeChatWithProviderSpy = vi.spyOn(runtimeHost, "executeChatWithProvider");
+    const fetchImpl: FetchLike = vi.fn(async () => {
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_cli_adapter_chat",
+          object: "chat.completion",
+          created: 1,
+          model: "mirror-default",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Adapter chat OK." },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    });
+
+    try {
+      const output = await runMirrorCli(
+        ["mirror", "chat", "What happened to the patience vault?"],
+        {
+          runtimeHost,
+          provider: {
+            url: "http://brain.local/v1/chat/completions",
+            authToken: "token",
+          },
+          fetchImpl,
+        },
+      );
+
+      expect(output).toContain("Adapter chat OK.");
+      expect(executeAdapterRequestSpy).toHaveBeenCalledTimes(1);
+      expect(executeAdapterRequestSpy.mock.calls[0]?.[0]).toMatchObject({
+        kind: "chat.request",
+        context: {
+          adapter: {
+            adapter_id: "mirror-cli",
+            transport: "argv",
+          },
+        },
+      });
+      expect(executeChatWithProviderSpy).not.toHaveBeenCalled();
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
   it("routes chat through the Mirror chat engine and provider runtime", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
@@ -240,6 +302,41 @@ describe("mirror cli", () => {
 
     expect(findOutput).toContain("mirror.find-scroll");
     expect(factOutput).toContain("mirror.canon-fact");
+  });
+
+  it("routes tool commands through runtimeHost.executeAdapterRequest", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+    const executeAdapterRequestSpy = vi.spyOn(runtimeHost, "executeAdapterRequest");
+    const executeToolSpy = vi.spyOn(runtimeHost, "executeTool");
+
+    try {
+      const output = await runMirrorCli(["mirror", "find", "patience vault"], {
+        runtimeHost,
+      });
+
+      expect(output).toContain("mirror.find-scroll");
+      expect(executeAdapterRequestSpy).toHaveBeenCalledTimes(1);
+      expect(executeAdapterRequestSpy.mock.calls[0]?.[0]).toMatchObject({
+        kind: "tool.request",
+        request: {
+          tool_name: "mirror.find-scroll",
+        },
+        context: {
+          adapter: {
+            adapter_id: "mirror-cli",
+            transport: "argv",
+          },
+        },
+      });
+      expect(executeToolSpy).not.toHaveBeenCalled();
+    } finally {
+      await runtimeHost.shutdown();
+    }
   });
 
   it("requires operator auth for write-capable commands", async () => {

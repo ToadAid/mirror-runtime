@@ -6,6 +6,9 @@ export const MIRROR_ADAPTER_PROTOCOL = "mirror.adapter.v1" as const;
 export type MirrorAdapterProtocol = typeof MIRROR_ADAPTER_PROTOCOL;
 
 export type MirrorAdapterSurface =
+  | "cli"
+  | "service"
+  | "console"
   | "telegram"
   | "whatsapp_web"
   | "discord"
