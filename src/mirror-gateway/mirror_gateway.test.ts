@@ -596,7 +596,6 @@ describe("mirror gateway", () => {
 
     expect(response.choices[0]?.message.content).toBe("Cancelled.");
   });
-
   it("routes the public gateway chat helper through the canonical adapter path", async () => {
     await createTempHome();
     const loreDir = await createTempLoreDir();
