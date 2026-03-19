@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMirrorConsoleHandlers } from "../mirror-console/console_routes.js";
-import { createMirrorGatewayHandlers } from "../mirror-gateway/index.js";
+import { createMirrorGateway, createMirrorGatewayHandlers } from "../mirror-gateway/index.js";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
 import { reviewDraftForCanon } from "../mirror-review/index.js";
 import { createMirrorSyncHandlers, createMirrorSyncManager } from "../mirror-sync/index.js";
@@ -172,30 +172,40 @@ describe("mirror observability", () => {
     process.env.MIRROR_LORE_DIR = loreDir;
     process.env.MIRROR_OPERATOR_TOKEN = "secret";
 
+    const gateway = createMirrorGateway();
+    const fetchImpl = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            id: "resp_observe",
+            object: "chat.completion",
+            created: 1,
+            model: "mirror-default",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "Cancelled." },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+        }) as Response,
+    );
     const gatewayHandlers = createMirrorGatewayHandlers(undefined, {
-      provider: {
-        url: "http://brain.local/v1/chat/completions",
-        authToken: "token",
-      },
-      fetchImpl: vi.fn(
-        async () =>
-          ({
-            ok: true,
-            json: async () => ({
-              id: "resp_observe",
-              object: "chat.completion",
-              created: 1,
-              model: "mirror-default",
-              choices: [
-                {
-                  index: 0,
-                  message: { role: "assistant", content: "Cancelled." },
-                  finish_reason: "stop",
-                },
-              ],
-            }),
-          }) as Response,
-      ),
+      executeAdapterRequest: vi.fn(async (envelope) => {
+        if (envelope.kind === "chat.request") {
+          return await gateway.executeAdapterRequest(envelope, {
+            provider: {
+              url: "http://brain.local/v1/chat/completions",
+              authToken: "token",
+            },
+            fetchImpl,
+          });
+        }
+
+        return await gateway.executeAdapterRequest(envelope);
+      }),
     });
     await gatewayHandlers.executeChat(
       {

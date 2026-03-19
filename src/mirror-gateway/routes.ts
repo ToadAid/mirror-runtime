@@ -1,12 +1,6 @@
 import crypto from "node:crypto";
 import express from "express";
 import {
-  createMirrorActionRuntime,
-  createMirrorActionsFromTools,
-  type MirrorActionLifecycleEvent,
-  type MirrorActionRuntime,
-} from "../mirror-actions/index.js";
-import {
   buildHttpChatAdapterEnvelope,
   buildHttpToolAdapterEnvelope,
   type MirrorAdapterResponseEnvelope,
@@ -16,25 +10,9 @@ import {
   incrementToolExecution,
   logMirrorEvent,
 } from "../mirror-observability/index.js";
-import {
-  buildMirrorChatPolicyTarget,
-  buildMirrorProviderPolicyTarget,
-  createMirrorPolicyEngine,
-  type MirrorPolicyContext,
-  type MirrorPolicyEngine,
-} from "../mirror-policy/index.js";
-import {
-  buildPrimaryProviderDescriptorFromConfig,
-  createMirrorProviderPlane,
-  type FetchLike,
-  type MirrorProviderConfig,
-  type MirrorProviderPlane,
-} from "../mirror-provider/index.js";
-import {
-  executeMirrorChatWithProviderPlane,
-  resolveMirrorTraceId,
-  withMirrorCorrelation,
-} from "../mirror-runtime/index.js";
+import { type MirrorPolicyContext } from "../mirror-policy/index.js";
+import { type MirrorProviderConfig, type MirrorProviderPlane } from "../mirror-provider/index.js";
+import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
 import {
   createMirrorToolRegistry,
   getMirrorNativeSkillTools,
@@ -110,35 +88,14 @@ export function createMirrorGatewayHandlers(
   options: {
     provider?: MirrorProviderConfig;
     providerPlane?: MirrorProviderPlane;
-    actionRuntime?: MirrorActionRuntime;
-    fetchImpl?: FetchLike;
-    policy?: MirrorPolicyEngine;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
-    executeAdapterRequest?: (
+    executeAdapterRequest: (
       envelope:
         | ReturnType<typeof buildHttpChatAdapterEnvelope>
         | ReturnType<typeof buildHttpToolAdapterEnvelope>,
     ) => Promise<MirrorAdapterResponseEnvelope>;
-  } = {},
+  },
 ): MirrorGatewayHandlers {
-  const policy = options.policy ?? createMirrorPolicyEngine();
-  const actionRuntime =
-    options.actionRuntime ??
-    createMirrorActionRuntime(createMirrorActionsFromTools(registry.listTools()));
-  const providerPlane =
-    options.providerPlane ??
-    (options.provider
-      ? createMirrorProviderPlane([
-          {
-            ...buildPrimaryProviderDescriptorFromConfig({
-              providerUrl: options.provider.url,
-              providerAuthToken: options.provider.authToken,
-            }),
-            timeoutMs: options.provider.timeoutMs,
-          },
-        ])
-      : undefined);
-
   function buildPolicyContext(
     req: express.Request,
     body: Record<string, unknown>,
@@ -248,9 +205,6 @@ export function createMirrorGatewayHandlers(
     },
 
     async executeChat(req, res) {
-      if (!providerPlane) {
-        return res.status(503).json({ error: "Mirror provider is not configured" });
-      }
       const payload =
         req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : null;
       if (!payload) {
@@ -264,86 +218,7 @@ export function createMirrorGatewayHandlers(
           session_id: policyContext.session?.session_id,
         };
         res.setHeader("x-mirror-trace-id", correlation.trace_id);
-        if (options.executeAdapterRequest) {
-          const adapterDescriptor = readIngressAdapterDescriptor(readIngressRoutePath(req));
-          incrementMetric("chat_requests");
-          logMirrorEvent("chat.pipeline", { route: "mirror.chat" });
-          options.onRuntimeEvent?.(
-            "chat.started",
-            withMirrorCorrelation(
-              {
-                route: "mirror.chat",
-                model: typeof payload.model === "string" ? payload.model : undefined,
-              },
-              correlation,
-            ),
-          );
-          const adapterResponse = await options.executeAdapterRequest(
-            buildHttpChatAdapterEnvelope({
-              req,
-              body: payload,
-              adapterId: adapterDescriptor.adapterId,
-              surface: adapterDescriptor.surface,
-            }),
-          );
-          if (adapterResponse.kind !== "chat.response") {
-            throw new Error(`Unexpected Mirror adapter response kind: ${adapterResponse.kind}`);
-          }
-          options.onRuntimeEvent?.(
-            "chat.finished",
-            withMirrorCorrelation(
-              {
-                route: "mirror.chat",
-                model: adapterResponse.response.model,
-                finish_reason: adapterResponse.response.choices[0]?.finish_reason,
-              },
-              correlation,
-            ),
-          );
-          return res.json({ response: adapterResponse.response });
-        }
-        const ingressDecision = await policy.evaluate({
-          phase: "ingress",
-          target: buildMirrorChatPolicyTarget(payload as never),
-          context: policyContext,
-        });
-        if (!ingressDecision.allowed) {
-          options.onRuntimeEvent?.("policy.denied", {
-            phase: "ingress",
-            target: "chat",
-            code: ingressDecision.decision.code,
-            route: req.path,
-          });
-          return res.status(ingressDecision.decision.statusCode ?? 403).json({
-            error: ingressDecision.decision.reason,
-            code: ingressDecision.decision.code,
-          });
-        }
-        const providerDecision = await policy.evaluate({
-          phase: "provider",
-          target: buildMirrorProviderPolicyTarget(payload as never, {
-            url: providerPlane.getActiveProvider()?.url ?? "",
-          }),
-          context: {
-            ...policyContext,
-            metadata: {
-              ...policyContext.metadata,
-              provider_url: providerPlane.getActiveProvider()?.url ?? "",
-            },
-          },
-        });
-        if (!providerDecision.allowed) {
-          options.onRuntimeEvent?.("policy.denied", {
-            phase: "provider",
-            target: "provider",
-            code: providerDecision.decision.code,
-            route: req.path,
-          });
-          return res.status(providerDecision.decision.statusCode ?? 403).json({
-            error: providerDecision.decision.reason,
-            code: providerDecision.decision.code,
-          });
-        }
+        const adapterDescriptor = readIngressAdapterDescriptor(readIngressRoutePath(req));
         incrementMetric("chat_requests");
         logMirrorEvent("chat.pipeline", { route: "mirror.chat" });
         options.onRuntimeEvent?.(
@@ -356,28 +231,29 @@ export function createMirrorGatewayHandlers(
             correlation,
           ),
         );
-        const providerResponse = await executeMirrorChatWithProviderPlane(payload as never, {
-          providerPlane,
-          fetchImpl: options.fetchImpl,
-          onRuntimeEvent: (type, runtimePayload) => {
-            options.onRuntimeEvent?.(
-              type,
-              withMirrorCorrelation(runtimePayload ?? {}, correlation),
-            );
-          },
-        });
+        const adapterResponse = await options.executeAdapterRequest(
+          buildHttpChatAdapterEnvelope({
+            req,
+            body: payload,
+            adapterId: adapterDescriptor.adapterId,
+            surface: adapterDescriptor.surface,
+          }),
+        );
+        if (adapterResponse.kind !== "chat.response") {
+          throw new Error(`Unexpected Mirror adapter response kind: ${adapterResponse.kind}`);
+        }
         options.onRuntimeEvent?.(
           "chat.finished",
           withMirrorCorrelation(
             {
               route: "mirror.chat",
-              model: providerResponse.model,
-              finish_reason: providerResponse.choices[0]?.finish_reason,
+              model: adapterResponse.response.model,
+              finish_reason: adapterResponse.response.choices[0]?.finish_reason,
             },
             correlation,
           ),
         );
-        return res.json({ response: providerResponse });
+        return res.json({ response: adapterResponse.response });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const policyContext = buildPolicyContext(req, payload);
@@ -413,7 +289,7 @@ export function createMirrorGatewayHandlers(
             "policy.denied",
             withMirrorCorrelation(
               {
-                phase: options.executeAdapterRequest ? "adapter" : "ingress",
+                phase: "adapter",
                 target: "chat",
                 code,
                 route: req.path,
@@ -459,216 +335,56 @@ export function createMirrorGatewayHandlers(
 
       try {
         res.setHeader("x-mirror-trace-id", correlation.trace_id);
-        if (options.executeAdapterRequest) {
-          const adapterDescriptor = readIngressAdapterDescriptor(readIngressRoutePath(req));
-          const actionId = crypto.randomUUID();
-          const executionId = crypto.randomUUID();
-          options.onRuntimeEvent?.(
-            "tool.execution.started",
-            withMirrorCorrelation(
-              {
-                tool: tool.metadata.name,
-              },
-              {
-                trace_id: correlation.trace_id,
-                session_id: correlation.session_id,
-                action_id: actionId,
-              },
-            ),
-          );
-          incrementToolExecution(tool.metadata.name);
-          logMirrorEvent("tool.execution", { tool: tool.metadata.name });
-          logMirrorEvent("action.execution", { action: tool.metadata.name });
-          options.onRuntimeEvent?.(
-            "action.execution.started",
-            withMirrorCorrelation(
-              {
-                action: tool.metadata.name,
-                execution_id: executionId,
-              },
-              {
-                trace_id: correlation.trace_id,
-                session_id: correlation.session_id,
-                action_id: actionId,
-              },
-            ),
-          );
-          recordWorkspaceToolObservability(tool.metadata.name);
-          const adapterResponse = await options.executeAdapterRequest(
-            buildHttpToolAdapterEnvelope({
-              req,
-              body: payload,
-              toolName,
-              adapterId: adapterDescriptor.adapterId,
-              surface: adapterDescriptor.surface,
-            }),
-          );
-          if (adapterResponse.kind !== "tool.response") {
-            throw new Error(`Unexpected Mirror adapter response kind: ${adapterResponse.kind}`);
-          }
-          const reviewStatus =
-            adapterResponse.response.result.review &&
-            typeof adapterResponse.response.result.review === "object"
-              ? (adapterResponse.response.result.review as { status?: unknown }).status
-              : undefined;
-          if (typeof reviewStatus === "string") {
-            options.onRuntimeEvent?.(
-              "review.decision",
-              withMirrorCorrelation(
-                {
-                  tool: tool.metadata.name,
-                  status: reviewStatus,
-                },
-                {
-                  trace_id: correlation.trace_id,
-                  session_id: correlation.session_id,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          options.onRuntimeEvent?.(
-            "tool.execution.finished",
-            withMirrorCorrelation(
-              {
-                tool: tool.metadata.name,
-              },
-              {
-                trace_id: correlation.trace_id,
-                session_id: correlation.session_id,
-                action_id: actionId,
-              },
-            ),
-          );
-          options.onRuntimeEvent?.(
-            "action.execution.finished",
-            withMirrorCorrelation(
-              {
-                action: tool.metadata.name,
-                execution_id: executionId,
-              },
-              {
-                trace_id: correlation.trace_id,
-                session_id: correlation.session_id,
-                action_id: actionId,
-              },
-            ),
-          );
-          return res.json({
-            tool: tool.metadata.name,
-            result: adapterResponse.response.result,
-          });
-        }
-        const result = await actionRuntime.executeAction(
-          {
-            action_name: toolName,
-            input: payload,
-            context: policyContext,
-            policy,
-            providerPlane,
-            correlation,
-          },
-          {
-            onLifecycleEvent(event: MirrorActionLifecycleEvent) {
-              if (event.type === "started") {
-                incrementToolExecution(event.action.action_name);
-                logMirrorEvent("tool.execution", { tool: event.action.action_name });
-                logMirrorEvent("action.execution", { action: event.action.action_name });
-                options.onRuntimeEvent?.(
-                  "tool.execution.started",
-                  withMirrorCorrelation(
-                    {
-                      tool: event.action.action_name,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-                options.onRuntimeEvent?.(
-                  "action.execution.started",
-                  withMirrorCorrelation(
-                    {
-                      action: event.action.action_name,
-                      execution_id: event.execution_id,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-                recordWorkspaceToolObservability(event.action.action_name);
-                return;
-              }
-              if (event.type === "finished") {
-                options.onRuntimeEvent?.(
-                  "tool.execution.finished",
-                  withMirrorCorrelation(
-                    {
-                      tool: event.action.action_name,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-                options.onRuntimeEvent?.(
-                  "action.execution.finished",
-                  withMirrorCorrelation(
-                    {
-                      action: event.action.action_name,
-                      execution_id: event.execution_id,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-                return;
-              }
-              options.onRuntimeEvent?.(
-                "tool.execution.failed",
-                withMirrorCorrelation(
-                  {
-                    tool: event.action.action_name,
-                    error: event.result.error,
-                  },
-                  {
-                    trace_id: event.trace_id,
-                    session_id: event.session_id,
-                    action_id: event.action_id,
-                  },
-                ),
-              );
-              options.onRuntimeEvent?.(
-                "action.execution.failed",
-                withMirrorCorrelation(
-                  {
-                    action: event.action.action_name,
-                    execution_id: event.execution_id,
-                    error: event.result.error,
-                  },
-                  {
-                    trace_id: event.trace_id,
-                    session_id: event.session_id,
-                    action_id: event.action_id,
-                  },
-                ),
-              );
+        const adapterDescriptor = readIngressAdapterDescriptor(readIngressRoutePath(req));
+        const actionId = crypto.randomUUID();
+        const executionId = crypto.randomUUID();
+        options.onRuntimeEvent?.(
+          "tool.execution.started",
+          withMirrorCorrelation(
+            {
+              tool: tool.metadata.name,
             },
-          },
+            {
+              trace_id: correlation.trace_id,
+              session_id: correlation.session_id,
+              action_id: actionId,
+            },
+          ),
         );
+        incrementToolExecution(tool.metadata.name);
+        logMirrorEvent("tool.execution", { tool: tool.metadata.name });
+        logMirrorEvent("action.execution", { action: tool.metadata.name });
+        options.onRuntimeEvent?.(
+          "action.execution.started",
+          withMirrorCorrelation(
+            {
+              action: tool.metadata.name,
+              execution_id: executionId,
+            },
+            {
+              trace_id: correlation.trace_id,
+              session_id: correlation.session_id,
+              action_id: actionId,
+            },
+          ),
+        );
+        recordWorkspaceToolObservability(tool.metadata.name);
+        const adapterResponse = await options.executeAdapterRequest(
+          buildHttpToolAdapterEnvelope({
+            req,
+            body: payload,
+            toolName,
+            adapterId: adapterDescriptor.adapterId,
+            surface: adapterDescriptor.surface,
+          }),
+        );
+        if (adapterResponse.kind !== "tool.response") {
+          throw new Error(`Unexpected Mirror adapter response kind: ${adapterResponse.kind}`);
+        }
         const reviewStatus =
-          result.result.review && typeof result.result.review === "object"
-            ? (result.result.review as { status?: unknown }).status
+          adapterResponse.response.result.review &&
+          typeof adapterResponse.response.result.review === "object"
+            ? (adapterResponse.response.result.review as { status?: unknown }).status
             : undefined;
         if (typeof reviewStatus === "string") {
           options.onRuntimeEvent?.(
@@ -679,16 +395,43 @@ export function createMirrorGatewayHandlers(
                 status: reviewStatus,
               },
               {
-                trace_id: result.trace_id,
-                session_id: result.session_id,
-                action_id: result.action_id,
+                trace_id: correlation.trace_id,
+                session_id: correlation.session_id,
+                action_id: actionId,
               },
             ),
           );
         }
+        options.onRuntimeEvent?.(
+          "tool.execution.finished",
+          withMirrorCorrelation(
+            {
+              tool: tool.metadata.name,
+            },
+            {
+              trace_id: correlation.trace_id,
+              session_id: correlation.session_id,
+              action_id: actionId,
+            },
+          ),
+        );
+        options.onRuntimeEvent?.(
+          "action.execution.finished",
+          withMirrorCorrelation(
+            {
+              action: tool.metadata.name,
+              execution_id: executionId,
+            },
+            {
+              trace_id: correlation.trace_id,
+              session_id: correlation.session_id,
+              action_id: actionId,
+            },
+          ),
+        );
         return res.json({
           tool: tool.metadata.name,
-          result: result.result,
+          result: adapterResponse.response.result,
         });
       } catch (error) {
         const code =
@@ -706,26 +449,24 @@ export function createMirrorGatewayHandlers(
             ? (error as { statusCode: number }).statusCode
             : 500;
         if (code) {
-          if (options.executeAdapterRequest) {
-            options.onRuntimeEvent?.(
-              "tool.execution.failed",
-              withMirrorCorrelation(
-                {
-                  tool: tool.metadata.name,
-                  error: error instanceof Error ? error.message : String(error),
-                },
-                {
-                  trace_id: String(policyContext.metadata?.trace_id),
-                  session_id: policyContext.session?.session_id,
-                },
-              ),
-            );
-          }
+          options.onRuntimeEvent?.(
+            "tool.execution.failed",
+            withMirrorCorrelation(
+              {
+                tool: tool.metadata.name,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              {
+                trace_id: String(policyContext.metadata?.trace_id),
+                session_id: policyContext.session?.session_id,
+              },
+            ),
+          );
           options.onRuntimeEvent?.(
             "policy.denied",
             withMirrorCorrelation(
               {
-                phase: options.executeAdapterRequest ? "adapter" : "action",
+                phase: "adapter",
                 target: "action",
                 tool: tool.metadata.name,
                 code,
@@ -737,21 +478,19 @@ export function createMirrorGatewayHandlers(
               },
             ),
           );
-          if (options.executeAdapterRequest) {
-            options.onRuntimeEvent?.(
-              "action.execution.failed",
-              withMirrorCorrelation(
-                {
-                  action: tool.metadata.name,
-                  error: error instanceof Error ? error.message : String(error),
-                },
-                {
-                  trace_id: String(policyContext.metadata?.trace_id),
-                  session_id: policyContext.session?.session_id,
-                },
-              ),
-            );
-          }
+          options.onRuntimeEvent?.(
+            "action.execution.failed",
+            withMirrorCorrelation(
+              {
+                action: tool.metadata.name,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              {
+                trace_id: String(policyContext.metadata?.trace_id),
+                session_id: policyContext.session?.session_id,
+              },
+            ),
+          );
           return res.status(statusCode).json({
             error: error instanceof Error ? error.message : String(error),
             code,
@@ -770,21 +509,19 @@ export function createMirrorGatewayHandlers(
             },
           ),
         );
-        if (options.executeAdapterRequest) {
-          options.onRuntimeEvent?.(
-            "action.execution.failed",
-            withMirrorCorrelation(
-              {
-                action: tool.metadata.name,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              {
-                trace_id: String(policyContext.metadata?.trace_id),
-                session_id: policyContext.session?.session_id,
-              },
-            ),
-          );
-        }
+        options.onRuntimeEvent?.(
+          "action.execution.failed",
+          withMirrorCorrelation(
+            {
+              action: tool.metadata.name,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            {
+              trace_id: String(policyContext.metadata?.trace_id),
+              session_id: policyContext.session?.session_id,
+            },
+          ),
+        );
         return res
           .status(500)
           .json({ error: error instanceof Error ? error.message : String(error) });
@@ -795,7 +532,7 @@ export function createMirrorGatewayHandlers(
 
 export function createMirrorGatewayRouter(
   basePath = "/mirror",
-  handlers = createMirrorGatewayHandlers(),
+  handlers: MirrorGatewayHandlers,
 ): express.Router {
   const router = express.Router();
 
