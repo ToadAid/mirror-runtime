@@ -2,8 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMirrorPolicyEngine } from "../mirror-policy/index.js";
-import { createMirrorGatewayHandlers } from "./index.js";
+import {
+  MIRROR_ADAPTER_PROTOCOL,
+  type MirrorAdapterToolRequestEnvelope,
+} from "../mirror-adapters/index.js";
+import { createMirrorPolicyEngine, MirrorPolicyDeniedError } from "../mirror-policy/index.js";
+import { createMirrorGateway, createMirrorGatewayHandlers } from "./index.js";
 
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
@@ -116,6 +120,50 @@ function createRequest(
         return token;
       }
       return undefined;
+    },
+  };
+}
+
+function createAdapterToolEnvelope(params: {
+  toolName: string;
+  input: Record<string, unknown>;
+  facts?: Record<string, string>;
+}): MirrorAdapterToolRequestEnvelope {
+  return {
+    protocol: MIRROR_ADAPTER_PROTOCOL,
+    envelope_id: `env_${params.toolName}`,
+    created_at: "2026-03-18T12:00:00.000Z",
+    kind: "tool.request",
+    context: {
+      adapter: {
+        adapter_id: "telegram-main",
+        surface: "telegram",
+        transport: "bot_api",
+        capabilities: ["chat", "tool_calls", "policy_context"],
+      },
+      actor: {
+        user_id: "traveler-1",
+        external_user_id: "tg:123",
+        display_name: "Traveler",
+      },
+      session: {
+        session_id: "mirror-session-1",
+        external_session_id: "telegram-chat-99",
+        conversation_id: "chat-99",
+        thread_id: "topic-7",
+      },
+      policy: {
+        requested_mode: "read",
+        facts: params.facts,
+      },
+      runtime: {
+        trace_id: "trace-adapter-1",
+        correlation_id: "corr-adapter-1",
+      },
+    },
+    request: {
+      tool_name: params.toolName,
+      input: params.input,
     },
   };
 }
@@ -288,5 +336,114 @@ describe("mirror gateway", () => {
       "utf8",
     );
     expect(canonAfter).toBe(canonBefore);
+  });
+
+  it("blocks adapter ingress before runtime execution when adapter policy denies it", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway("/mirror", {
+      policy: createMirrorPolicyEngine([
+        {
+          name: "deny.adapter",
+          evaluate(input) {
+            if (input.phase !== "adapter" || input.target.kind !== "adapter") {
+              return null;
+            }
+            return {
+              allowed: false,
+              code: "adapter_blocked",
+              reason: "Adapter blocked by test policy",
+              statusCode: 451,
+              rule: "deny.adapter",
+            };
+          },
+        },
+      ]),
+    });
+
+    await expect(
+      gateway.executeAdapterRequest(
+        createAdapterToolEnvelope({
+          toolName: "mirror.find-scroll",
+          input: { query: "patience vault" },
+        }),
+      ),
+    ).rejects.toMatchObject<Partial<MirrorPolicyDeniedError>>({
+      code: "adapter_blocked",
+      statusCode: 451,
+      message: "Adapter blocked by test policy",
+    });
+  });
+
+  it("rejects unauthorized mutable adapter tool requests", async () => {
+    await createTempHome();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+    const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-gateway-users-"));
+    tempDirs.push(usersRoot);
+    process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+    const gateway = createMirrorGateway();
+
+    await expect(
+      gateway.executeAdapterRequest(
+        createAdapterToolEnvelope({
+          toolName: "mirror.task.create",
+          input: { user_id: "traveler-1", title: "Daily planning" },
+        }),
+      ),
+    ).rejects.toMatchObject<Partial<MirrorPolicyDeniedError>>({
+      code: "mutable_surface_auth_required",
+      statusCode: 403,
+      message: "Mirror operator authorization required",
+    });
+  });
+
+  it("allows authorized mutable adapter tool requests", async () => {
+    await createTempHome();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+    const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-gateway-users-"));
+    tempDirs.push(usersRoot);
+    process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+    const gateway = createMirrorGateway();
+
+    const response = await gateway.executeAdapterRequest(
+      createAdapterToolEnvelope({
+        toolName: "mirror.task.create",
+        input: { user_id: "traveler-1", title: "Daily planning" },
+        facts: {
+          mirror_operator_token: "secret",
+        },
+      }),
+    );
+
+    expect(response.kind).toBe("tool.response");
+    expect(response.response.tool_name).toBe("mirror.task.create");
+    expect(response.response.result).toMatchObject({
+      task: {
+        title: "Daily planning",
+      },
+    });
+  });
+
+  it("preserves current behavior for read-only adapter tool requests", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+
+    const response = await gateway.executeAdapterRequest(
+      createAdapterToolEnvelope({
+        toolName: "mirror.find-scroll",
+        input: { query: "patience vault" },
+      }),
+    );
+
+    expect(response.kind).toBe("tool.response");
+    expect(response.response.tool_name).toBe("mirror.find-scroll");
+    expect(response.response.result).toMatchObject({
+      candidates: [{ path: "TOBY_L1219_Rune3_PatienceVaultCancelled.md" }],
+    });
   });
 });
