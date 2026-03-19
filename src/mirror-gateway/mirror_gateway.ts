@@ -309,8 +309,6 @@ export function createMirrorGateway(
   }
 
   const handlers = createMirrorGatewayHandlers(toolRegistry, {
-    actionRuntime,
-    policy,
     providerPlane: options.providerPlane,
     executeAdapterRequest: executeAdapterRequestInternal,
   });
