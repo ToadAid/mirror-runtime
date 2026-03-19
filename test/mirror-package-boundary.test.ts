@@ -84,8 +84,11 @@ describe("mirror package boundary", () => {
 
     expect(assembleScript).toContain('"node_modules"');
     expect(assembleScript).toContain('"install-mirror-runtime.sh"');
+    expect(assembleScript).toContain('"docs/lore/SYMBOL_REGISTRY.md"');
     expect(assembleScript).toContain("workspaceNodeModulesRoot");
     expect(verifyScript).toContain("node_modules must not be a symlink");
+    expect(verifyScript).toContain('path.join("share", "lore", "SYMBOL_REGISTRY.md")');
+    expect(verifyScript).toContain("process.chdir(tempRoot)");
     expect(verifyScript).not.toContain('path.join(root, "node_modules")');
     expect(packagingReadme).toContain("node_modules/");
     expect(installerScript).toContain("systemctl --user daemon-reload");

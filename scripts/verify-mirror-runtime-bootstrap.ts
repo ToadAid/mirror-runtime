@@ -156,15 +156,29 @@ async function runInstalledMirrorHelp(runtimeRoot: string): Promise<void> {
   }
 }
 
+async function runInstalledMirrorOnboard(runtimeRoot: string): Promise<void> {
+  const entryModule = (await import(
+    pathToFileURL(path.join(runtimeRoot, "dist", "mirror-entry.js")).href
+  )) as MirrorEntryModule;
+  const code = await entryModule.runMirrorEntry(["node", "mirror", "onboard", "--yes"]);
+  if (code !== 0) {
+    throw new Error(`installed mirror onboard failed: code=${code}`);
+  }
+}
+
 async function verifyInstalledRuntime(
   runtimeRoot: string,
   envFile: string,
   unitFile: string,
+  homeRoot: string,
 ): Promise<void> {
   const envRaw = await fs.readFile(envFile, "utf8");
   const env = parseInstalledEnv(envRaw);
   if (env.MIRROR_LORE_DIR?.includes("%h") || env.MIRROR_MEMORY_DB_PATH?.includes("%h")) {
     throw new Error("bootstrap env file still contains unresolved systemd-style placeholders");
+  }
+  if (env.MIRROR_PROVIDER_URL || env.MIRROR_PROVIDER_AUTH_TOKEN) {
+    throw new Error("bootstrap env file still contains provider settings");
   }
 
   const unitRaw = await fs.readFile(unitFile, "utf8");
@@ -176,10 +190,21 @@ async function verifyInstalledRuntime(
   }
 
   await runInstalledMirrorHelp(runtimeRoot);
-
-  await seedLoreCorpus(env.MIRROR_LORE_DIR);
+  const originalHome = process.env.HOME;
+  const originalCwd = process.cwd();
   let service: MirrorService | undefined;
   try {
+    process.env.HOME = homeRoot;
+    await runInstalledMirrorOnboard(runtimeRoot);
+
+    const settingsRoot = path.join(homeRoot, ".mirror", "config");
+    await fs.access(path.join(settingsRoot, "mirror.json"));
+    await fs.access(path.join(settingsRoot, "providers.json"));
+    await fs.access(path.join(settingsRoot, "connectors.json"));
+    await fs.access(path.join(settingsRoot, "credentials.json"));
+
+    await seedLoreCorpus(env.MIRROR_LORE_DIR);
+    process.chdir(path.dirname(env.MIRROR_LORE_DIR));
     const mirrorPackage = (await import(
       pathToFileURL(path.join(runtimeRoot, "dist", "mirror-package.js")).href
     )) as MirrorPackageModule;
@@ -206,10 +231,7 @@ async function verifyInstalledRuntime(
     service = await mirrorPackage.startMirrorService(
       {
         port: 0,
-        providerUrl: env.MIRROR_PROVIDER_URL,
-        providerAuthToken: env.MIRROR_PROVIDER_AUTH_TOKEN,
         loreDir: env.MIRROR_LORE_DIR,
-        nodeId: env.MIRROR_NODE_ID,
       },
       { fetchImpl },
     );
@@ -218,11 +240,13 @@ async function verifyInstalledRuntime(
       product?: string;
       service?: { node_id?: string };
     };
-    if (health.product !== "mirror" || health.service?.node_id !== env.MIRROR_NODE_ID) {
+    if (health.product !== "mirror" || !health.service?.node_id) {
       throw new Error("installed runtime health payload did not match bootstrap env");
     }
   } finally {
+    process.chdir(originalCwd);
     await service?.shutdown();
+    process.env.HOME = originalHome;
   }
 }
 
@@ -235,31 +259,34 @@ async function main(): Promise<void> {
     const homeRoot = path.join(tempRoot, "home");
     const runtimeRoot = path.join(tempRoot, "installed", "opt", "mirror-runtime");
     const configDir = path.join(homeRoot, ".config", "mirror-runtime");
-    const dataDir = path.join(homeRoot, ".local", "share", "mirror-runtime");
-    const stateDir = path.join(homeRoot, ".local", "state", "mirror-runtime");
+    const dataDir = path.join(homeRoot, ".mirror", "workspace");
+    const stateDir = path.join(homeRoot, ".mirror", "state");
     const unitDir = path.join(homeRoot, ".config", "systemd", "user");
     const installerPath = path.join(extractedRoot, "install-mirror-runtime.sh");
 
-    await execFileAsync(installerPath, [
-      "--runtime-root",
-      runtimeRoot,
-      "--config-dir",
-      configDir,
-      "--data-dir",
-      dataDir,
-      "--state-dir",
-      stateDir,
-      "--unit-dir",
-      unitDir,
-      "--provider-url",
-      "http://mirror-bootstrap.local/v1/chat/completions",
-      "--provider-token",
-      "bootstrap-token",
-      "--node-id",
-      "mirror-bootstrap-verify",
-      "--skip-systemctl",
-      "--force",
-    ]);
+    await execFileAsync(
+      installerPath,
+      [
+        "--runtime-root",
+        runtimeRoot,
+        "--config-dir",
+        configDir,
+        "--data-dir",
+        dataDir,
+        "--state-dir",
+        stateDir,
+        "--unit-dir",
+        unitDir,
+        "--skip-systemctl",
+        "--force",
+      ],
+      {
+        env: {
+          ...process.env,
+          HOME: homeRoot,
+        },
+      },
+    );
 
     const envFile = path.join(configDir, "mirror-runtime.env");
     const unitFile = path.join(unitDir, "mirror-runtime.service");
@@ -269,7 +296,7 @@ async function main(): Promise<void> {
     await fs.access(envFile);
     await fs.access(unitFile);
 
-    await verifyInstalledRuntime(runtimeRoot, envFile, unitFile);
+    await verifyInstalledRuntime(runtimeRoot, envFile, unitFile, homeRoot);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

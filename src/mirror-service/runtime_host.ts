@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
 import type { MirrorActionLifecycleEvent } from "../mirror-actions/index.js";
+import type {
+  MirrorAdapterRequestEnvelope,
+  MirrorAdapterResponseEnvelope,
+} from "../mirror-adapters/index.js";
 import { createMirrorGateway, type MirrorGateway } from "../mirror-gateway/index.js";
 import { runWithMirrorObservabilityContext } from "../mirror-observability/index.js";
 import {
@@ -17,13 +21,13 @@ import {
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
 import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
+import { loadMirrorSettingsSync } from "../mirror-settings/index.js";
 import {
   createMirrorSyncManager,
   type MirrorSyncAnnounceInput,
   type MirrorSyncManager,
   type MirrorSyncPullInput,
 } from "../mirror-sync/index.js";
-import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
 import type { MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
@@ -39,6 +43,10 @@ export type MirrorRuntimeHost = {
     request: MirrorChatRequest,
     deps: { provider: MirrorProviderConfig; fetchImpl?: FetchLike },
   ) => Promise<MirrorChatResponse>;
+  executeAdapterRequest: (
+    envelope: MirrorAdapterRequestEnvelope,
+    deps?: { fetchImpl?: FetchLike },
+  ) => Promise<MirrorAdapterResponseEnvelope>;
   executeTool: (
     toolName: string,
     input: Record<string, unknown>,
@@ -58,23 +66,28 @@ export type MirrorRuntimeHost = {
 };
 
 function buildRuntimeHostConfig(overrides: Partial<MirrorServiceConfig> = {}): MirrorServiceConfig {
+  const settings = loadMirrorSettingsSync({
+    overrides: {
+      runtime: {
+        port: overrides.port,
+        node_id: overrides.nodeId,
+        base_url: overrides.baseUrl,
+      },
+      provider: {
+        url: overrides.providerUrl,
+        token: overrides.providerAuthToken,
+      },
+      operator_token: overrides.operatorToken,
+    },
+  });
   return {
-    port: overrides.port ?? 0,
-    providerUrl: overrides.providerUrl ?? process.env.MIRROR_PROVIDER_URL ?? "",
-    providerAuthToken: overrides.providerAuthToken ?? process.env.MIRROR_PROVIDER_AUTH_TOKEN ?? "",
-    operatorToken:
-      overrides.operatorToken ??
-      (typeof process.env.MIRROR_OPERATOR_TOKEN === "string"
-        ? process.env.MIRROR_OPERATOR_TOKEN
-        : null),
-    loreDir: overrides.loreDir ?? resolveDefaultLoreRoot(process.env.MIRROR_LORE_DIR),
-    nodeId: overrides.nodeId ?? process.env.MIRROR_NODE_ID ?? "mirror-cli-local",
-    baseUrl:
-      overrides.baseUrl ??
-      (typeof process.env.MIRROR_BASE_URL === "string" &&
-      process.env.MIRROR_BASE_URL.trim().length > 0
-        ? process.env.MIRROR_BASE_URL.trim()
-        : null),
+    port: settings.runtime.port,
+    providerUrl: overrides.providerUrl ?? settings.provider.active?.url ?? "",
+    providerAuthToken: overrides.providerAuthToken ?? settings.provider.active?.auth_token ?? "",
+    operatorToken: overrides.operatorToken ?? settings.operator_token,
+    loreDir: overrides.loreDir ?? settings.workspace.lore_dir,
+    nodeId: overrides.nodeId ?? settings.runtime.node_id,
+    baseUrl: overrides.baseUrl ?? settings.runtime.base_url,
   };
 }
 
@@ -252,6 +265,15 @@ export async function createMirrorRuntimeHost(
             },
           });
         }
+      });
+    },
+    async executeAdapterRequest(envelope, runtimeDeps = {}) {
+      return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
+        return await gateway.executeAdapterRequest(envelope, {
+          providerPlane,
+          fetchImpl: runtimeDeps.fetchImpl ?? deps.fetchImpl,
+          onRuntimeEvent: daemon.publishRuntimeEvent,
+        });
       });
     },
     async executeTool(toolName, input, context = {}) {

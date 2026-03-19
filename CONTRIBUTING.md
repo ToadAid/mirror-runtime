@@ -1,12 +1,12 @@
-# Contributing to OpenClaw
+# Contributing to Mirror Runtime
 
-Welcome to the lobster tank! 🦞
+Welcome to the Mirror! 🪞
 
 ## Quick Links
 
-- **GitHub:** https://github.com/openclaw/openclaw
+- **GitHub:** https://github.com/toadaid/mirror-runtime
 - **Vision:** [`VISION.md`](VISION.md)
-- **Discord:** https://discord.gg/qkhbAGHRBT
+- **Discord:** https://discord.gg/mirror
 - **X/Twitter:** [@steipete](https://x.com/steipete) / [@openclaw](https://x.com/openclaw)
 
 ## Maintainers

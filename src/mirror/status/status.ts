@@ -1,5 +1,6 @@
 import type { MirrorMetricsSnapshot } from "../../mirror-observability/index.js";
 import type { MirrorRuntimeHost } from "../../mirror-service/index.js";
+import { getMirrorWorkspaceSummary } from "../../mirror-user-workspace/workspace_summary.js";
 import {
   getMirrordaemonHealthState,
   getMirrordaemonRuntimeState,
@@ -13,6 +14,7 @@ export type MirrorStatus = {
     lore_dir: string;
     provider_url: string;
     operator_auth_configured: boolean;
+    workspace_root: string;
     workspace_users_root: string;
   };
   provider: {
@@ -38,7 +40,9 @@ export type MirrorStatus = {
   };
   workspace: {
     ready: boolean;
+    root: string;
     users_root: string;
+    summary: Awaited<ReturnType<typeof getMirrorWorkspaceSummary>>;
   };
   sync: {
     node_id: string;
@@ -75,6 +79,7 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
     baseUrl,
     peersKnown,
   });
+  const workspaceSummary = await getMirrorWorkspaceSummary();
 
   return {
     ts: now.toISOString(),
@@ -84,6 +89,7 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
       lore_dir: boot.config.lore_dir,
       provider_url: boot.config.provider_url,
       operator_auth_configured: boot.config.operator_auth_configured,
+      workspace_root: boot.config.workspace_root,
       workspace_users_root: boot.config.workspace_users_root,
     },
     provider: {
@@ -109,7 +115,9 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
     },
     workspace: {
       ready: boot.readiness.workspace.ready,
+      root: boot.readiness.workspace.root,
       users_root: boot.readiness.workspace.users_root,
+      summary: workspaceSummary,
     },
     sync: {
       node_id: boot.readiness.sync.node_id,

@@ -13,6 +13,34 @@ export type MirrordaemonSurfaceName =
   | "runtime_api"
   | "runtime_ws";
 
+export type MirrordaemonConnectorRuntimeState =
+  | "disabled"
+  | "unconfigured"
+  | "token_missing"
+  | "token_invalid"
+  | "ready"
+  | "running"
+  | "error";
+
+export type MirrordaemonConnectorRuntimeStatus = {
+  state: MirrordaemonConnectorRuntimeState;
+  enabled: boolean;
+  configured: boolean;
+  running: boolean;
+  updated_at: string;
+  last_error: string | null;
+  last_error_at: string | null;
+  last_error_summary: string | null;
+  last_successful_poll_at: string | null;
+  updates_processed: number;
+  bot: {
+    id: number;
+    username: string | null;
+    display_name: string | null;
+  } | null;
+  detail: string | null;
+};
+
 export type MirrordaemonBootSnapshot = {
   runtime_started_at: string;
   config: {
@@ -25,6 +53,7 @@ export type MirrordaemonBootSnapshot = {
     active_provider_id: string | null;
     provider_count: number;
     operator_auth_configured: boolean;
+    workspace_root: string;
     workspace_users_root: string;
   };
   enabled_surfaces: MirrordaemonSurfaceName[];
@@ -35,6 +64,7 @@ export type MirrordaemonBootSnapshot = {
     };
     workspace: {
       ready: boolean;
+      root: string;
       users_root: string;
     };
     sync: {
@@ -115,6 +145,9 @@ export type MirrordaemonRuntimeSummary = {
     total: number;
     available: number;
   };
+  connectors: {
+    telegram: MirrordaemonConnectorRuntimeStatus;
+  };
   event_stream: {
     sse_available: boolean;
     ws_available: boolean;
@@ -148,6 +181,9 @@ export type MirrordaemonHealthSummary = MirrordaemonRuntimeSummary & {
   };
   sync: {
     peers_known: number;
+  };
+  connectors: {
+    telegram: MirrordaemonConnectorRuntimeStatus;
   };
   observability: {
     metrics_available: true;

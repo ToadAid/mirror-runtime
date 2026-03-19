@@ -1,16 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveMirrorMemoryDbPath as resolveDefaultMirrorMemoryDbPath } from "../mirror-local/paths.js";
 import { requireMirrorNodeSqlite } from "../mirror/shared/sqlite.js";
 import type { MirrorMemoryDb } from "./types.js";
-
-const DEFAULT_DB_PATH = "./data/mirror-memory.db";
 
 let dbInstance: MirrorMemoryDb | null = null;
 let dbPath: string | null = null;
 
 export function resolveMirrorMemoryDbPath(explicitPath?: string): string {
-  return path.resolve(explicitPath ?? process.env.MIRROR_MEMORY_DB_PATH ?? DEFAULT_DB_PATH);
+  return resolveDefaultMirrorMemoryDbPath(explicitPath);
 }
 
 function readSchema(): string {

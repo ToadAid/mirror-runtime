@@ -12,10 +12,14 @@ export type MirrorSymbolRegistryEntry = {
 function resolveSymbolRegistryPath(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
+    process.env.MIRROR_SYMBOL_REGISTRY_PATH
+      ? path.resolve(process.env.MIRROR_SYMBOL_REGISTRY_PATH)
+      : null,
     path.resolve(process.cwd(), "docs/lore/SYMBOL_REGISTRY.md"),
+    path.resolve(currentDir, "../share/lore/SYMBOL_REGISTRY.md"),
     path.resolve(currentDir, "../docs/lore/SYMBOL_REGISTRY.md"),
     path.resolve(currentDir, "../../../docs/lore/SYMBOL_REGISTRY.md"),
-  ];
+  ].filter((candidate): candidate is string => typeof candidate === "string");
 
   const resolved = candidates.find((candidate) => fsSync.existsSync(candidate));
   if (!resolved) {

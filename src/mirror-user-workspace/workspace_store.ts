@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveMirrorWorkspaceUsersRoot as resolveDefaultMirrorWorkspaceUsersRoot } from "../mirror-local/paths.js";
 import type {
   MirrorHeartbeatPreferences,
   MirrorMonkCoderContext,
@@ -19,18 +20,7 @@ function nowIso(): string {
 }
 
 export function resolveMirrorWorkspaceUsersRoot(rootOverride?: string): string {
-  if (rootOverride && rootOverride.trim().length > 0) {
-    return path.resolve(rootOverride);
-  }
-  const explicitUsersRoot = process.env.MIRROR_USER_WORKSPACE_DIR;
-  if (explicitUsersRoot && explicitUsersRoot.trim().length > 0) {
-    return path.resolve(explicitUsersRoot);
-  }
-  const homeRoot =
-    process.env.MIRROR_HOME_DIR && process.env.MIRROR_HOME_DIR.trim().length > 0
-      ? process.env.MIRROR_HOME_DIR
-      : path.resolve(process.cwd(), "mirror-home");
-  return path.resolve(homeRoot, "users");
+  return resolveDefaultMirrorWorkspaceUsersRoot(rootOverride);
 }
 
 export function sanitizeMirrorWorkspaceUserId(userId: string): string {

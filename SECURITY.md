@@ -1,15 +1,15 @@
 # Security Policy
 
-If you believe you've found a security issue in OpenClaw, please report it privately.
+If you believe you've found a security issue in Mirror Runtime, please report it privately.
 
 ## Reporting
 
 Report vulnerabilities directly to the repository where the issue lives:
 
-- **Core CLI and gateway** — [openclaw/openclaw](https://github.com/openclaw/openclaw)
-- **macOS desktop app** — [openclaw/openclaw](https://github.com/openclaw/openclaw) (apps/macos)
-- **iOS app** — [openclaw/openclaw](https://github.com/openclaw/openclaw) (apps/ios)
-- **Android app** — [openclaw/openclaw](https://github.com/openclaw/openclaw) (apps/android)
+- **Core CLI and gateway** — [toadaid/mirror-runtime](https://github.com/toadaid/mirror-runtime)
+- **macOS desktop app** — [toadaid/mirror-runtime](https://github.com/toadaid/mirror-runtime) (apps/macos)
+- **iOS app** — [toadaid/mirror-runtime](https://github.com/toadaid/mirror-runtime) (apps/ios)
+- **Android app** — [toadaid/mirror-runtime](https://github.com/toadaid/mirror-runtime) (apps/android)
 - **ClawHub** — [openclaw/clawhub](https://github.com/openclaw/clawhub)
 - **Trust and threat model** — [openclaw/trust](https://github.com/openclaw/trust)
 

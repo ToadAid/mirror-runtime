@@ -1,7 +1,7 @@
+import { resolveMirrorWorkspaceLayout } from "../mirror-local/paths.js";
 import type { MirrorProviderPlane } from "../mirror-provider/index.js";
 import type { MirrorServiceConfig } from "../mirror-service/config.js";
 import type { MirrorServiceLifecycle } from "../mirror-service/lifecycle.js";
-import { resolveMirrorWorkspaceUsersRoot } from "../mirror-user-workspace/index.js";
 import type { MirrordaemonBootSnapshot, MirrordaemonSurfaceName } from "./daemon_types.js";
 
 export function createBootSnapshot(params: {
@@ -13,7 +13,8 @@ export function createBootSnapshot(params: {
   daemonSessionId: string;
 }): MirrordaemonBootSnapshot {
   const runtimeStartedAt = params.runtimeStartedAt ?? new Date().toISOString();
-  const workspaceUsersRoot = resolveMirrorWorkspaceUsersRoot();
+  const workspace = resolveMirrorWorkspaceLayout();
+  const workspaceUsersRoot = workspace.users_root;
   const providerStatuses = params.providerPlane?.listProviders() ?? [
     {
       provider_id: "primary",
@@ -60,6 +61,7 @@ export function createBootSnapshot(params: {
       provider_count: providerStatuses.length,
       operator_auth_configured: Boolean(params.config.operatorToken),
       workspace_users_root: workspaceUsersRoot,
+      workspace_root: workspace.workspace_root,
     },
     enabled_surfaces: surfaces,
     readiness: {
@@ -69,6 +71,7 @@ export function createBootSnapshot(params: {
       },
       workspace: {
         ready: true,
+        root: workspace.workspace_root,
         users_root: workspaceUsersRoot,
       },
       sync: {

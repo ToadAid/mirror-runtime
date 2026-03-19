@@ -4,6 +4,7 @@ import { VERSION } from "../version.js";
 import type {
   MirrordaemonActionsSummary,
   MirrordaemonActionStatus,
+  MirrordaemonConnectorRuntimeStatus,
   MirrordaemonDebugSnapshot,
   MirrordaemonHealthSummary,
   MirrordaemonProvidersSummary,
@@ -19,7 +20,27 @@ type RuntimeStateOverrides = {
   wsConnections?: number;
   sseAvailable?: boolean;
   wsAvailable?: boolean;
+  connectorRuntime?: {
+    telegram?: MirrordaemonConnectorRuntimeStatus;
+  };
 };
+
+function buildDefaultConnectorRuntimeStatus(): MirrordaemonConnectorRuntimeStatus {
+  return {
+    state: "disabled",
+    enabled: false,
+    configured: false,
+    running: false,
+    updated_at: new Date().toISOString(),
+    last_error: null,
+    last_error_at: null,
+    last_error_summary: null,
+    last_successful_poll_at: null,
+    updates_processed: 0,
+    bot: null,
+    detail: null,
+  };
+}
 
 function buildCorrelationCapabilities() {
   return {
@@ -140,6 +161,9 @@ export function buildRuntimeSummary(
       total: boot.readiness.provider.total,
       available: boot.readiness.provider.available,
     },
+    connectors: {
+      telegram: overrides.connectorRuntime?.telegram ?? buildDefaultConnectorRuntimeStatus(),
+    },
     event_stream: {
       sse_available: overrides.sseAvailable ?? true,
       ws_available: overrides.wsAvailable ?? true,
@@ -178,6 +202,9 @@ export function buildHealthSummary(
     },
     sync: {
       peers_known: overrides.peersKnown ?? metrics.gauges.peers_known ?? 0,
+    },
+    connectors: {
+      telegram: overrides.connectorRuntime?.telegram ?? buildDefaultConnectorRuntimeStatus(),
     },
     observability: {
       metrics_available: true,

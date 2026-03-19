@@ -18,6 +18,8 @@ export type {
   MirrordaemonActionsSummary,
   MirrordaemonActionStatus,
   MirrordaemonBootSnapshot,
+  MirrordaemonConnectorRuntimeState,
+  MirrordaemonConnectorRuntimeStatus,
   MirrordaemonDebugSnapshot,
   MirrordaemonEventStream,
   MirrordaemonEventSubscription,

@@ -1,8 +1,12 @@
 # Mirror Runtime Standalone Boundary
 
 This package boundary prepares Mirror Runtime to ship as a standalone Linux-first
-runtime without carrying the full repository layout, and now includes a narrow
-bootstrap path for installing and wiring the packaged runtime on a clean host.
+runtime without carrying the full repository layout. It now includes a narrow
+bootstrap path plus local-first operator surfaces:
+
+- `mirror onboard`
+- `mirror tui`
+- `mirror web`
 
 ## Goals
 
@@ -59,6 +63,8 @@ dist/mirror-runtime-linux/
           mirror-runtime.env.example
         docs/
           STANDALONE_BOUNDARY.md
+        lore/
+          SYMBOL_REGISTRY.md
     usr/
       lib/systemd/user/
         mirror-runtime.service
@@ -72,14 +78,15 @@ This shape is installer-friendly because:
 
 ## Directory Conventions
 
-Use XDG-style user directories:
+Use a visible local workspace rooted at `~/.mirror/workspace`:
 
-- config: `~/.config/mirror-runtime/`
 - env file: `~/.config/mirror-runtime/mirror-runtime.env`
-- data: `~/.local/share/mirror-runtime/`
-- lore corpus: `~/.local/share/mirror-runtime/lore-scrolls/`
-- state: `~/.local/state/mirror-runtime/`
-- memory db: `~/.local/state/mirror-runtime/mirror-memory.db`
+- workspace root: `~/.mirror/workspace/`
+- users: `~/.mirror/workspace/users/`
+- lore corpus: `~/.mirror/workspace/lore/`
+- state: `~/.mirror/state/`
+- memory db: `~/.mirror/state/mirror-memory.db`
+- logs: `~/.mirror/logs/`
 - logs: journald via `systemd --user` by default
 
 The runtime still honors explicit env overrides such as `MIRROR_LORE_DIR` and
@@ -113,25 +120,31 @@ Default install targets:
 
 - runtime root: `/opt/mirror-runtime`
 - config dir: `~/.config/mirror-runtime`
-- data dir: `~/.local/share/mirror-runtime`
-- state dir: `~/.local/state/mirror-runtime`
+- workspace dir: `~/.mirror/workspace`
+- state dir: `~/.mirror/state`
+- logs dir: `~/.mirror/logs`
+- structured settings dir: `~/.mirror/config`
 - user unit dir: `~/.config/systemd/user`
 
 The bootstrap installer:
 
 - copies the packaged runtime into the chosen runtime root
-- creates the XDG config/data/state directories
+- creates the visible workspace + state/log directories
 - creates `~/.config/mirror-runtime/mirror-runtime.env` if missing
 - renders `mirror-runtime.service` into the user unit dir
 - optionally runs `systemctl --user daemon-reload`, `enable`, and `start`
+
+The bootstrap env file is now only for bootstrap/runtime overrides such as
+workspace/state/log paths, memory DB location, and optional port overrides.
+User-facing runtime, provider, and connector settings live under
+`~/.mirror/config/`.
 
 Useful installer options:
 
 ```bash
 ./install-mirror-runtime.sh \
   --runtime-root /opt/mirror-runtime \
-  --provider-url https://provider.example/v1/chat/completions \
-  --provider-token replace-me \
+  --port 7777 \
   --enable \
   --start
 ```
@@ -155,9 +168,27 @@ systemctl --user status mirror-runtime.service
 journalctl --user -u mirror-runtime -f
 ```
 
-The generated env file includes safe defaults for paths, port, and node id. You
-must still provide real provider settings before starting the runtime against a
-real model backend.
+The generated env file includes safe defaults for paths and optional override
+placeholders. Run `mirror onboard` after install so Mirror writes
+`~/.mirror/config/mirror.json`, `providers.json`, `connectors.json`, and
+`credentials.json` before you start the runtime against a real model backend.
+
+## Local Operator Surfaces
+
+After install or bootstrap:
+
+```bash
+mirror onboard
+mirror tui
+mirror web
+```
+
+- `mirror onboard` writes the local env, initializes `~/.mirror/workspace`, and
+  writes the structured config under `~/.mirror/config/` plus bootstrap env
+  overrides under `~/.config/mirror-runtime/mirror-runtime.env`.
+- `mirror tui` opens a local terminal UI against the running Mirror runtime.
+- `mirror web` opens or prints the local browser route:
+  `http://127.0.0.1:<port>/mirror/ui/app`
 
 ## Post-build Verification
 

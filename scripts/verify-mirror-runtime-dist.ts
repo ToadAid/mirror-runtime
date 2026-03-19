@@ -146,9 +146,11 @@ async function smokePackagedRuntime(packageRoot: string): Promise<void> {
   const loreDir = path.join(tempRoot, "lore-scrolls");
   const memoryDbPath = path.join(tempRoot, "mirror-memory.sqlite");
   let service: MirrorService | undefined;
+  const originalCwd = process.cwd();
 
   try {
     await seedLoreCorpus(loreDir);
+    process.chdir(tempRoot);
     process.env.MIRROR_LORE_DIR = loreDir;
     process.env.MIRROR_MEMORY_DB_PATH = memoryDbPath;
 
@@ -192,6 +194,7 @@ async function smokePackagedRuntime(packageRoot: string): Promise<void> {
       throw new Error("Packaged runtime health route did not return mirror identity");
     }
   } finally {
+    process.chdir(originalCwd);
     await service?.shutdown();
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
@@ -257,6 +260,7 @@ async function main(): Promise<void> {
       extracted.packageRoot,
       path.join("share", "docs", "STANDALONE_BOUNDARY.md"),
     );
+    await assertPathExists(extracted.packageRoot, path.join("share", "lore", "SYMBOL_REGISTRY.md"));
     await fs.access(
       path.join(
         extractionRootFromPackageRoot(extracted.packageRoot),

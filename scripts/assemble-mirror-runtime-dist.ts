@@ -115,13 +115,15 @@ async function writeManifest(pkg: RootPackageJson): Promise<void> {
       "rootfs/opt/mirror-runtime/dist/schema.sql",
       "rootfs/opt/mirror-runtime/node_modules",
       "rootfs/opt/mirror-runtime/package.json",
+      "rootfs/opt/mirror-runtime/share/lore/SYMBOL_REGISTRY.md",
     ],
     conventions: {
       config_dir: "~/.config/mirror-runtime",
-      data_dir: "~/.local/share/mirror-runtime",
-      lore_dir: "~/.local/share/mirror-runtime/lore-scrolls",
-      state_dir: "~/.local/state/mirror-runtime",
-      memory_db_path: "~/.local/state/mirror-runtime/mirror-memory.db",
+      workspace_dir: "~/.mirror/workspace",
+      lore_dir: "~/.mirror/workspace/lore",
+      state_dir: "~/.mirror/state",
+      memory_db_path: "~/.mirror/state/mirror-memory.db",
+      logs_dir: "~/.mirror/logs",
       logs: "journald via systemd user service",
     },
     verification_commands: [
@@ -170,6 +172,10 @@ async function main(): Promise<void> {
   await copyFileToRuntime(
     path.relative(root, path.join(packageAssetsRoot, "README.md")),
     path.join("share", "docs", "STANDALONE_BOUNDARY.md"),
+  );
+  await copyFileToRuntime(
+    "docs/lore/SYMBOL_REGISTRY.md",
+    path.join("share", "lore", "SYMBOL_REGISTRY.md"),
   );
 
   await fs.copyFile(
