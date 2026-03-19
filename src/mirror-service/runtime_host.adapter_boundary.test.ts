@@ -6,6 +6,7 @@ import {
   MIRROR_ADAPTER_PROTOCOL,
   type MirrorAdapterToolRequestEnvelope,
 } from "../mirror-adapters/index.js";
+import type { FetchLike } from "../mirror-provider/index.js";
 import { createMirrorRuntimeHost } from "./index.js";
 
 const tempDirs: string[] = [];
@@ -103,6 +104,14 @@ function createAdapterEnvelope(): MirrorAdapterToolRequestEnvelope {
   };
 }
 
+function parseRequestBodyJson<T>(init?: RequestInit): T {
+  const body = init?.body;
+  if (typeof body !== "string") {
+    throw new Error("Expected JSON string request body");
+  }
+  return JSON.parse(body) as T;
+}
+
 describe("mirror runtime host adapter boundary", () => {
   it("routes adapter requests through the canonical gateway boundary", async () => {
     await createTempHome();
@@ -122,6 +131,116 @@ describe("mirror runtime host adapter boundary", () => {
       expect(response.response.result).toMatchObject({
         candidates: [{ path: "TOBY_L1219_Rune3_PatienceVaultCancelled.md" }],
       });
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
+  it("routes the public chat helper through the canonical adapter path", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const fetchImpl: FetchLike = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = parseRequestBodyJson<{
+        model: string;
+        messages: Array<{ role: string; content: string }>;
+      }>(init);
+
+      expect(body.model).toBe("test-model");
+      expect(body.messages.at(-1)?.content).toBe("hello");
+
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_runtime_host_chat",
+          object: "chat.completion",
+          created: 1,
+          model: "test-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "acknowledged" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    };
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir }, { fetchImpl });
+    try {
+      const response = await runtimeHost.executeChatWithProvider(
+        {
+          model: "test-model",
+          session: { user_id: "traveler-1" },
+          messages: [{ role: "user", content: "hello" }],
+        },
+        {
+          provider: {
+            url: "http://brain.local/v1/chat/completions",
+            authToken: "token",
+          },
+          fetchImpl,
+        },
+      );
+
+      expect(response.model).toBe("test-model");
+      expect(response.choices[0]?.message.content).toBe("acknowledged");
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
+  it("preserves canon retrieval when the public chat helper uses the adapter path", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const fetchImpl: FetchLike = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = parseRequestBodyJson<{
+        messages: Array<{ role: string; content: string }>;
+      }>(init);
+
+      expect(body.messages[0]?.content).toContain("Mirror canon context:");
+
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_runtime_host_chat_canon",
+          object: "chat.completion",
+          created: 1,
+          model: "test-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Cancelled." },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    };
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir }, { fetchImpl });
+    try {
+      const response = await runtimeHost.executeChatWithProvider(
+        {
+          model: "test-model",
+          session: { user_id: "traveler-1" },
+          messages: [{ role: "user", content: "patience vault" }],
+        },
+        {
+          provider: {
+            url: "http://brain.local/v1/chat/completions",
+            authToken: "token",
+          },
+          fetchImpl,
+        },
+      );
+
+      expect(response.choices[0]?.message.content).toBe("Cancelled.");
     } finally {
       await runtimeHost.shutdown();
     }

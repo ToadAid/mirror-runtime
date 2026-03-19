@@ -1,17 +1,14 @@
 import crypto from "node:crypto";
 import type { MirrorActionLifecycleEvent } from "../mirror-actions/index.js";
 import type {
+  MirrorAdapterChatResponseEnvelope,
   MirrorAdapterRequestEnvelope,
   MirrorAdapterResponseEnvelope,
 } from "../mirror-adapters/index.js";
+import { buildCliChatAdapterEnvelope } from "../mirror-adapters/index.js";
 import { createMirrorGateway, type MirrorGateway } from "../mirror-gateway/index.js";
 import { runWithMirrorObservabilityContext } from "../mirror-observability/index.js";
-import {
-  buildMirrorActionPolicyTarget,
-  buildMirrorChatPolicyTarget,
-  buildMirrorProviderPolicyTarget,
-  type MirrorPolicyContext,
-} from "../mirror-policy/index.js";
+import { buildMirrorActionPolicyTarget, type MirrorPolicyContext } from "../mirror-policy/index.js";
 import {
   buildPrimaryProviderDescriptorFromConfig,
   createMirrorProviderPlane,
@@ -122,9 +119,6 @@ export async function createMirrorRuntimeHost(
     providerPlane,
   });
   const gateway = createMirrorGateway("/mirror", { providerPlane });
-  const defaultProviderConfigured = providerPlane
-    .listProviders()
-    .some((provider) => provider.configured);
   const syncManager = createMirrorSyncManager({
     nodeId: config.nodeId,
     loreDir: config.loreDir,
@@ -142,124 +136,41 @@ export async function createMirrorRuntimeHost(
     syncManager,
     async executeChatWithProvider(request, runtimeDeps) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        const userId = request.user_id ?? request.session?.user_id;
-        const sessionId = trackCliSession(daemon, {
-          user_id: userId,
-          metadata: {
-            command: "chat",
-            provider_url: runtimeDeps.provider.url,
-          },
-        });
-        const policyContext: MirrorPolicyContext = {
-          surface: "cli",
+        const envelope = buildCliChatAdapterEnvelope({
+          model: request.model,
+          messages: request.messages,
+          userId: request.user_id ?? request.session?.user_id,
           command: "chat",
-          actor: {
-            user_id: userId,
-          },
-          session: {
-            session_id: sessionId,
-          },
-          metadata: {
-            trace_id: resolveMirrorTraceId(undefined),
-            provider_url: runtimeDeps.provider.url,
-          },
-        };
-        const correlation = {
-          trace_id: String(policyContext.metadata?.trace_id),
-          session_id: sessionId,
-        };
-        try {
-          const ingressPolicy = await gateway.policy.evaluate({
-            phase: "ingress",
-            target: buildMirrorChatPolicyTarget(request),
-            context: policyContext,
-          });
-          if (!ingressPolicy.allowed) {
-            daemon.publishRuntimeEvent(
-              "policy.denied",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  phase: "ingress",
-                  target: "chat",
-                  code: ingressPolicy.decision.code,
-                },
-                correlation,
-              ),
-            );
-            throw new Error(ingressPolicy.decision.reason);
-          }
-          const providerPolicy = await gateway.policy.evaluate({
-            phase: "provider",
-            target: buildMirrorProviderPolicyTarget(request, {
-              url: providerPlane.getActiveProvider()?.url ?? runtimeDeps.provider.url,
-            }),
-            context: policyContext,
-          });
-          if (!providerPolicy.allowed) {
-            daemon.publishRuntimeEvent(
-              "policy.denied",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  phase: "provider",
-                  target: "provider",
-                  code: providerPolicy.decision.code,
-                },
-                correlation,
-              ),
-            );
-            throw new Error(providerPolicy.decision.reason);
-          }
-          daemon.publishRuntimeEvent(
-            "chat.started",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                model: request.model,
+          action: request.session?.metadata?.action as string | undefined,
+          temperature: request.temperature,
+          maxTokens: request.max_tokens,
+          stream: request.stream,
+          preferredProvider: request.provider?.provider_id,
+        });
+        const response = await this.executeAdapterRequest(
+          {
+            ...envelope,
+            // Runtime-host helper calls are programmatic, not local CLI ingress.
+            context: {
+              ...envelope.context,
+              adapter: {
+                ...envelope.context.adapter,
+                adapter_id: "mirror-runtime-host",
+                surface: "custom",
+                transport: "programmatic",
               },
-              correlation,
-            ),
-          );
-          return await gateway.executeChatWithProvider(request, {
-            ...runtimeDeps,
-            providerPlane: defaultProviderConfigured ? providerPlane : undefined,
-            onRuntimeEvent: (type, payload) => {
-              daemon.publishRuntimeEvent(type, withMirrorCorrelation(payload ?? {}, correlation));
             },
-          });
-        } catch (error) {
-          daemon.publishRuntimeEvent(
-            "chat.failed",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                model: request.model,
-                error: String(error),
-              },
-              correlation,
-            ),
-          );
-          throw error;
-        } finally {
-          daemon.publishRuntimeEvent(
-            "chat.finished",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                model: request.model,
-              },
-              correlation,
-            ),
-          );
-          daemon.touchSession(sessionId, {
-            user_id: userId,
-            metadata: {
-              command: "chat",
-              provider_url: runtimeDeps.provider.url,
+            request: {
+              ...envelope.request,
+              messages: request.messages.map((message) => ({ ...message })),
             },
-          });
+          },
+          runtimeDeps,
+        );
+        if (response.kind !== "chat.response") {
+          throw new Error(`Unexpected Mirror adapter response kind: ${response.kind}`);
         }
+        return (response as MirrorAdapterChatResponseEnvelope).response;
       });
     },
     async executeAdapterRequest(envelope, runtimeDeps = {}) {
