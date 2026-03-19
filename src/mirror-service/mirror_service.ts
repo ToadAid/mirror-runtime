@@ -2,10 +2,6 @@ import crypto from "node:crypto";
 import http from "node:http";
 import express from "express";
 import {
-  createMirrorActionRuntime,
-  createMirrorActionsFromTools,
-} from "../mirror-actions/index.js";
-import {
   createMirrorConsoleHandlers,
   createMirrorConsoleRouterAtBase,
   type MirrorConsoleHandlers,
@@ -21,28 +17,17 @@ import {
   createMirrorObservabilityRouter,
   runWithMirrorObservabilityContext,
 } from "../mirror-observability/index.js";
-import {
-  buildMirrorActionPolicyTarget,
-  createMirrorPolicyEngine,
-  type MirrorPolicyContext,
-} from "../mirror-policy/index.js";
-import {
-  buildPrimaryProviderDescriptorFromConfig,
-  createMirrorProviderPlane,
-  type MirrorProviderPlane,
-} from "../mirror-provider/index.js";
+import { buildMirrorActionPolicyTarget, type MirrorPolicyContext } from "../mirror-policy/index.js";
+import { type MirrorProviderPlane } from "../mirror-provider/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
 import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncHandlers,
-  createMirrorSyncManager,
   createMirrorSyncRouter,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
 import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
-import { createMirrorToolRegistry, getMirrorNativeSkillTools } from "../mirror/skills/index.js";
 import {
-  createMirrordaemon,
   getMirrordaemonActionsState,
   getMirrordaemonDebugState,
   getMirrordaemonHealthState,
@@ -50,12 +35,13 @@ import {
   getMirrordaemonRuntimeState,
   type Mirrordaemon,
 } from "../mirrordaemon/index.js";
-import { loadMirrorServiceConfig, type MirrorServiceConfig } from "./config.js";
-import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
+import { type MirrorServiceConfig } from "./config.js";
+import { type MirrorServiceLifecycle } from "./lifecycle.js";
 import {
   createMirrorRuntimeWebSocketServer,
   type MirrorRuntimeWebSocketServer,
 } from "./runtime_events_ws.js";
+import { createMirrorRuntimeHost, type MirrorRuntimeHost } from "./runtime_host.js";
 
 export type MirrorService = {
   app: express.Application;
@@ -67,6 +53,7 @@ export type MirrorService = {
   providerPlane: MirrorProviderPlane;
   runtimeWebSocket: MirrorRuntimeWebSocketServer;
   daemon: Mirrordaemon;
+  runtimeHost: MirrorRuntimeHost;
   config: MirrorServiceConfig;
   lifecycle: MirrorServiceLifecycle;
   port: number;
@@ -114,38 +101,19 @@ export async function startMirrorService(
   overrides: Partial<MirrorServiceConfig> = {},
   deps: { fetchImpl?: FetchLike } = {},
 ): Promise<MirrorService> {
-  const config = loadMirrorServiceConfig(overrides);
-  const lifecycle = await initializeMirrorServiceLifecycle(config);
-  const providerPlane = createMirrorProviderPlane([
-    {
-      ...buildPrimaryProviderDescriptorFromConfig(config),
-    },
-  ]);
-  const daemon = createMirrordaemon({
-    config,
-    lifecycle,
-    providerPlane,
-  });
+  const runtimeHost = await createMirrorRuntimeHost(overrides, deps);
+  const { config, lifecycle, daemon, providerPlane, syncManager, gateway } = runtimeHost;
   const observability = daemon.getObservability();
-  const policy = createMirrorPolicyEngine();
-  const registry = createMirrorToolRegistry(getMirrorNativeSkillTools());
-  const actionRuntime = createMirrorActionRuntime(
-    createMirrorActionsFromTools(registry.listTools()),
-  );
+  const policy = gateway.policy;
+  const actionRuntime = gateway.actionRuntime;
 
-  const handlers = createMirrorGatewayHandlers(registry, {
+  const handlers = createMirrorGatewayHandlers(gateway.registry, {
     providerPlane,
     actionRuntime,
     fetchImpl: deps.fetchImpl,
     policy,
     onRuntimeEvent: daemon.publishRuntimeEvent,
-  });
-  const syncManager = createMirrorSyncManager({
-    nodeId: config.nodeId,
-    loreDir: config.loreDir,
-    baseUrl: config.baseUrl,
-    fetchImpl: deps.fetchImpl,
-    onRuntimeEvent: daemon.publishRuntimeEvent,
+    executeAdapterRequest: async (envelope) => await runtimeHost.executeAdapterRequest(envelope),
   });
   const rawSyncHandlers = createMirrorSyncHandlers(syncManager);
   async function evaluateSyncPolicy(
@@ -416,13 +384,14 @@ export async function startMirrorService(
     providerPlane,
     runtimeWebSocket,
     daemon,
+    runtimeHost,
     config: { ...config, port },
     lifecycle,
     port,
     async shutdown() {
       await runtimeWebSocket.close();
       if (!server.listening) {
-        await lifecycle.shutdown();
+        await runtimeHost.shutdown();
         return;
       }
       await new Promise<void>((resolve, reject) => {
@@ -434,7 +403,7 @@ export async function startMirrorService(
           resolve();
         });
       });
-      await lifecycle.shutdown();
+      await runtimeHost.shutdown();
     },
   };
 }

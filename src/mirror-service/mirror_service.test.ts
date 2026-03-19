@@ -533,13 +533,18 @@ describe("mirror service", () => {
     );
 
     try {
+      const executeAdapterRequestSpy = vi.spyOn(service.runtimeHost, "executeAdapterRequest");
+      const executeChatWithProviderSpy = vi.spyOn(service.runtimeHost, "executeChatWithProvider");
       const res = createMockResponse();
       await service.handlers.executeChat(
         {
+          method: "POST",
+          path: "/mirror/chat",
           body: {
             model: "mirror-default",
             messages: [{ role: "user", content: "What happened to the patience vault?" }],
           },
+          header: () => undefined,
         } as never,
         res as never,
       );
@@ -550,6 +555,153 @@ describe("mirror service", () => {
       expect(service.app).toBeDefined();
       expect(service.handlers).toBeDefined();
       expect(body.response.choices[0]?.message.content).toBe("Cancelled.");
+      expect(executeAdapterRequestSpy).toHaveBeenCalledTimes(1);
+      expect(executeAdapterRequestSpy.mock.calls[0]?.[0]).toMatchObject({
+        kind: "chat.request",
+        context: {
+          adapter: {
+            adapter_id: "mirror-service-http",
+            transport: "http",
+          },
+        },
+      });
+      expect(executeChatWithProviderSpy).not.toHaveBeenCalled();
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("preserves service and console response shapes through adapter-backed routing", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService(
+      {
+        port: 0,
+        loreDir,
+        providerUrl: "http://brain.local/v1/chat/completions",
+        providerAuthToken: "token",
+      },
+      {
+        fetchImpl: vi.fn(async () => {
+          return {
+            ok: true,
+            json: async () => ({
+              id: "resp_service_shapes",
+              object: "chat.completion",
+              created: 1,
+              model: "mirror-default",
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: "Cancelled." },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+          } as Response;
+        }),
+      },
+    );
+
+    try {
+      const serviceChat = (await requestJsonFromApp(service.app, "POST", "/mirror/chat", {
+        body: {
+          session_id: "shape-chat-session",
+          user_id: "alice",
+          model: "mirror-default",
+          messages: [{ role: "user", content: "What happened to the patience vault?" }],
+        },
+      })) as { response: { choices: Array<{ message: { content: string } }> } };
+      expect(serviceChat.response.choices[0]?.message.content).toBe("Cancelled.");
+
+      const serviceTool = (await requestJsonFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.find-scroll",
+        {
+          body: {
+            session_id: "shape-tool-session",
+            user_id: "alice",
+            query: "patience vault",
+          },
+        },
+      )) as { tool: string; result: { candidates: Array<{ path: string }> } };
+      expect(serviceTool.tool).toBe("mirror.find-scroll");
+      expect(serviceTool.result.candidates[0]?.path).toBe(
+        "TOBY_L1219_Rune3_PatienceVaultCancelled.md",
+      );
+
+      const consoleChat = (await requestJsonFromApp(
+        service.app,
+        "POST",
+        "/mirror/console/api/chat",
+        {
+          body: {
+            session_id: "shape-console-chat-session",
+            user_id: "alice",
+            model: "mirror-default",
+            messages: [{ role: "user", content: "What happened to the patience vault?" }],
+          },
+        },
+      )) as { response: { choices: Array<{ message: { content: string } }> } };
+      expect(consoleChat.response.choices[0]?.message.content).toBe("Cancelled.");
+
+      const consoleTool = (await requestJsonFromApp(
+        service.app,
+        "POST",
+        "/mirror/console/api/tools/mirror.find-scroll",
+        {
+          body: {
+            session_id: "shape-console-tool-session",
+            user_id: "alice",
+            query: "patience vault",
+          },
+        },
+      )) as { tool: string; result: { candidates: Array<{ path: string }> } };
+      expect(consoleTool.tool).toBe("mirror.find-scroll");
+      expect(consoleTool.result.candidates[0]?.path).toBe(
+        "TOBY_L1219_Rune3_PatienceVaultCancelled.md",
+      );
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("preserves mutable auth rejection through adapter-backed service routing", async () => {
+    const loreDir = await createTempLoreDir();
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+    const usersRoot = path.join(await createTempLoreDir(), "users");
+    process.env.MIRROR_USER_WORKSPACE_DIR = usersRoot;
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const response = (await requestResponseFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.task.create",
+        {
+          body: {
+            session_id: "mutable-tool-session",
+            user_id: "alice",
+            title: "Daily planning",
+          },
+        },
+      )) as { statusCode: number; body: unknown };
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body).toEqual({
+        error: "Mirror operator authorization required",
+        code: "mutable_surface_auth_required",
+      });
     } finally {
       await service.shutdown();
     }

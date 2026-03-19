@@ -30,3 +30,9 @@ export {
   toMirrorChatRequestFromAdapter,
   toMirrorToolExecutionFromAdapter,
 } from "./adapter_bridge.js";
+export {
+  buildCliChatAdapterEnvelope,
+  buildCliToolAdapterEnvelope,
+  buildHttpChatAdapterEnvelope,
+  buildHttpToolAdapterEnvelope,
+} from "./ingress_envelopes.js";
