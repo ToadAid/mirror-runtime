@@ -302,7 +302,6 @@ describe("compat runtime server", () => {
       await runtimeHost.shutdown();
     }
   });
-
   it("routes /mirror/chat through runtimeHost.executeAdapterRequest and preserves response shape", async () => {
     process.env.MIRROR_ENABLE_RUNTIME = "true";
     const loreDir = await createTempLoreDir();
