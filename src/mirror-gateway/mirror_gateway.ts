@@ -140,9 +140,15 @@ function buildAdapterPolicyContext(envelope: MirrorAdapterRequestEnvelope): Mirr
   const actor = envelope.context.actor;
   const session = envelope.context.session;
   const runtime = envelope.context.runtime;
+  const adapterSurface =
+    envelope.context.adapter.surface === "cli" ||
+    envelope.context.adapter.surface === "service" ||
+    envelope.context.adapter.surface === "console"
+      ? envelope.context.adapter.surface
+      : "adapter";
 
   return {
-    surface: "adapter",
+    surface: adapterSurface,
     request_token: readAdapterRequestToken(envelope),
     actor: actor
       ? {

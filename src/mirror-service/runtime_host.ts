@@ -21,13 +21,13 @@ import {
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
 import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
-import { loadMirrorSettingsSync } from "../mirror-settings/index.js";
 import {
   createMirrorSyncManager,
   type MirrorSyncAnnounceInput,
   type MirrorSyncManager,
   type MirrorSyncPullInput,
 } from "../mirror-sync/index.js";
+import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
 import type { MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
@@ -45,7 +45,7 @@ export type MirrorRuntimeHost = {
   ) => Promise<MirrorChatResponse>;
   executeAdapterRequest: (
     envelope: MirrorAdapterRequestEnvelope,
-    deps?: { fetchImpl?: FetchLike },
+    deps?: { fetchImpl?: FetchLike; provider?: MirrorProviderConfig },
   ) => Promise<MirrorAdapterResponseEnvelope>;
   executeTool: (
     toolName: string,
@@ -66,28 +66,23 @@ export type MirrorRuntimeHost = {
 };
 
 function buildRuntimeHostConfig(overrides: Partial<MirrorServiceConfig> = {}): MirrorServiceConfig {
-  const settings = loadMirrorSettingsSync({
-    overrides: {
-      runtime: {
-        port: overrides.port,
-        node_id: overrides.nodeId,
-        base_url: overrides.baseUrl,
-      },
-      provider: {
-        url: overrides.providerUrl,
-        token: overrides.providerAuthToken,
-      },
-      operator_token: overrides.operatorToken,
-    },
-  });
   return {
-    port: settings.runtime.port,
-    providerUrl: overrides.providerUrl ?? settings.provider.active?.url ?? "",
-    providerAuthToken: overrides.providerAuthToken ?? settings.provider.active?.auth_token ?? "",
-    operatorToken: overrides.operatorToken ?? settings.operator_token,
-    loreDir: overrides.loreDir ?? settings.workspace.lore_dir,
-    nodeId: overrides.nodeId ?? settings.runtime.node_id,
-    baseUrl: overrides.baseUrl ?? settings.runtime.base_url,
+    port: overrides.port ?? 0,
+    providerUrl: overrides.providerUrl ?? process.env.MIRROR_PROVIDER_URL ?? "",
+    providerAuthToken: overrides.providerAuthToken ?? process.env.MIRROR_PROVIDER_AUTH_TOKEN ?? "",
+    operatorToken:
+      overrides.operatorToken ??
+      (typeof process.env.MIRROR_OPERATOR_TOKEN === "string"
+        ? process.env.MIRROR_OPERATOR_TOKEN
+        : null),
+    loreDir: overrides.loreDir ?? resolveDefaultLoreRoot(process.env.MIRROR_LORE_DIR),
+    nodeId: overrides.nodeId ?? process.env.MIRROR_NODE_ID ?? "mirror-cli-local",
+    baseUrl:
+      overrides.baseUrl ??
+      (typeof process.env.MIRROR_BASE_URL === "string" &&
+      process.env.MIRROR_BASE_URL.trim().length > 0
+        ? process.env.MIRROR_BASE_URL.trim()
+        : null),
   };
 }
 
@@ -269,11 +264,195 @@ export async function createMirrorRuntimeHost(
     },
     async executeAdapterRequest(envelope, runtimeDeps = {}) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        return await gateway.executeAdapterRequest(envelope, {
-          providerPlane,
-          fetchImpl: runtimeDeps.fetchImpl ?? deps.fetchImpl,
-          onRuntimeEvent: daemon.publishRuntimeEvent,
-        });
+        const sessionId =
+          envelope.context.session?.session_id ?? envelope.context.session?.external_session_id;
+        const userId = envelope.context.actor?.user_id ?? envelope.context.actor?.external_user_id;
+        const traceId =
+          envelope.context.runtime?.trace_id ??
+          envelope.context.runtime?.correlation_id ??
+          envelope.envelope_id;
+        const correlation = {
+          trace_id: traceId,
+          session_id: sessionId,
+          action_id: envelope.context.action?.tool_call_id,
+        };
+        const isCliIngress = envelope.context.adapter.adapter_id === "mirror-cli";
+        const sessionMetadata =
+          envelope.context.session?.metadata &&
+          typeof envelope.context.session.metadata === "object" &&
+          !Array.isArray(envelope.context.session.metadata)
+            ? envelope.context.session.metadata
+            : undefined;
+        if (sessionId) {
+          const existing = daemon.getSession(sessionId);
+          if (existing) {
+            daemon.touchSession(sessionId, {
+              user_id: userId,
+              metadata: {
+                surface: envelope.context.adapter.adapter_id,
+                ...sessionMetadata,
+              },
+            });
+          } else {
+            daemon.createSession({
+              session_id: sessionId,
+              user_id: userId,
+              metadata: {
+                surface: envelope.context.adapter.adapter_id,
+                ...sessionMetadata,
+              },
+            });
+          }
+        }
+        const actionId = envelope.context.action?.tool_call_id ?? crypto.randomUUID();
+        const executionId = crypto.randomUUID();
+        try {
+          if (isCliIngress && envelope.kind === "chat.request") {
+            daemon.publishRuntimeEvent(
+              "chat.started",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  model: envelope.request.model,
+                },
+                correlation,
+              ),
+            );
+          }
+          if (isCliIngress && envelope.kind === "tool.request") {
+            daemon.publishRuntimeEvent(
+              "tool.execution.started",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  tool: envelope.request.tool_name,
+                },
+                {
+                  ...correlation,
+                  action_id: actionId,
+                },
+              ),
+            );
+            daemon.publishRuntimeEvent(
+              "action.execution.started",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  action: envelope.request.tool_name,
+                  execution_id: executionId,
+                },
+                {
+                  ...correlation,
+                  action_id: actionId,
+                },
+              ),
+            );
+          }
+          const response = await gateway.executeAdapterRequest(envelope, {
+            provider: runtimeDeps.provider,
+            providerPlane: runtimeDeps.provider ? undefined : providerPlane,
+            fetchImpl: runtimeDeps.fetchImpl ?? deps.fetchImpl,
+            onRuntimeEvent: daemon.publishRuntimeEvent,
+            correlation,
+          });
+          if (isCliIngress && envelope.kind === "chat.request") {
+            daemon.publishRuntimeEvent(
+              "chat.finished",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  model: response.kind === "chat.response" ? response.response.model : undefined,
+                },
+                correlation,
+              ),
+            );
+          }
+          if (isCliIngress && envelope.kind === "tool.request") {
+            daemon.publishRuntimeEvent(
+              "tool.execution.finished",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  tool: envelope.request.tool_name,
+                },
+                {
+                  ...correlation,
+                  action_id: actionId,
+                },
+              ),
+            );
+            daemon.publishRuntimeEvent(
+              "action.execution.finished",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  action: envelope.request.tool_name,
+                  execution_id: executionId,
+                },
+                {
+                  ...correlation,
+                  action_id: actionId,
+                },
+              ),
+            );
+          }
+          if (sessionId) {
+            daemon.touchSession(sessionId, {
+              user_id: userId,
+              metadata: {
+                surface: envelope.context.adapter.adapter_id,
+                ...sessionMetadata,
+              },
+            });
+          }
+          return response;
+        } catch (error) {
+          if (isCliIngress && envelope.kind === "chat.request") {
+            daemon.publishRuntimeEvent(
+              "chat.failed",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  model: envelope.request.model,
+                  error: String(error),
+                },
+                correlation,
+              ),
+            );
+          }
+          if (isCliIngress && envelope.kind === "tool.request") {
+            daemon.publishRuntimeEvent(
+              "tool.execution.failed",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  tool: envelope.request.tool_name,
+                  error: String(error),
+                },
+                {
+                  ...correlation,
+                  action_id: actionId,
+                },
+              ),
+            );
+            daemon.publishRuntimeEvent(
+              "action.execution.failed",
+              withMirrorCorrelation(
+                {
+                  session_id: sessionId,
+                  action: envelope.request.tool_name,
+                  execution_id: executionId,
+                  error: String(error),
+                },
+                {
+                  ...correlation,
+                  action_id: actionId,
+                },
+              ),
+            );
+          }
+          throw error;
+        }
       });
     },
     async executeTool(toolName, input, context = {}) {
