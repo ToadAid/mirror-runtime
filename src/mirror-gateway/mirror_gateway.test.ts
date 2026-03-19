@@ -7,8 +7,12 @@ import {
   type MirrorAdapterToolRequestEnvelope,
 } from "../mirror-adapters/index.js";
 import { createMirrorPolicyEngine, MirrorPolicyDeniedError } from "../mirror-policy/index.js";
-import type { FetchLike } from "../mirror-provider/index.js";
-import { createMirrorGateway, createMirrorGatewayHandlers } from "./index.js";
+import {
+  buildPrimaryProviderDescriptorFromConfig,
+  createMirrorProviderPlane,
+  type FetchLike,
+} from "../mirror-provider/index.js";
+import { createMirrorGateway } from "./index.js";
 
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
@@ -179,7 +183,7 @@ function parseRequestBodyJson<T>(init?: RequestInit): T {
 
 describe("mirror gateway", () => {
   it("lists tools from the Mirror-owned gateway surface", () => {
-    const handlers = createMirrorGatewayHandlers();
+    const handlers = createMirrorGateway().handlers;
     const res = createMockResponse();
 
     handlers.listTools({} as never, res as never);
@@ -199,7 +203,7 @@ describe("mirror gateway", () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
     process.env.MIRROR_LORE_DIR = loreDir;
-    const handlers = createMirrorGatewayHandlers();
+    const handlers = createMirrorGateway().handlers;
     const res = createMockResponse();
 
     await handlers.executeTool(
@@ -216,7 +220,7 @@ describe("mirror gateway", () => {
   it("blocks unauthorized write tools", async () => {
     await createTempHome();
     process.env.MIRROR_OPERATOR_TOKEN = "secret";
-    const handlers = createMirrorGatewayHandlers();
+    const handlers = createMirrorGateway().handlers;
     const res = createMockResponse();
 
     await handlers.executeTool(
@@ -235,11 +239,7 @@ describe("mirror gateway", () => {
   });
 
   it("applies policy evaluation at chat ingress", async () => {
-    const handlers = createMirrorGatewayHandlers(undefined, {
-      provider: {
-        url: "https://provider.example",
-        authToken: "token",
-      },
+    const handlers = createMirrorGateway("/mirror", {
       policy: createMirrorPolicyEngine([
         {
           name: "deny.chat",
@@ -257,7 +257,13 @@ describe("mirror gateway", () => {
           },
         },
       ]),
-    });
+      providerPlane: createMirrorProviderPlane([
+        buildPrimaryProviderDescriptorFromConfig({
+          providerUrl: "https://provider.example",
+          providerAuthToken: "token",
+        }),
+      ]),
+    }).handlers;
     const res = createMockResponse();
 
     await handlers.executeChat(
@@ -290,7 +296,7 @@ describe("mirror gateway", () => {
       path.join(loreDir, "TOBY_L1219_Rune3_PatienceVaultCancelled.md"),
       "utf8",
     );
-    const handlers = createMirrorGatewayHandlers();
+    const handlers = createMirrorGateway().handlers;
 
     const createTaskRes = createMockResponse();
     await handlers.executeTool(
