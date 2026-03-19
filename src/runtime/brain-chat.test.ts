@@ -247,4 +247,54 @@ describe("handleBrainChatEndpoint", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it("preserves replay protection through the adapter-backed compat path", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const fetchImpl: typeof fetch = vi.fn(async () => {
+      return {
+        ok: true,
+        json: async () => ({
+          id: "resp_replay",
+          object: "chat.completion",
+          created: 1,
+          model: "test-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "First answer only." },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      } as Response;
+    });
+    const request = {
+      model: "test-model",
+      messages: [{ role: "user", content: "Repeat this request exactly once." }],
+    } as const;
+
+    const first = await handleBrainChatEndpoint(
+      { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
+      "http://brain.local/v1/chat/completions",
+      "token",
+      request,
+      { fetchImpl },
+    );
+
+    await expect(
+      handleBrainChatEndpoint(
+        { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
+        "http://brain.local/v1/chat/completions",
+        "token",
+        request,
+        { fetchImpl },
+      ),
+    ).rejects.toThrow("duplicate nonce detected (replay protection)");
+
+    expect(first.choices[0]?.message.content).toBe("First answer only.");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
