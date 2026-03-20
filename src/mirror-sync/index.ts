@@ -33,4 +33,5 @@ export type {
   MirrorSyncPullResult,
   MirrorSyncAnnounceInput,
   MirrorSyncPullInput,
+  MirrorSyncActionName,
 } from "./sync_types.js";

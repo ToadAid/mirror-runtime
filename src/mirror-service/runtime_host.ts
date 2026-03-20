@@ -20,6 +20,7 @@ import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/i
 import {
   createMirrorSyncManager,
   executeMirrorSyncAction,
+  type MirrorSyncActionName,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
 import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
@@ -53,7 +54,7 @@ export type MirrorRuntimeHost = {
     },
   ) => Promise<Record<string, unknown>>;
   executeSyncAction: (
-    action: "peers" | "updates" | "announce" | "pull",
+    action: MirrorSyncActionName,
     input?: { peer_id?: string; base_url?: string; requested_paths?: string[] },
     context?: { user_id?: string },
   ) => Promise<Record<string, unknown>>;
