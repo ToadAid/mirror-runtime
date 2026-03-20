@@ -3,6 +3,7 @@ export {
   createMirrorSyncHandlers,
   createMirrorSyncRouter,
   type MirrorSyncManager,
+  type MirrorSyncHandlers,
 } from "./sync_manager.js";
 export { createMirrorPeerRegistry, type MirrorPeerRegistry } from "./peer_registry.js";
 export {

@@ -22,8 +22,8 @@ import { type MirrorProviderPlane } from "../mirror-provider/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
 import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
 import {
-  createMirrorSyncHandlers,
   createMirrorSyncRouter,
+  type MirrorSyncHandlers,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
 import {
@@ -55,7 +55,7 @@ export type MirrorService = {
   server: http.Server;
   handlers: MirrorGatewayHandlers;
   consoleHandlers: MirrorConsoleHandlers;
-  syncHandlers: ReturnType<typeof createMirrorSyncHandlers>;
+  syncHandlers: MirrorSyncHandlers;
   syncManager: MirrorSyncManager;
   providerPlane: MirrorProviderPlane;
   runtimeWebSocket: MirrorRuntimeWebSocketServer;
