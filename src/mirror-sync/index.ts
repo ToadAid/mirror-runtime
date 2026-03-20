@@ -2,6 +2,11 @@ export {
   createMirrorSyncManager,
   createMirrorSyncHandlers,
   createMirrorSyncRouter,
+  executeMirrorSyncAction,
+  parseMirrorSyncAnnounceInput,
+  parseMirrorSyncPullInput,
+  parseMirrorSyncUpdatesInput,
+  wrapMirrorSyncPullResponse,
   type MirrorSyncManager,
   type MirrorSyncHandlers,
 } from "./sync_manager.js";

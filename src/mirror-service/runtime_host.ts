@@ -17,8 +17,11 @@ import {
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
 import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
-import { createMirrorSyncManager, type MirrorSyncManager } from "../mirror-sync/index.js";
-import { executeMirrorSyncAction } from "../mirror-sync/sync_manager.js";
+import {
+  createMirrorSyncManager,
+  executeMirrorSyncAction,
+  type MirrorSyncManager,
+} from "../mirror-sync/index.js";
 import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
 import type { MirrorServiceConfig } from "./config.js";

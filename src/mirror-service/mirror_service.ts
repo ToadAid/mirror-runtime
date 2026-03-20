@@ -23,16 +23,14 @@ import type { FetchLike } from "../mirror-provider/index.js";
 import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncRouter,
-  type MirrorSyncHandlers,
-  type MirrorSyncManager,
-} from "../mirror-sync/index.js";
-import {
   executeMirrorSyncAction,
   parseMirrorSyncAnnounceInput,
   parseMirrorSyncPullInput,
   parseMirrorSyncUpdatesInput,
+  type MirrorSyncHandlers,
+  type MirrorSyncManager,
   wrapMirrorSyncPullResponse,
-} from "../mirror-sync/sync_manager.js";
+} from "../mirror-sync/index.js";
 import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
 import {
   getMirrordaemonActionsState,
