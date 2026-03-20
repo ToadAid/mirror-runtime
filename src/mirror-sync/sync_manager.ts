@@ -54,9 +54,12 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+function parseRequestBodyObject<T>(req: express.Request, fallback: T): T | Record<string, unknown> {
+  return req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : fallback;
+}
+
 export function parseMirrorSyncAnnounceInput(req: express.Request): MirrorSyncAnnounceInput | null {
-  const payload =
-    req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : null;
+  const payload = parseRequestBodyObject(req, null);
   if (!payload || typeof payload.peer_id !== "string" || typeof payload.base_url !== "string") {
     return null;
   }
@@ -79,7 +82,7 @@ export function parseMirrorSyncUpdatesInput(req: express.Request): { requested_p
 export function parseMirrorSyncPullInput(
   req: express.Request,
 ): MirrorSyncPullInput & Record<string, unknown> {
-  return req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  return parseRequestBodyObject(req, {});
 }
 
 export async function wrapMirrorSyncPullResponse(
