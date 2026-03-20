@@ -169,6 +169,17 @@ async function announceMirrorSyncPeer(
   }).catch(() => undefined);
 }
 
+async function fetchMirrorSyncRemoteContents(
+  fetchImpl: FetchLike,
+  peerBaseUrl: string,
+  neededPaths: string[],
+): Promise<Record<string, string>> {
+  if (neededPaths.length === 0) {
+    return {};
+  }
+  return (await fetchMirrorSyncUpdates(fetchImpl, peerBaseUrl, neededPaths)).file_contents ?? {};
+}
+
 function collectMirrorSyncPullNeededPaths(
   localUpdates: MirrorSyncUpdatesResponse,
   remoteUpdates: MirrorSyncUpdatesResponse,
@@ -253,12 +264,11 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
         const remoteUpdates = await fetchMirrorSyncUpdates(fetchImpl, peer.base_url);
         const localUpdates = await this.getLocalUpdates();
         const neededPaths = collectMirrorSyncPullNeededPaths(localUpdates, remoteUpdates);
-
-        const remoteContents =
-          neededPaths.length > 0
-            ? ((await fetchMirrorSyncUpdates(fetchImpl, peer.base_url, neededPaths))
-                .file_contents ?? {})
-            : {};
+        const remoteContents = await fetchMirrorSyncRemoteContents(
+          fetchImpl,
+          peer.base_url,
+          neededPaths,
+        );
 
         const canonResult = await applyRemoteCanonUpdates({
           loreDir: options.loreDir,
