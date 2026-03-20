@@ -9,7 +9,7 @@ import {
 } from "../mirror-lore-graph/index.js";
 import { incrementMetric, logMirrorEvent } from "../mirror-observability/index.js";
 import type { MirrorObservabilityHandlers } from "../mirror-observability/index.js";
-import type { MirrorSyncHandlers } from "../mirror-sync/sync_manager.js";
+import type { MirrorSyncHandlers } from "../mirror-sync/index.js";
 import { renderMirrorConsoleHtml } from "./console_static.js";
 
 export type MirrorConsoleHandlers = {
