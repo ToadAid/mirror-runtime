@@ -157,6 +157,18 @@ async function fetchMirrorSyncUpdates(
   );
 }
 
+async function announceMirrorSyncPeer(
+  fetchImpl: FetchLike,
+  peerBaseUrl: string,
+  input: MirrorSyncAnnounceInput,
+): Promise<void> {
+  await fetchImpl(buildMirrorSyncAnnounceUrl(peerBaseUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).catch(() => undefined);
+}
+
 function collectMirrorSyncPullNeededPaths(
   localUpdates: MirrorSyncUpdatesResponse,
   remoteUpdates: MirrorSyncUpdatesResponse,
@@ -232,14 +244,10 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
 
       try {
         if (localBaseUrl) {
-          await fetchImpl(buildMirrorSyncAnnounceUrl(peer.base_url), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              peer_id: options.nodeId,
-              base_url: localBaseUrl,
-            } satisfies MirrorSyncAnnounceInput),
-          }).catch(() => undefined);
+          await announceMirrorSyncPeer(fetchImpl, peer.base_url, {
+            peer_id: options.nodeId,
+            base_url: localBaseUrl,
+          } satisfies MirrorSyncAnnounceInput);
         }
 
         const remoteUpdates = await fetchMirrorSyncUpdates(fetchImpl, peer.base_url);
