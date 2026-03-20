@@ -130,6 +130,23 @@ export async function executeMirrorSyncAction(
   }
 }
 
+function resolveMirrorSyncPullPeer(
+  input: MirrorSyncPullInput,
+  registry: MirrorPeerRegistry,
+): MirrorSyncPeer | undefined {
+  return (
+    (input.peer_id ? registry.getPeer(input.peer_id) : undefined) ??
+    (input.base_url
+      ? {
+          peer_id: input.base_url,
+          base_url: normalizeMirrorPeerBaseUrl(input.base_url),
+          last_seen_at: new Date().toISOString(),
+          sync_status: "idle" as const,
+        }
+      : undefined)
+  );
+}
+
 export function createMirrorSyncManager(options: MirrorSyncManagerOptions): MirrorSyncManager {
   const fetchImpl = options.fetchImpl ?? fetch;
   const registry = options.registry ?? createMirrorPeerRegistry();
@@ -177,16 +194,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
       };
     },
     async pullFromPeer(input) {
-      const peer =
-        (input.peer_id ? registry.getPeer(input.peer_id) : undefined) ??
-        (input.base_url
-          ? {
-              peer_id: input.base_url,
-              base_url: normalizeMirrorPeerBaseUrl(input.base_url),
-              last_seen_at: new Date().toISOString(),
-              sync_status: "idle" as const,
-            }
-          : undefined);
+      const peer = resolveMirrorSyncPullPeer(input, registry);
 
       if (!peer) {
         throw new Error("mirror sync pull requires a known peer_id or base_url");
