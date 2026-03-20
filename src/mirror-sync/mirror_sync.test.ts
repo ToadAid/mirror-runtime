@@ -9,7 +9,11 @@ import {
   resetMirrorMetrics,
 } from "../mirror-observability/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
-import { createMirrorSyncManager, type MirrorSyncManager } from "./index.js";
+import {
+  createMirrorSyncManager,
+  type MirrorSyncManager,
+  type MirrorSyncUpdatesResponse,
+} from "./index.js";
 import { executeMirrorSyncAction } from "./sync_manager.js";
 
 const tempDirs: string[] = [];
@@ -110,13 +114,20 @@ describe("mirror sync", () => {
       last_seen_at: "2026-03-19T00:00:00.000Z",
       sync_status: "idle" as const,
     };
-    const updates = {
+    const updates: MirrorSyncUpdatesResponse = {
       node_id: "node-a",
       base_url: "http://127.0.0.1:7001",
-      canon: { files: [] },
+      canon: {
+        lore_dir: "/tmp/mirror-sync-test",
+        index_path: "/tmp/mirror-sync-test/_index/KEYWORD_INDEX.json",
+        index_version: 1,
+        latest_update_at: "2026-03-19T00:00:00.000Z",
+        files: [],
+      },
       graph: {
         version: "graph-v1",
-        generated_at: "2026-03-19T00:00:00.000Z",
+        updated_at: "2026-03-19T00:00:00.000Z",
+        updated_at_ms: Date.parse("2026-03-19T00:00:00.000Z"),
         node_count: 0,
         edge_count: 0,
       },
