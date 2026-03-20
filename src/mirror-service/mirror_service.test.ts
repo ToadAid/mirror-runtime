@@ -860,6 +860,98 @@ describe("mirror service", () => {
     }
   });
 
+  it("preserves sync announce responses and wrapper event order", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "service-node",
+      baseUrl: "http://127.0.0.1:7001",
+    });
+
+    try {
+      const response = await requestResponseFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
+        body: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toEqual({
+        peer: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+          last_seen_at: expect.any(String),
+          sync_status: "idle",
+        },
+        local: {
+          node_id: "service-node",
+          base_url: "http://127.0.0.1:7001",
+        },
+      });
+
+      const eventTypes = service.daemon.getRecentEvents().map((event) => event.type);
+      const announceStartedIndex = eventTypes.indexOf("sync.announce.started");
+      const announceFinishedIndex = eventTypes.indexOf("sync.announce.finished");
+      const announceIndex = eventTypes.indexOf("sync.announce");
+
+      expect(announceIndex).toBeGreaterThan(-1);
+      expect(announceFinishedIndex).toBeGreaterThan(announceIndex);
+      expect(announceStartedIndex).toBeGreaterThan(announceFinishedIndex);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("preserves sync pull error responses and wrapper events", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const response = await requestResponseFromApp(service.app, "POST", "/mirror-sync/pull", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
+        body: {
+          peer_id: "missing-peer",
+        },
+      });
+
+      expect(response).toEqual({
+        statusCode: 500,
+        body: {
+          error: "Error: mirror sync pull requires a known peer_id or base_url",
+        },
+      });
+
+      const eventTypes = service.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("sync.pull");
+      expect(eventTypes).not.toContain("sync.pull.started");
+      expect(eventTypes).not.toContain("sync.pull.failed");
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("exposes standalone health and status endpoints", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
