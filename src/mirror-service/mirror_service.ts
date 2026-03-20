@@ -219,7 +219,7 @@ export async function startMirrorService(
       });
       return response;
     },
-  };
+  } satisfies MirrorSyncHandlers;
   const observabilityHandlers = createMirrorObservabilityHandlers(observability);
   let boundPort = config.port;
   const app = express();
