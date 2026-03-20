@@ -331,6 +331,46 @@ describe("mirror sync", () => {
     expect(res.body).toEqual({ error: "Error: boom" });
   });
 
+  it("preserves sync handler pull request body defaulting", async () => {
+    const pullResult = {
+      peer_id: "fallback-peer",
+      peer_base_url: "http://127.0.0.1:7999",
+      pulled_files: [],
+      skipped_files: [],
+      conflicts: [],
+      graph: {
+        remote_version: "remote-v1",
+        local_version: "local-v1",
+        rebuilt: false,
+      },
+    };
+    const manager = {
+      announcePeer: vi.fn(),
+      listPeers: vi.fn(() => []),
+      getLocalUpdates: vi.fn(),
+      pullFromPeer: vi.fn(async () => pullResult),
+      setLocalBaseUrl: vi.fn(),
+      getLocalBaseUrl: vi.fn(() => null),
+      registry: {} as never,
+    } satisfies MirrorSyncManager;
+    const handlers = createMirrorSyncHandlers(manager);
+    const res = createMockResponse();
+
+    await handlers.pull(
+      {
+        body: "not-an-object",
+      } as never,
+      res as never,
+    );
+
+    expect(manager.pullFromPeer).toHaveBeenCalledWith({
+      peer_id: undefined,
+      base_url: undefined,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual(pullResult);
+  });
+
   it("registers peers and exposes peer status", async () => {
     const loreDir = await createTempLoreDir();
     await seedValidLore(

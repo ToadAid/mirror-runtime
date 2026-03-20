@@ -76,6 +76,12 @@ export function parseMirrorSyncUpdatesInput(req: express.Request): { requested_p
   };
 }
 
+export function parseMirrorSyncPullInput(
+  req: express.Request,
+): MirrorSyncPullInput & Record<string, unknown> {
+  return req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+}
+
 export async function wrapMirrorSyncPullResponse(
   res: express.Response,
   execute: () => Promise<Record<string, unknown>>,
@@ -305,8 +311,7 @@ export function createMirrorSyncHandlers(manager: MirrorSyncManager): MirrorSync
       );
     },
     pull: async (req: express.Request, res: express.Response) => {
-      const payload =
-        req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+      const payload = parseMirrorSyncPullInput(req);
       return await wrapMirrorSyncPullResponse(
         res,
         async () => await executeMirrorSyncAction(manager, "pull", payload),
