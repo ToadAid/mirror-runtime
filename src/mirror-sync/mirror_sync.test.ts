@@ -12,10 +12,10 @@ import { parseRequestBodyJson } from "../test/request_init.js";
 import {
   createMirrorSyncHandlers,
   createMirrorSyncManager,
+  executeMirrorSyncAction,
   type MirrorSyncManager,
   type MirrorSyncUpdatesResponse,
 } from "./index.js";
-import { executeMirrorSyncAction } from "./sync_manager.js";
 
 const tempDirs: string[] = [];
 
