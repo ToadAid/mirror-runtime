@@ -15,6 +15,7 @@ import {
 } from "./sync_protocol.js";
 import type {
   MirrorSyncAnnounceInput,
+  MirrorSyncConflict,
   MirrorSyncPeer,
   MirrorSyncPullInput,
   MirrorSyncPullResult,
@@ -180,6 +181,33 @@ async function fetchMirrorSyncRemoteContents(
   return (await fetchMirrorSyncUpdates(fetchImpl, peerBaseUrl, neededPaths)).file_contents ?? {};
 }
 
+function createMirrorSyncPullResult(params: {
+  peer: MirrorSyncPeer;
+  remoteUpdates: MirrorSyncUpdatesResponse;
+  canonResult: {
+    pulledFiles: string[];
+    skippedFiles: Array<{ path: string; reason: string }>;
+    conflicts: MirrorSyncConflict[];
+  };
+  graphResult: {
+    localGraph: { version: string };
+    rebuilt: boolean;
+  };
+}): MirrorSyncPullResult {
+  return {
+    peer_id: params.peer.peer_id,
+    peer_base_url: params.peer.base_url,
+    pulled_files: params.canonResult.pulledFiles,
+    skipped_files: params.canonResult.skippedFiles,
+    conflicts: params.canonResult.conflicts,
+    graph: {
+      remote_version: params.remoteUpdates.graph.version,
+      local_version: params.graphResult.localGraph.version,
+      rebuilt: params.graphResult.rebuilt,
+    },
+  };
+}
+
 function collectMirrorSyncPullNeededPaths(
   localUpdates: MirrorSyncUpdatesResponse,
   remoteUpdates: MirrorSyncUpdatesResponse,
@@ -296,18 +324,12 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           graph_rebuilt: graphResult.rebuilt,
         });
 
-        return {
-          peer_id: peer.peer_id,
-          peer_base_url: peer.base_url,
-          pulled_files: canonResult.pulledFiles,
-          skipped_files: canonResult.skippedFiles,
-          conflicts: canonResult.conflicts,
-          graph: {
-            remote_version: remoteUpdates.graph.version,
-            local_version: graphResult.localGraph.version,
-            rebuilt: graphResult.rebuilt,
-          },
-        };
+        return createMirrorSyncPullResult({
+          peer,
+          remoteUpdates,
+          canonResult,
+          graphResult,
+        });
       } catch (error) {
         incrementMetric("sync_failures");
         registry.markStatus(peer.peer_id, "error", String(error));
