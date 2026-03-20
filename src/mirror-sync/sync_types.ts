@@ -75,3 +75,5 @@ export type MirrorSyncPullInput = {
   peer_id?: string;
   base_url?: string;
 };
+
+export type MirrorSyncActionName = "peers" | "updates" | "announce" | "pull";
