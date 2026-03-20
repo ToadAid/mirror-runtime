@@ -147,6 +147,16 @@ function resolveMirrorSyncPullPeer(
   );
 }
 
+async function fetchMirrorSyncUpdates(
+  fetchImpl: FetchLike,
+  peerBaseUrl: string,
+  requestedPaths: string[] = [],
+): Promise<MirrorSyncUpdatesResponse> {
+  return await parseJsonResponse<MirrorSyncUpdatesResponse>(
+    await fetchImpl(buildMirrorSyncUpdatesUrl(peerBaseUrl, requestedPaths)),
+  );
+}
+
 export function createMirrorSyncManager(options: MirrorSyncManagerOptions): MirrorSyncManager {
   const fetchImpl = options.fetchImpl ?? fetch;
   const registry = options.registry ?? createMirrorPeerRegistry();
@@ -219,9 +229,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           }).catch(() => undefined);
         }
 
-        const remoteUpdates = await parseJsonResponse<MirrorSyncUpdatesResponse>(
-          await fetchImpl(buildMirrorSyncUpdatesUrl(peer.base_url)),
-        );
+        const remoteUpdates = await fetchMirrorSyncUpdates(fetchImpl, peer.base_url);
         const localUpdates = await this.getLocalUpdates();
 
         const localFiles = new Map(localUpdates.canon.files.map((file) => [file.path, file]));
@@ -234,11 +242,8 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
 
         const remoteContents =
           neededPaths.length > 0
-            ? ((
-                await parseJsonResponse<MirrorSyncUpdatesResponse>(
-                  await fetchImpl(buildMirrorSyncUpdatesUrl(peer.base_url, neededPaths)),
-                )
-              ).file_contents ?? {})
+            ? ((await fetchMirrorSyncUpdates(fetchImpl, peer.base_url, neededPaths))
+                .file_contents ?? {})
             : {};
 
         const canonResult = await applyRemoteCanonUpdates({
