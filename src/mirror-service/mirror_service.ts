@@ -26,6 +26,7 @@ import {
   createMirrorSyncRouter,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
+import { executeMirrorSyncAction } from "../mirror-sync/sync_manager.js";
 import { createMirrorUiApiHandlers, createMirrorUiApiRouter } from "../mirror-ui-api/index.js";
 import {
   getMirrordaemonActionsState,
@@ -112,7 +113,6 @@ export async function startMirrorService(
     onRuntimeEvent: daemon.publishRuntimeEvent,
     executeAdapterRequest: async (envelope) => await runtimeHost.executeAdapterRequest(envelope),
   });
-  const rawSyncHandlers = createMirrorSyncHandlers(syncManager);
   async function evaluateSyncPolicy(
     req: express.Request,
     actionName: "sync.announce" | "sync.updates" | "sync.pull" | "sync.peers",
@@ -168,7 +168,12 @@ export async function startMirrorService(
       if (!policyDecision.allowed) {
         return res.status(policyDecision.statusCode).json(policyDecision.body);
       }
-      const response = await rawSyncHandlers.announce(req, res);
+      const payload =
+        req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : null;
+      const response =
+        !payload || typeof payload.peer_id !== "string" || typeof payload.base_url !== "string"
+          ? res.status(400).json({ error: "peer_id and base_url are required" })
+          : res.json(await executeMirrorSyncAction(syncManager, "announce", payload));
       daemon.publishRuntimeEvent("sync.announce", {
         peer_id:
           req.body && typeof req.body === "object" && !Array.isArray(req.body)
@@ -182,21 +187,41 @@ export async function startMirrorService(
       if (!policyDecision.allowed) {
         return res.status(policyDecision.statusCode).json(policyDecision.body);
       }
-      return rawSyncHandlers.peers(req, res);
+      return res.json(await executeMirrorSyncAction(syncManager, "peers"));
     },
     updates: async (req: express.Request, res: express.Response) => {
       const policyDecision = await evaluateSyncPolicy(req, "sync.updates");
       if (!policyDecision.allowed) {
         return res.status(policyDecision.statusCode).json(policyDecision.body);
       }
-      return rawSyncHandlers.updates(req, res);
+      const includeContent = req.query.include_content === "1";
+      const requestedPaths =
+        includeContent && typeof req.query.paths === "string"
+          ? req.query.paths
+              .split(",")
+              .map((part) => part.trim())
+              .filter(Boolean)
+          : [];
+      return res.json(
+        await executeMirrorSyncAction(syncManager, "updates", {
+          requested_paths: requestedPaths,
+        }),
+      );
     },
     pull: async (req: express.Request, res: express.Response) => {
       const policyDecision = await evaluateSyncPolicy(req, "sync.pull");
       if (!policyDecision.allowed) {
         return res.status(policyDecision.statusCode).json(policyDecision.body);
       }
-      const response = await rawSyncHandlers.pull(req, res);
+      const payload =
+        req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+      const response = await (async () => {
+        try {
+          return res.json(await executeMirrorSyncAction(syncManager, "pull", payload));
+        } catch (error) {
+          return res.status(500).json({ error: String(error) });
+        }
+      })();
       daemon.publishRuntimeEvent("sync.pull", {
         peer_id:
           req.body && typeof req.body === "object" && !Array.isArray(req.body)
