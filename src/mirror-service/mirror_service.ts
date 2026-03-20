@@ -27,6 +27,7 @@ import {
   parseMirrorSyncAnnounceInput,
   parseMirrorSyncPullInput,
   parseMirrorSyncUpdatesInput,
+  type MirrorSyncPolicyActionName,
   type MirrorSyncHandlers,
   type MirrorSyncManager,
   wrapMirrorSyncPullResponse,
@@ -119,7 +120,7 @@ export async function startMirrorService(
   });
   async function evaluateSyncPolicy(
     req: express.Request,
-    actionName: "sync.announce" | "sync.updates" | "sync.pull" | "sync.peers",
+    actionName: MirrorSyncPolicyActionName,
   ): Promise<
     { allowed: true } | { allowed: false; statusCode: number; body: Record<string, unknown> }
   > {
