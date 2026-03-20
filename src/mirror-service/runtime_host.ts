@@ -17,12 +17,8 @@ import {
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
 import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
-import {
-  createMirrorSyncManager,
-  type MirrorSyncAnnounceInput,
-  type MirrorSyncManager,
-  type MirrorSyncPullInput,
-} from "../mirror-sync/index.js";
+import { createMirrorSyncManager, type MirrorSyncManager } from "../mirror-sync/index.js";
+import { executeMirrorSyncAction } from "../mirror-sync/sync_manager.js";
 import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
 import type { MirrorServiceConfig } from "./config.js";
@@ -636,33 +632,7 @@ export async function createMirrorRuntimeHost(
               correlation,
             ),
           );
-          switch (action) {
-            case "peers":
-              return { peers: syncManager.listPeers() };
-            case "updates":
-              return await syncManager.getLocalUpdates({
-                requestedPaths: input.requested_paths ?? [],
-              });
-            case "announce": {
-              const peer = await syncManager.announcePeer({
-                peer_id: input.peer_id ?? "",
-                base_url: input.base_url ?? "",
-              } satisfies MirrorSyncAnnounceInput);
-              const updates = await syncManager.getLocalUpdates();
-              return {
-                peer,
-                local: {
-                  node_id: updates.node_id,
-                  base_url: updates.base_url,
-                },
-              };
-            }
-            case "pull":
-              return await syncManager.pullFromPeer({
-                peer_id: input.peer_id,
-                base_url: input.base_url,
-              } satisfies MirrorSyncPullInput);
-          }
+          return await executeMirrorSyncAction(syncManager, action, input);
         } catch (error) {
           daemon.publishRuntimeEvent(
             "sync.action.failed",

@@ -62,6 +62,40 @@ function parseRequestedPaths(req: express.Request): string[] {
     .filter(Boolean);
 }
 
+export async function executeMirrorSyncAction(
+  manager: MirrorSyncManager,
+  action: "peers" | "updates" | "announce" | "pull",
+  input: { peer_id?: string; base_url?: string; requested_paths?: string[] } = {},
+): Promise<Record<string, unknown>> {
+  switch (action) {
+    case "peers":
+      return { peers: manager.listPeers() };
+    case "updates":
+      return await manager.getLocalUpdates({
+        requestedPaths: input.requested_paths ?? [],
+      });
+    case "announce": {
+      const peer = await manager.announcePeer({
+        peer_id: input.peer_id ?? "",
+        base_url: input.base_url ?? "",
+      } satisfies MirrorSyncAnnounceInput);
+      const updates = await manager.getLocalUpdates();
+      return {
+        peer,
+        local: {
+          node_id: updates.node_id,
+          base_url: updates.base_url,
+        },
+      };
+    }
+    case "pull":
+      return await manager.pullFromPeer({
+        peer_id: input.peer_id,
+        base_url: input.base_url,
+      } satisfies MirrorSyncPullInput);
+  }
+}
+
 export function createMirrorSyncManager(options: MirrorSyncManagerOptions): MirrorSyncManager {
   const fetchImpl = options.fetchImpl ?? fetch;
   const registry = options.registry ?? createMirrorPeerRegistry();
@@ -236,26 +270,24 @@ export function createMirrorSyncHandlers(manager: MirrorSyncManager): MirrorSync
         return res.status(400).json({ error: "peer_id and base_url are required" });
       }
 
-      const peer = await manager.announcePeer(payload as MirrorSyncAnnounceInput);
-      const updates = await manager.getLocalUpdates();
-      return res.json({ peer, local: { node_id: updates.node_id, base_url: updates.base_url } });
+      return res.json(await executeMirrorSyncAction(manager, "announce", payload));
     },
     peers: async (_req: express.Request, res: express.Response) => {
-      return res.json({ peers: manager.listPeers() });
+      return res.json(await executeMirrorSyncAction(manager, "peers"));
     },
     updates: async (req: express.Request, res: express.Response) => {
       const includeContent = req.query.include_content === "1";
-      const updates = await manager.getLocalUpdates({
-        requestedPaths: includeContent ? parseRequestedPaths(req) : [],
-      });
-      return res.json(updates);
+      return res.json(
+        await executeMirrorSyncAction(manager, "updates", {
+          requested_paths: includeContent ? parseRequestedPaths(req) : [],
+        }),
+      );
     },
     pull: async (req: express.Request, res: express.Response) => {
       const payload =
         req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
       try {
-        const result = await manager.pullFromPeer(payload as MirrorSyncPullInput);
-        return res.json(result);
+        return res.json(await executeMirrorSyncAction(manager, "pull", payload));
       } catch (error) {
         return res.status(500).json({ error: String(error) });
       }
