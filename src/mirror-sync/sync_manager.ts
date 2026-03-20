@@ -14,6 +14,7 @@ import {
   normalizeMirrorPeerBaseUrl,
 } from "./sync_protocol.js";
 import type {
+  MirrorSyncActionName,
   MirrorSyncAnnounceInput,
   MirrorSyncConflict,
   MirrorSyncPeer,
@@ -99,7 +100,7 @@ export async function wrapMirrorSyncPullResponse(
 
 export async function executeMirrorSyncAction(
   manager: MirrorSyncManager,
-  action: "peers" | "updates" | "announce" | "pull",
+  action: MirrorSyncActionName,
   input: { peer_id?: string; base_url?: string; requested_paths?: string[] } = {},
 ): Promise<Record<string, unknown>> {
   switch (action) {
