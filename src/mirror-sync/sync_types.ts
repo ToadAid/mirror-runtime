@@ -77,3 +77,9 @@ export type MirrorSyncPullInput = {
 };
 
 export type MirrorSyncActionName = "peers" | "updates" | "announce" | "pull";
+
+export type MirrorSyncPolicyActionName =
+  | "sync.announce"
+  | "sync.updates"
+  | "sync.pull"
+  | "sync.peers";
