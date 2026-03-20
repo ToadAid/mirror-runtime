@@ -29,6 +29,7 @@ import {
 import {
   executeMirrorSyncAction,
   parseMirrorSyncAnnounceInput,
+  parseMirrorSyncPullInput,
   parseMirrorSyncUpdatesInput,
   wrapMirrorSyncPullResponse,
 } from "../mirror-sync/sync_manager.js";
@@ -206,8 +207,7 @@ export async function startMirrorService(
       if (!policyDecision.allowed) {
         return res.status(policyDecision.statusCode).json(policyDecision.body);
       }
-      const payload =
-        req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+      const payload = parseMirrorSyncPullInput(req);
       const response = await wrapMirrorSyncPullResponse(
         res,
         async () => await executeMirrorSyncAction(syncManager, "pull", payload),
