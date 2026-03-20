@@ -157,6 +157,19 @@ async function fetchMirrorSyncUpdates(
   );
 }
 
+function collectMirrorSyncPullNeededPaths(
+  localUpdates: MirrorSyncUpdatesResponse,
+  remoteUpdates: MirrorSyncUpdatesResponse,
+): string[] {
+  const localFiles = new Map(localUpdates.canon.files.map((file) => [file.path, file]));
+  return remoteUpdates.canon.files
+    .filter((remoteFile) => {
+      const localFile = localFiles.get(remoteFile.path);
+      return !localFile || localFile.sha256 !== remoteFile.sha256;
+    })
+    .map((file) => file.path);
+}
+
 export function createMirrorSyncManager(options: MirrorSyncManagerOptions): MirrorSyncManager {
   const fetchImpl = options.fetchImpl ?? fetch;
   const registry = options.registry ?? createMirrorPeerRegistry();
@@ -231,14 +244,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
 
         const remoteUpdates = await fetchMirrorSyncUpdates(fetchImpl, peer.base_url);
         const localUpdates = await this.getLocalUpdates();
-
-        const localFiles = new Map(localUpdates.canon.files.map((file) => [file.path, file]));
-        const neededPaths = remoteUpdates.canon.files
-          .filter((remoteFile) => {
-            const localFile = localFiles.get(remoteFile.path);
-            return !localFile || localFile.sha256 !== remoteFile.sha256;
-          })
-          .map((file) => file.path);
+        const neededPaths = collectMirrorSyncPullNeededPaths(localUpdates, remoteUpdates);
 
         const remoteContents =
           neededPaths.length > 0
