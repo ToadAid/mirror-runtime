@@ -54,12 +54,37 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-function parseRequestedPaths(req: express.Request): string[] {
+export function parseMirrorSyncAnnounceInput(req: express.Request): MirrorSyncAnnounceInput | null {
+  const payload =
+    req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : null;
+  if (!payload || typeof payload.peer_id !== "string" || typeof payload.base_url !== "string") {
+    return null;
+  }
+  return payload as MirrorSyncAnnounceInput;
+}
+
+export function parseMirrorSyncUpdatesInput(req: express.Request): { requested_paths: string[] } {
+  if (req.query.include_content !== "1") {
+    return { requested_paths: [] };
+  }
   const raw = typeof req.query.paths === "string" ? req.query.paths : "";
-  return raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
+  return {
+    requested_paths: raw
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean),
+  };
+}
+
+export async function wrapMirrorSyncPullResponse(
+  res: express.Response,
+  execute: () => Promise<Record<string, unknown>>,
+): Promise<unknown> {
+  try {
+    return res.json(await execute());
+  } catch (error) {
+    return res.status(500).json({ error: String(error) });
+  }
 }
 
 export async function executeMirrorSyncAction(
@@ -264,9 +289,8 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
 export function createMirrorSyncHandlers(manager: MirrorSyncManager): MirrorSyncHandlers {
   return {
     announce: async (req: express.Request, res: express.Response) => {
-      const payload =
-        req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : null;
-      if (!payload || typeof payload.peer_id !== "string" || typeof payload.base_url !== "string") {
+      const payload = parseMirrorSyncAnnounceInput(req);
+      if (!payload) {
         return res.status(400).json({ error: "peer_id and base_url are required" });
       }
 
@@ -276,21 +300,17 @@ export function createMirrorSyncHandlers(manager: MirrorSyncManager): MirrorSync
       return res.json(await executeMirrorSyncAction(manager, "peers"));
     },
     updates: async (req: express.Request, res: express.Response) => {
-      const includeContent = req.query.include_content === "1";
       return res.json(
-        await executeMirrorSyncAction(manager, "updates", {
-          requested_paths: includeContent ? parseRequestedPaths(req) : [],
-        }),
+        await executeMirrorSyncAction(manager, "updates", parseMirrorSyncUpdatesInput(req)),
       );
     },
     pull: async (req: express.Request, res: express.Response) => {
       const payload =
         req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
-      try {
-        return res.json(await executeMirrorSyncAction(manager, "pull", payload));
-      } catch (error) {
-        return res.status(500).json({ error: String(error) });
-      }
+      return await wrapMirrorSyncPullResponse(
+        res,
+        async () => await executeMirrorSyncAction(manager, "pull", payload),
+      );
     },
   };
 }

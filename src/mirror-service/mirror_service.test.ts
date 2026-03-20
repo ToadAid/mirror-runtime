@@ -855,6 +855,28 @@ describe("mirror service", () => {
       const updatesRes = createMockResponse();
       await service.syncHandlers.updates({ query: {} } as never, updatesRes as never);
       expect((updatesRes.body as { node_id: string }).node_id).toBe("service-node");
+
+      const updatesWithContentRes = createMockResponse();
+      await service.syncHandlers.updates(
+        {
+          query: {
+            include_content: "1",
+            paths: " TOBY_L1219_Rune3_PatienceVaultCancelled.md , ",
+          },
+        } as never,
+        updatesWithContentRes as never,
+      );
+      expect(
+        (
+          updatesWithContentRes.body as {
+            file_contents?: Record<string, string>;
+          }
+        ).file_contents,
+      ).toEqual({
+        "TOBY_L1219_Rune3_PatienceVaultCancelled.md": expect.stringContaining(
+          "The Patience Vault was cancelled.",
+        ),
+      });
     } finally {
       await service.shutdown();
     }
@@ -908,6 +930,45 @@ describe("mirror service", () => {
       expect(announceIndex).toBeGreaterThan(-1);
       expect(announceFinishedIndex).toBeGreaterThan(announceIndex);
       expect(announceStartedIndex).toBeGreaterThan(announceFinishedIndex);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("preserves invalid sync announce responses and wrapper events", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const response = await requestResponseFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
+        body: {
+          peer_id: "peer-1",
+        },
+      });
+
+      expect(response).toEqual({
+        statusCode: 400,
+        body: {
+          error: "peer_id and base_url are required",
+        },
+      });
+
+      const eventTypes = service.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("sync.announce");
+      expect(eventTypes).not.toContain("sync.announce.started");
+      expect(eventTypes).not.toContain("sync.announce.finished");
     } finally {
       await service.shutdown();
     }

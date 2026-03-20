@@ -10,6 +10,7 @@ import {
 } from "../mirror-observability/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import {
+  createMirrorSyncHandlers,
   createMirrorSyncManager,
   type MirrorSyncManager,
   type MirrorSyncUpdatesResponse,
@@ -103,6 +104,21 @@ function createFetchBridge(remoteManager: MirrorSyncManager) {
     }
 
     throw new Error(`unexpected sync bridge request: ${urlText}`);
+  };
+}
+
+function createMockResponse() {
+  return {
+    statusCode: 200,
+    body: undefined as unknown,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      this.body = payload;
+      return this;
+    },
   };
 }
 
@@ -207,6 +223,112 @@ describe("mirror sync", () => {
     } satisfies MirrorSyncManager;
 
     await expect(executeMirrorSyncAction(manager, "unsupported" as never)).resolves.toBeUndefined();
+  });
+
+  it("preserves sync handler invalid announce responses", async () => {
+    const manager = {
+      announcePeer: vi.fn(),
+      listPeers: vi.fn(() => []),
+      getLocalUpdates: vi.fn(),
+      pullFromPeer: vi.fn(),
+      setLocalBaseUrl: vi.fn(),
+      getLocalBaseUrl: vi.fn(() => null),
+      registry: {} as never,
+    } satisfies MirrorSyncManager;
+    const handlers = createMirrorSyncHandlers(manager);
+    const res = createMockResponse();
+
+    await handlers.announce(
+      {
+        body: {
+          peer_id: "peer-1",
+        },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: "peer_id and base_url are required" });
+    expect(manager.announcePeer).not.toHaveBeenCalled();
+  });
+
+  it("preserves sync handler updates query parsing", async () => {
+    const updates: MirrorSyncUpdatesResponse = {
+      node_id: "node-a",
+      base_url: "http://127.0.0.1:7001",
+      canon: {
+        lore_dir: "/tmp/mirror-sync-test",
+        index_path: "/tmp/mirror-sync-test/_index/KEYWORD_INDEX.json",
+        index_version: 1,
+        latest_update_at: "2026-03-19T00:00:00.000Z",
+        files: [],
+      },
+      graph: {
+        version: "graph-v1",
+        updated_at: "2026-03-19T00:00:00.000Z",
+        updated_at_ms: Date.parse("2026-03-19T00:00:00.000Z"),
+        node_count: 0,
+        edge_count: 0,
+      },
+      file_contents: {
+        "one.md": "first",
+        "two.md": "second",
+      },
+    };
+    const manager = {
+      announcePeer: vi.fn(),
+      listPeers: vi.fn(() => []),
+      getLocalUpdates: vi.fn(async () => updates),
+      pullFromPeer: vi.fn(),
+      setLocalBaseUrl: vi.fn(),
+      getLocalBaseUrl: vi.fn(() => null),
+      registry: {} as never,
+    } satisfies MirrorSyncManager;
+    const handlers = createMirrorSyncHandlers(manager);
+    const res = createMockResponse();
+
+    await handlers.updates(
+      {
+        query: {
+          include_content: "1",
+          paths: " one.md, , two.md ",
+        },
+      } as never,
+      res as never,
+    );
+
+    expect(manager.getLocalUpdates).toHaveBeenCalledWith({
+      requestedPaths: ["one.md", "two.md"],
+    });
+    expect(res.body).toEqual(updates);
+  });
+
+  it("preserves sync handler pull failure wrapping", async () => {
+    const manager = {
+      announcePeer: vi.fn(),
+      listPeers: vi.fn(() => []),
+      getLocalUpdates: vi.fn(),
+      pullFromPeer: vi.fn(async () => {
+        throw new Error("boom");
+      }),
+      setLocalBaseUrl: vi.fn(),
+      getLocalBaseUrl: vi.fn(() => null),
+      registry: {} as never,
+    } satisfies MirrorSyncManager;
+    const handlers = createMirrorSyncHandlers(manager);
+    const res = createMockResponse();
+
+    await handlers.pull(
+      {
+        body: {
+          peer_id: "peer-1",
+        },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ error: "Error: boom" });
   });
 
   it("registers peers and exposes peer status", async () => {
