@@ -1,5 +1,6 @@
 import type { MirrorActionRuntime } from "../mirror-actions/index.js";
 import type { MirrorProviderPlane } from "../mirror-provider/index.js";
+import type { MirrorSyncPeer } from "../mirror-sync/index.js";
 import { VERSION } from "../version.js";
 import type {
   MirrordaemonActionsSummary,
@@ -8,6 +9,7 @@ import type {
   MirrordaemonHealthSummary,
   MirrordaemonProvidersSummary,
   MirrordaemonRuntimeSummary,
+  MirrordaemonSyncSummary,
 } from "./daemon_types.js";
 import type { Mirrordaemon } from "./mirrordaemon.js";
 
@@ -102,6 +104,32 @@ export function buildProvidersSummary(
     available: boot.readiness.provider.available,
     fallback_available: boot.readiness.provider.fallback_available,
     providers,
+  };
+}
+
+function buildSyncPeerSummary(peer: MirrorSyncPeer): MirrordaemonSyncSummary["peers"][number] {
+  return {
+    peer_id: peer.peer_id,
+    base_url: peer.base_url,
+    last_seen_at: peer.last_seen_at,
+    sync_status: peer.sync_status,
+    last_sync_at: peer.last_sync_at,
+    last_error: peer.last_error,
+  };
+}
+
+export function buildSyncSummary(
+  daemon: Mirrordaemon,
+  options: { peers?: MirrorSyncPeer[] } = {},
+): MirrordaemonSyncSummary {
+  const boot = daemon.getBootSnapshot();
+  const peers = (options.peers ?? []).map(buildSyncPeerSummary);
+
+  return {
+    ok: true,
+    daemon_session_id: boot.config.daemon_session_id,
+    peers_known: peers.length,
+    peers,
   };
 }
 

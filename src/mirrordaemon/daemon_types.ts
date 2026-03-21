@@ -2,6 +2,7 @@ import type {
   MirrorDiagnosticEvent,
   MirrorObservabilityContext,
 } from "../mirror-observability/index.js";
+import type { MirrorSyncPeer } from "../mirror-sync/index.js";
 
 export type MirrordaemonSurfaceName =
   | "cli"
@@ -197,6 +198,18 @@ export type MirrordaemonProvidersSummary = {
     configured: boolean;
     selected: boolean;
   }>;
+};
+
+export type MirrordaemonSyncSummary = {
+  ok: true;
+  daemon_session_id: string;
+  peers_known: number;
+  peers: Array<
+    Pick<
+      MirrorSyncPeer,
+      "peer_id" | "base_url" | "last_seen_at" | "sync_status" | "last_sync_at" | "last_error"
+    >
+  >;
 };
 
 export type MirrordaemonEventSubscription = {
