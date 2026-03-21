@@ -505,7 +505,12 @@ jobs:
         if: matrix.task == 'test'
         run: echo "OPENCLAW_VITEST_REPORT_DIR=$RUNNER_TEMP/vitest-reports" >> "$GITHUB_ENV"
 
+      - name: Skip Windows full test lane on pull requests
+        if: github.event_name == 'pull_request' && matrix.task == 'test'
+        run: echo "Skipping Windows full test lane on pull requests."
+
       - name: Run ${{ matrix.task }} (${{ matrix.runtime }})
+        if: github.event_name != 'pull_request' || matrix.task != 'test'
         run: ${{ matrix.command }}
 
       - name: Summarize slowest tests
