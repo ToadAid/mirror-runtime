@@ -137,6 +137,65 @@ describe("mirror runtime host adapter boundary", () => {
     }
   });
 
+  it("preserves unknown tool failures through the runtime host tool helper", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+    try {
+      await expect(
+        runtimeHost.executeTool(
+          "mirror.not-a-real-tool",
+          {},
+          {
+            user_id: "traveler-1",
+          },
+        ),
+      ).rejects.toThrow("Unknown Mirror tool: mirror.not-a-real-tool");
+
+      const eventTypes = runtimeHost.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("tool.execution.failed");
+      expect(eventTypes).not.toContain("action.execution.started");
+      expect(eventTypes).not.toContain("policy.denied");
+
+      const failedEvent = runtimeHost.daemon
+        .getRecentEvents()
+        .find((event) => event.type === "tool.execution.failed");
+      expect(failedEvent?.payload).toEqual(
+        expect.objectContaining({
+          tool: "mirror.not-a-real-tool",
+          error: "Error: Unknown Mirror tool: mirror.not-a-real-tool",
+        }),
+      );
+      expect(failedEvent?.correlation).toEqual(
+        expect.objectContaining({
+          trace_id: expect.any(String),
+          session_id: expect.any(String),
+        }),
+      );
+
+      const daemonSession = runtimeHost.daemon
+        .listSessions()
+        .find(
+          (entry) =>
+            entry.user_id === "traveler-1" && entry.metadata?.tool === "mirror.not-a-real-tool",
+        );
+      expect(daemonSession).toBeDefined();
+      expect(daemonSession).toMatchObject({
+        user_id: "traveler-1",
+        metadata: {
+          surface: "cli",
+          command: "tool",
+          tool: "mirror.not-a-real-tool",
+        },
+      });
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
   it("routes the public chat helper through the canonical adapter path", async () => {
     await createTempHome();
     const loreDir = await createTempLoreDir();
