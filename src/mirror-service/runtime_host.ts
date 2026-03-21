@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import type { MirrorActionLifecycleEvent } from "../mirror-actions/index.js";
 import type {
   MirrorAdapterRequestEnvelope,
   MirrorAdapterResponseEnvelope,
@@ -7,7 +6,6 @@ import type {
 import { buildCliChatAdapterEnvelope } from "../mirror-adapters/index.js";
 import { createMirrorGateway, type MirrorGateway } from "../mirror-gateway/index.js";
 import { runWithMirrorObservabilityContext } from "../mirror-observability/index.js";
-import { type MirrorPolicyContext } from "../mirror-policy/index.js";
 import {
   buildPrimaryProviderDescriptorFromConfig,
   createMirrorProviderPlane,
@@ -16,7 +14,6 @@ import {
   type MirrorProviderPlane,
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
-import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncManager,
   type MirrorSyncActionName,
@@ -24,9 +21,11 @@ import {
 } from "../mirror-sync/index.js";
 import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
+import { executeMirrorRuntimeAdapterRequest } from "./adapter_runtime.js";
 import type { MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
 import { executeMirrorRuntimeSyncAction } from "./sync_runtime.js";
+import { executeMirrorRuntimeTool } from "./tool_runtime.js";
 
 export type MirrorRuntimeHost = {
   config: MirrorServiceConfig;
@@ -173,408 +172,29 @@ export async function createMirrorRuntimeHost(
     },
     async executeAdapterRequest(envelope, runtimeDeps = {}) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        const sessionId =
-          envelope.context.session?.session_id ?? envelope.context.session?.external_session_id;
-        const userId = envelope.context.actor?.user_id ?? envelope.context.actor?.external_user_id;
-        const traceId =
-          envelope.context.runtime?.trace_id ??
-          envelope.context.runtime?.correlation_id ??
-          envelope.envelope_id;
-        const correlation = {
-          trace_id: traceId,
-          session_id: sessionId,
-          action_id: envelope.context.action?.tool_call_id,
-        };
-        const isCliIngress = envelope.context.adapter.adapter_id === "mirror-cli";
-        const sessionMetadata =
-          envelope.context.session?.metadata &&
-          typeof envelope.context.session.metadata === "object" &&
-          !Array.isArray(envelope.context.session.metadata)
-            ? envelope.context.session.metadata
-            : undefined;
-        if (sessionId) {
-          const existing = daemon.getSession(sessionId);
-          if (existing) {
-            daemon.touchSession(sessionId, {
-              user_id: userId,
-              metadata: {
-                surface: envelope.context.adapter.adapter_id,
-                ...sessionMetadata,
-              },
-            });
-          } else {
-            daemon.createSession({
-              session_id: sessionId,
-              user_id: userId,
-              metadata: {
-                surface: envelope.context.adapter.adapter_id,
-                ...sessionMetadata,
-              },
-            });
-          }
-        }
-        const actionId = envelope.context.action?.tool_call_id ?? crypto.randomUUID();
-        const executionId = crypto.randomUUID();
-        try {
-          if (isCliIngress && envelope.kind === "chat.request") {
-            daemon.publishRuntimeEvent(
-              "chat.started",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  model: envelope.request.model,
-                },
-                correlation,
-              ),
-            );
-          }
-          if (isCliIngress && envelope.kind === "tool.request") {
-            daemon.publishRuntimeEvent(
-              "tool.execution.started",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: envelope.request.tool_name,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-            daemon.publishRuntimeEvent(
-              "action.execution.started",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  action: envelope.request.tool_name,
-                  execution_id: executionId,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          const response = await gateway.executeAdapterRequest(envelope, {
-            provider: runtimeDeps.provider,
-            providerPlane: runtimeDeps.provider ? undefined : providerPlane,
-            fetchImpl: runtimeDeps.fetchImpl ?? deps.fetchImpl,
-            onRuntimeEvent: daemon.publishRuntimeEvent,
-            correlation,
-          });
-          if (isCliIngress && envelope.kind === "chat.request") {
-            daemon.publishRuntimeEvent(
-              "chat.finished",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  model: response.kind === "chat.response" ? response.response.model : undefined,
-                },
-                correlation,
-              ),
-            );
-          }
-          if (isCliIngress && envelope.kind === "tool.request") {
-            daemon.publishRuntimeEvent(
-              "tool.execution.finished",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: envelope.request.tool_name,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-            daemon.publishRuntimeEvent(
-              "action.execution.finished",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  action: envelope.request.tool_name,
-                  execution_id: executionId,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          if (sessionId) {
-            daemon.touchSession(sessionId, {
-              user_id: userId,
-              metadata: {
-                surface: envelope.context.adapter.adapter_id,
-                ...sessionMetadata,
-              },
-            });
-          }
-          return response;
-        } catch (error) {
-          if (isCliIngress && envelope.kind === "chat.request") {
-            daemon.publishRuntimeEvent(
-              "chat.failed",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  model: envelope.request.model,
-                  error: String(error),
-                },
-                correlation,
-              ),
-            );
-          }
-          if (isCliIngress && envelope.kind === "tool.request") {
-            daemon.publishRuntimeEvent(
-              "tool.execution.failed",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: envelope.request.tool_name,
-                  error: String(error),
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-            daemon.publishRuntimeEvent(
-              "action.execution.failed",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  action: envelope.request.tool_name,
-                  execution_id: executionId,
-                  error: String(error),
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          throw error;
-        }
+        return await executeMirrorRuntimeAdapterRequest(
+          {
+            daemon,
+            gateway,
+            providerPlane,
+            fetchImpl: deps.fetchImpl,
+          },
+          envelope,
+          runtimeDeps,
+        );
       });
     },
     async executeTool(toolName, input, context = {}) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        const sessionId = trackCliSession(daemon, {
-          user_id: context.user_id,
-          metadata: {
-            command: context.command ?? "tool",
-            action: context.action,
-            tool: toolName,
-          },
+        return await executeMirrorRuntimeTool({
+          daemon,
+          gateway,
+          providerPlane,
+          toolName,
+          input,
+          context,
+          trackCliSession,
         });
-        const policyContext: MirrorPolicyContext = {
-          surface: "cli",
-          command: context.command ?? "tool",
-          request_token: context.operator_token ?? null,
-          actor: {
-            user_id: context.user_id,
-          },
-          session: {
-            session_id: sessionId,
-          },
-          metadata: {
-            trace_id: resolveMirrorTraceId(undefined),
-            action: context.action,
-            tool: toolName,
-          },
-        };
-        const correlation = {
-          trace_id: String(policyContext.metadata?.trace_id),
-          session_id: sessionId,
-        };
-        try {
-          const action = gateway.actionRuntime.getAction(toolName);
-          if (!action) {
-            throw new Error(`Unknown Mirror tool: ${toolName}`);
-          }
-          const result = await gateway.actionRuntime.executeAction(
-            {
-              action_name: toolName,
-              input,
-              context: policyContext,
-              policy: gateway.policy,
-              providerPlane,
-              correlation,
-            },
-            {
-              onLifecycleEvent(event: MirrorActionLifecycleEvent) {
-                if (event.type === "started") {
-                  daemon.publishRuntimeEvent(
-                    "tool.execution.started",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        tool: event.action.action_name,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  daemon.publishRuntimeEvent(
-                    "action.execution.started",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        action: event.action.action_name,
-                        execution_id: event.execution_id,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  return;
-                }
-                if (event.type === "finished") {
-                  daemon.publishRuntimeEvent(
-                    "tool.execution.finished",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        tool: event.action.action_name,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  daemon.publishRuntimeEvent(
-                    "action.execution.finished",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        action: event.action.action_name,
-                        execution_id: event.execution_id,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  return;
-                }
-                daemon.publishRuntimeEvent(
-                  "tool.execution.failed",
-                  withMirrorCorrelation(
-                    {
-                      session_id: sessionId,
-                      tool: event.action.action_name,
-                      error: event.result.error,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-                daemon.publishRuntimeEvent(
-                  "action.execution.failed",
-                  withMirrorCorrelation(
-                    {
-                      session_id: sessionId,
-                      action: event.action.action_name,
-                      execution_id: event.execution_id,
-                      error: event.result.error,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-              },
-            },
-          );
-          const reviewStatus =
-            result.result.review && typeof result.result.review === "object"
-              ? (result.result.review as { status?: unknown }).status
-              : undefined;
-          if (typeof reviewStatus === "string") {
-            daemon.publishRuntimeEvent(
-              "review.decision",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: toolName,
-                  status: reviewStatus,
-                },
-                {
-                  trace_id: result.trace_id,
-                  session_id: result.session_id,
-                  action_id: result.action_id,
-                },
-              ),
-            );
-          }
-          return result.result;
-        } catch (error) {
-          const code =
-            error &&
-            typeof error === "object" &&
-            "code" in error &&
-            typeof (error as { code?: unknown }).code === "string"
-              ? (error as { code: string }).code
-              : undefined;
-          if (code) {
-            daemon.publishRuntimeEvent(
-              "policy.denied",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  phase: "action",
-                  target: "action",
-                  action: toolName,
-                  code,
-                },
-                correlation,
-              ),
-            );
-          }
-          daemon.publishRuntimeEvent(
-            "tool.execution.failed",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                tool: toolName,
-                error: String(error),
-              },
-              correlation,
-            ),
-          );
-          throw error;
-        } finally {
-          daemon.touchSession(sessionId, {
-            user_id: context.user_id,
-            metadata: {
-              command: context.command ?? "tool",
-              action: context.action,
-              tool: toolName,
-            },
-          });
-        }
       });
     },
     async executeSyncAction(action, input = {}, context = {}) {
