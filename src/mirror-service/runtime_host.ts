@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import type { MirrorActionLifecycleEvent } from "../mirror-actions/index.js";
 import type {
   MirrorAdapterRequestEnvelope,
   MirrorAdapterResponseEnvelope,
@@ -7,7 +6,7 @@ import type {
 import { buildCliChatAdapterEnvelope } from "../mirror-adapters/index.js";
 import { createMirrorGateway, type MirrorGateway } from "../mirror-gateway/index.js";
 import { runWithMirrorObservabilityContext } from "../mirror-observability/index.js";
-import { buildMirrorActionPolicyTarget, type MirrorPolicyContext } from "../mirror-policy/index.js";
+import { buildMirrorActionPolicyTarget } from "../mirror-policy/index.js";
 import {
   buildPrimaryProviderDescriptorFromConfig,
   createMirrorProviderPlane,
@@ -28,6 +27,7 @@ import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js"
 import { executeMirrorRuntimeAdapterRequest } from "./adapter_runtime.js";
 import type { MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
+import { executeMirrorRuntimeTool } from "./tool_runtime.js";
 
 export type MirrorRuntimeHost = {
   config: MirrorServiceConfig;
@@ -188,215 +188,15 @@ export async function createMirrorRuntimeHost(
     },
     async executeTool(toolName, input, context = {}) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        const sessionId = trackCliSession(daemon, {
-          user_id: context.user_id,
-          metadata: {
-            command: context.command ?? "tool",
-            action: context.action,
-            tool: toolName,
-          },
+        return await executeMirrorRuntimeTool({
+          daemon,
+          gateway,
+          providerPlane,
+          toolName,
+          input,
+          context,
+          trackCliSession,
         });
-        const policyContext: MirrorPolicyContext = {
-          surface: "cli",
-          command: context.command ?? "tool",
-          request_token: context.operator_token ?? null,
-          actor: {
-            user_id: context.user_id,
-          },
-          session: {
-            session_id: sessionId,
-          },
-          metadata: {
-            trace_id: resolveMirrorTraceId(undefined),
-            action: context.action,
-            tool: toolName,
-          },
-        };
-        const correlation = {
-          trace_id: String(policyContext.metadata?.trace_id),
-          session_id: sessionId,
-        };
-        try {
-          const action = gateway.actionRuntime.getAction(toolName);
-          if (!action) {
-            throw new Error(`Unknown Mirror tool: ${toolName}`);
-          }
-          const result = await gateway.actionRuntime.executeAction(
-            {
-              action_name: toolName,
-              input,
-              context: policyContext,
-              policy: gateway.policy,
-              providerPlane,
-              correlation,
-            },
-            {
-              onLifecycleEvent(event: MirrorActionLifecycleEvent) {
-                if (event.type === "started") {
-                  daemon.publishRuntimeEvent(
-                    "tool.execution.started",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        tool: event.action.action_name,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  daemon.publishRuntimeEvent(
-                    "action.execution.started",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        action: event.action.action_name,
-                        execution_id: event.execution_id,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  return;
-                }
-                if (event.type === "finished") {
-                  daemon.publishRuntimeEvent(
-                    "tool.execution.finished",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        tool: event.action.action_name,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  daemon.publishRuntimeEvent(
-                    "action.execution.finished",
-                    withMirrorCorrelation(
-                      {
-                        session_id: sessionId,
-                        action: event.action.action_name,
-                        execution_id: event.execution_id,
-                      },
-                      {
-                        trace_id: event.trace_id,
-                        session_id: event.session_id,
-                        action_id: event.action_id,
-                      },
-                    ),
-                  );
-                  return;
-                }
-                daemon.publishRuntimeEvent(
-                  "tool.execution.failed",
-                  withMirrorCorrelation(
-                    {
-                      session_id: sessionId,
-                      tool: event.action.action_name,
-                      error: event.result.error,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-                daemon.publishRuntimeEvent(
-                  "action.execution.failed",
-                  withMirrorCorrelation(
-                    {
-                      session_id: sessionId,
-                      action: event.action.action_name,
-                      execution_id: event.execution_id,
-                      error: event.result.error,
-                    },
-                    {
-                      trace_id: event.trace_id,
-                      session_id: event.session_id,
-                      action_id: event.action_id,
-                    },
-                  ),
-                );
-              },
-            },
-          );
-          const reviewStatus =
-            result.result.review && typeof result.result.review === "object"
-              ? (result.result.review as { status?: unknown }).status
-              : undefined;
-          if (typeof reviewStatus === "string") {
-            daemon.publishRuntimeEvent(
-              "review.decision",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: toolName,
-                  status: reviewStatus,
-                },
-                {
-                  trace_id: result.trace_id,
-                  session_id: result.session_id,
-                  action_id: result.action_id,
-                },
-              ),
-            );
-          }
-          return result.result;
-        } catch (error) {
-          const code =
-            error &&
-            typeof error === "object" &&
-            "code" in error &&
-            typeof (error as { code?: unknown }).code === "string"
-              ? (error as { code: string }).code
-              : undefined;
-          if (code) {
-            daemon.publishRuntimeEvent(
-              "policy.denied",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  phase: "action",
-                  target: "action",
-                  action: toolName,
-                  code,
-                },
-                correlation,
-              ),
-            );
-          }
-          daemon.publishRuntimeEvent(
-            "tool.execution.failed",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                tool: toolName,
-                error: String(error),
-              },
-              correlation,
-            ),
-          );
-          throw error;
-        } finally {
-          daemon.touchSession(sessionId, {
-            user_id: context.user_id,
-            metadata: {
-              command: context.command ?? "tool",
-              action: context.action,
-              tool: toolName,
-            },
-          });
-        }
       });
     },
     async executeSyncAction(action, input = {}, context = {}) {
