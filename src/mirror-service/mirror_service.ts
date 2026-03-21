@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import http from "node:http";
 import express from "express";
 import {
@@ -18,7 +17,6 @@ import {
 } from "../mirror-observability/index.js";
 import { type MirrorProviderPlane } from "../mirror-provider/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
-import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncRouter,
   type MirrorSyncHandlers,
@@ -40,6 +38,7 @@ import {
   type MirrorRuntimeWebSocketServer,
 } from "./runtime_events_ws.js";
 import { createMirrorRuntimeHost, type MirrorRuntimeHost } from "./runtime_host.js";
+import { createMirrorSessionIngressMiddleware } from "./session_ingress.js";
 import { createMirrorServiceSyncHandlers } from "./sync_handlers.js";
 
 export type MirrorService = {
@@ -87,15 +86,6 @@ export type MirrorHealthStatus = {
   };
 };
 
-function shouldTrackMirrorSession(pathname: string): boolean {
-  return (
-    pathname.startsWith("/mirror/chat") ||
-    pathname.startsWith("/mirror/tools") ||
-    pathname.startsWith("/mirror/console/api/chat") ||
-    pathname.startsWith("/mirror/console/api/tools")
-  );
-}
-
 export async function startMirrorService(
   overrides: Partial<MirrorServiceConfig> = {},
   deps: { fetchImpl?: FetchLike } = {},
@@ -125,46 +115,7 @@ export async function startMirrorService(
       next();
     });
   });
-  app.use((req, res, next) => {
-    if (!shouldTrackMirrorSession(req.path)) {
-      next();
-      return;
-    }
-
-    const body =
-      req.body && typeof req.body === "object" && !Array.isArray(req.body)
-        ? (req.body as Record<string, unknown>)
-        : {};
-    const sessionFromBody = typeof body.session_id === "string" ? body.session_id : undefined;
-    const sessionFromHeader = req.header("x-mirror-session-id") ?? undefined;
-    const traceId = resolveMirrorTraceId(
-      req.header("x-mirror-trace-id") ?? undefined,
-      typeof body.trace_id === "string" ? body.trace_id : undefined,
-    );
-    const sessionId = sessionFromHeader ?? sessionFromBody ?? crypto.randomUUID();
-    const sessionUserId =
-      typeof body.user_id === "string"
-        ? body.user_id
-        : body.session && typeof body.session === "object"
-          ? ((body.session as { user_id?: unknown }).user_id as string | undefined)
-          : undefined;
-    const existing = daemon.getSession(sessionId);
-    if (existing) {
-      daemon.touchSession(sessionId, {
-        user_id: sessionUserId,
-        metadata: { path: req.path, method: req.method, trace_id: traceId },
-      });
-    } else {
-      daemon.createSession({
-        session_id: sessionId,
-        user_id: sessionUserId,
-        metadata: { path: req.path, method: req.method, trace_id: traceId },
-      });
-    }
-    res.setHeader("x-mirror-session-id", sessionId);
-    res.setHeader("x-mirror-trace-id", traceId);
-    next();
-  });
+  app.use(createMirrorSessionIngressMiddleware(daemon));
   const healthHandler = (_req: express.Request, res: express.Response) => {
     const status: MirrorHealthStatus = getMirrordaemonHealthState(daemon, {
       port: boundPort,
