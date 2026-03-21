@@ -650,6 +650,89 @@ describe("mirror gateway", () => {
     );
   });
 
+  it("emits denied tool failure events through delegated gateway handlers", async () => {
+    const runtimeEvents: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+    const handlers = createMirrorGatewayHandlers(undefined, {
+      onRuntimeEvent(type, payload) {
+        runtimeEvents.push({ type, payload });
+      },
+      async executeAdapterRequest(envelope) {
+        if (envelope.kind !== "tool.request") {
+          throw new Error(`Unexpected adapter request kind: ${envelope.kind}`);
+        }
+        const error = new Error("Tool denied by policy") as Error & {
+          code: string;
+          statusCode: number;
+        };
+        error.code = "tool_blocked";
+        error.statusCode = 451;
+        throw error;
+      },
+    });
+    const res = createMockResponse();
+
+    await handlers.executeTool(
+      {
+        params: { tool_name: "mirror.find-scroll" },
+        body: {
+          session_id: "runtime-tool-session",
+          user_id: "alice",
+          query: "patience vault",
+        },
+        path: "/mirror/tools/mirror.find-scroll",
+        method: "POST",
+        header(name: string) {
+          if (name.toLowerCase() === "x-mirror-trace-id") {
+            return "trace-tool-header";
+          }
+          return undefined;
+        },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(451);
+    expect(res.headers["x-mirror-trace-id"]).toBe("trace-tool-header");
+    expect(res.body).toEqual({
+      error: "Tool denied by policy",
+      code: "tool_blocked",
+    });
+    expect(runtimeEvents.map((event) => event.type)).toEqual([
+      "tool.execution.started",
+      "action.execution.started",
+      "tool.execution.failed",
+      "policy.denied",
+      "action.execution.failed",
+    ]);
+    expect(runtimeEvents[2]?.payload).toEqual(
+      expect.objectContaining({
+        tool: "mirror.find-scroll",
+        error: "Tool denied by policy",
+        trace_id: "trace-tool-header",
+        session_id: "runtime-tool-session",
+      }),
+    );
+    expect(runtimeEvents[3]?.payload).toEqual(
+      expect.objectContaining({
+        phase: "adapter",
+        target: "action",
+        tool: "mirror.find-scroll",
+        code: "tool_blocked",
+        route: "/mirror/tools/mirror.find-scroll",
+        trace_id: "trace-tool-header",
+        session_id: "runtime-tool-session",
+      }),
+    );
+    expect(runtimeEvents[4]?.payload).toEqual(
+      expect.objectContaining({
+        action: "mirror.find-scroll",
+        error: "Tool denied by policy",
+        trace_id: "trace-tool-header",
+        session_id: "runtime-tool-session",
+      }),
+    );
+  });
+
   it("routes the public gateway direct chat helper through the canonical adapter boundary", async () => {
     await createTempHome();
     const loreDir = await createTempLoreDir();
