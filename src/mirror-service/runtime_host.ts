@@ -7,7 +7,7 @@ import type {
 import { buildCliChatAdapterEnvelope } from "../mirror-adapters/index.js";
 import { createMirrorGateway, type MirrorGateway } from "../mirror-gateway/index.js";
 import { runWithMirrorObservabilityContext } from "../mirror-observability/index.js";
-import { buildMirrorActionPolicyTarget, type MirrorPolicyContext } from "../mirror-policy/index.js";
+import { type MirrorPolicyContext } from "../mirror-policy/index.js";
 import {
   buildPrimaryProviderDescriptorFromConfig,
   createMirrorProviderPlane,
@@ -19,7 +19,6 @@ import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/in
 import { resolveMirrorTraceId, withMirrorCorrelation } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncManager,
-  executeMirrorSyncAction,
   type MirrorSyncActionName,
   type MirrorSyncManager,
 } from "../mirror-sync/index.js";
@@ -27,6 +26,7 @@ import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
 import type { MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
+import { executeMirrorRuntimeSyncAction } from "./sync_runtime.js";
 
 export type MirrorRuntimeHost = {
   config: MirrorServiceConfig;
@@ -579,96 +579,16 @@ export async function createMirrorRuntimeHost(
     },
     async executeSyncAction(action, input = {}, context = {}) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        const sessionId = trackCliSession(daemon, {
-          user_id: context.user_id,
-          metadata: {
-            command: "sync",
-            action,
+        return await executeMirrorRuntimeSyncAction(
+          {
+            daemon,
+            gateway,
+            syncManager,
           },
-        });
-        const traceId = resolveMirrorTraceId(undefined);
-        const policyDecision = await gateway.policy.evaluate({
-          phase: "action",
-          target: buildMirrorActionPolicyTarget(`sync.${action}`, input),
-          context: {
-            surface: "cli",
-            command: "sync",
-            actor: {
-              user_id: context.user_id,
-            },
-            session: {
-              session_id: sessionId,
-            },
-            metadata: {
-              trace_id: traceId,
-              action,
-            },
-          },
-        });
-        const correlation = {
-          trace_id: traceId,
-          session_id: sessionId,
-        };
-        try {
-          if (!policyDecision.allowed) {
-            daemon.publishRuntimeEvent(
-              "policy.denied",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  phase: "action",
-                  target: "action",
-                  action: `sync.${action}`,
-                  code: policyDecision.decision.code,
-                },
-                correlation,
-              ),
-            );
-            throw new Error(policyDecision.decision.reason);
-          }
-          daemon.publishRuntimeEvent(
-            "sync.action.started",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                action,
-              },
-              correlation,
-            ),
-          );
-          return await executeMirrorSyncAction(syncManager, action, input);
-        } catch (error) {
-          daemon.publishRuntimeEvent(
-            "sync.action.failed",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                action,
-                error: String(error),
-              },
-              correlation,
-            ),
-          );
-          throw error;
-        } finally {
-          daemon.publishRuntimeEvent(
-            "sync.action.finished",
-            withMirrorCorrelation(
-              {
-                session_id: sessionId,
-                action,
-              },
-              correlation,
-            ),
-          );
-          daemon.touchSession(sessionId, {
-            user_id: context.user_id,
-            metadata: {
-              command: "sync",
-              action,
-            },
-          });
-        }
+          action,
+          input,
+          context,
+        );
       });
     },
     async shutdown() {
