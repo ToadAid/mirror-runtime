@@ -29,6 +29,7 @@ import {
   getMirrordaemonHealthState,
   getMirrordaemonProvidersState,
   getMirrordaemonRuntimeState,
+  getMirrordaemonSyncState,
   type Mirrordaemon,
 } from "../mirrordaemon/index.js";
 import { type MirrorServiceConfig } from "./config.js";
@@ -193,6 +194,13 @@ export async function startMirrorService(
     res.json(
       getMirrordaemonProvidersState(daemon, {
         providerPlane,
+      }),
+    );
+  });
+  app.get("/mirror/sync", (_req, res) => {
+    res.json(
+      getMirrordaemonSyncState(daemon, {
+        peers: syncManager.listPeers(),
       }),
     );
   });
