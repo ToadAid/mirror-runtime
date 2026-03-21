@@ -991,6 +991,7 @@ describe("mirror service", () => {
         decision: {
           allowed: true,
           code: "allowed",
+          reason: "allowed",
           statusCode: 200,
         },
         evaluations: [],
