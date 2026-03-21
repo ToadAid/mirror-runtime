@@ -14,7 +14,6 @@ import {
   type MirrorProviderPlane,
 } from "../mirror-provider/index.js";
 import type { MirrorChatRequest, MirrorChatResponse } from "../mirror-runtime/index.js";
-import { withMirrorCorrelation } from "../mirror-runtime/index.js";
 import {
   createMirrorSyncManager,
   type MirrorSyncActionName,
