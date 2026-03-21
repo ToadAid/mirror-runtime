@@ -514,13 +514,13 @@ jobs:
         run: ${{ matrix.command }}
 
       - name: Summarize slowest tests
-        if: matrix.task == 'test'
+        if: matrix.task == 'test' && github.event_name != 'pull_request'
         run: |
           node scripts/vitest-slowest.mjs --dir "$OPENCLAW_VITEST_REPORT_DIR" --top 50 --out "$RUNNER_TEMP/vitest-slowest.md" > /dev/null
           echo "Slowest test summary written to $RUNNER_TEMP/vitest-slowest.md"
 
       - name: Upload vitest reports
-        if: matrix.task == 'test'
+        if: matrix.task == 'test' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: vitest-reports-${{ runner.os }}-${{ matrix.runtime }}
