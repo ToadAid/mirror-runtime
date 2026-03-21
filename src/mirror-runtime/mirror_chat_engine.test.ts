@@ -21,6 +21,7 @@ const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
 const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
 const originalLogLevel = process.env.MIRROR_LOG_LEVEL;
+const originalOpenClawLogLevel = process.env.OPENCLAW_LOG_LEVEL;
 
 afterEach(async () => {
   if (originalMirrorLoreDir === undefined) {
@@ -37,6 +38,11 @@ afterEach(async () => {
     delete process.env.MIRROR_LOG_LEVEL;
   } else {
     process.env.MIRROR_LOG_LEVEL = originalLogLevel;
+  }
+  if (originalOpenClawLogLevel === undefined) {
+    delete process.env.OPENCLAW_LOG_LEVEL;
+  } else {
+    process.env.OPENCLAW_LOG_LEVEL = originalOpenClawLogLevel;
   }
 
   closeMirrorMemoryDb();
@@ -159,6 +165,23 @@ describe("mirror chat engine", () => {
     expect(canonIndex).toBeGreaterThanOrEqual(0);
     expect(memoryIndex).toBeGreaterThan(canonIndex);
     expect(prompt).toContain("Traveler note: the Patience Vault still exists.");
+  });
+
+  it("ignores OPENCLAW_LOG_LEVEL in the canonical Mirror debug path", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    delete process.env.MIRROR_LOG_LEVEL;
+    process.env.OPENCLAW_LOG_LEVEL = "debug";
+
+    const prepared = await prepareMirrorChatRequest({
+      model: "test-model",
+      messages: [{ role: "user", content: "patience vault" }],
+    });
+
+    expect(prepared.modelRequest.messages[0]?.content).toContain("Mirror canon context:");
+    expect(prepared.modelRequest.messages[0]?.content).not.toContain("[RETRIEVAL_DIAGNOSTICS]");
+    expect(prepared.diagnostics).toBeUndefined();
   });
 
   it("executes through the provider boundary without OpenClaw-specific request types", async () => {
