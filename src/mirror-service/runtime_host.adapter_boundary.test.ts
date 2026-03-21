@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MIRROR_ADAPTER_PROTOCOL,
   type MirrorAdapterToolRequestEnvelope,
 } from "../mirror-adapters/index.js";
+import type { MirrorPolicyEvaluationInput } from "../mirror-policy/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
 import { createMirrorRuntimeHost } from "./index.js";
 
@@ -241,6 +242,92 @@ describe("mirror runtime host adapter boundary", () => {
       );
 
       expect(response.choices[0]?.message.content).toBe("Cancelled.");
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
+  it("preserves runtime sync policy denial events and session metadata", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+    const evaluate = vi.fn(async (_input: MirrorPolicyEvaluationInput) => ({
+      allowed: false as const,
+      decision: {
+        allowed: false,
+        code: "operator_auth_required",
+        reason: "denied",
+        statusCode: 403,
+      },
+      evaluations: [],
+    }));
+    runtimeHost.gateway.policy.evaluate = evaluate;
+
+    try {
+      await expect(
+        runtimeHost.executeSyncAction(
+          "peers",
+          {},
+          {
+            user_id: "traveler-1",
+          },
+        ),
+      ).rejects.toThrow("denied");
+
+      expect(evaluate).toHaveBeenCalledTimes(1);
+      const policyCall = evaluate.mock.calls[0];
+      const policyInput = policyCall?.[0];
+      expect(policyInput).toBeDefined();
+      if (!policyInput) {
+        throw new Error("Expected policy evaluation input");
+      }
+      expect(policyInput).toMatchObject({
+        phase: "action",
+        target: {
+          kind: "action",
+          action_name: "sync.peers",
+          input: {},
+        },
+        context: {
+          surface: "cli",
+          command: "sync",
+          actor: {
+            user_id: "traveler-1",
+          },
+          metadata: {
+            action: "peers",
+            trace_id: expect.any(String),
+          },
+        },
+      });
+      const session = policyInput.context.session;
+      expect(session).toBeDefined();
+      if (!session) {
+        throw new Error("Expected policy session context");
+      }
+      expect(session.session_id).toEqual(expect.any(String));
+
+      const eventTypes = runtimeHost.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("policy.denied");
+      expect(eventTypes).toContain("sync.action.failed");
+      expect(eventTypes).toContain("sync.action.finished");
+      expect(eventTypes).not.toContain("sync.action.started");
+
+      const daemonSession = runtimeHost.daemon
+        .listSessions()
+        .find((entry) => entry.user_id === "traveler-1");
+      expect(daemonSession).toBeDefined();
+      expect(daemonSession).toMatchObject({
+        user_id: "traveler-1",
+        metadata: {
+          surface: "cli",
+          command: "sync",
+          action: "peers",
+        },
+      });
     } finally {
       await runtimeHost.shutdown();
     }
