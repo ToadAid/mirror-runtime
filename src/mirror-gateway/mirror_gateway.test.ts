@@ -529,6 +529,41 @@ describe("mirror gateway", () => {
     expect(body.result.candidates[0]?.path).toBe("TOBY_L1219_Rune3_PatienceVaultCancelled.md");
   });
 
+  it("returns 404 for unknown tools through exported gateway handlers", async () => {
+    const gateway = createMirrorGateway();
+    const res = createMockResponse();
+
+    await gateway.handlers.executeTool(
+      createRequest({ tool_name: "mirror.not-a-real-tool" }, {}) as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({
+      error: "Unknown Mirror tool: mirror.not-a-real-tool",
+    });
+  });
+
+  it("returns 400 for invalid tool input through exported gateway handlers", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    const gateway = createMirrorGateway();
+    const res = createMockResponse();
+
+    await gateway.handlers.executeTool(
+      createRequest({ tool_name: "mirror.find-scroll" }, {}) as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error: "Invalid tool input",
+      details: ["missing required field: query"],
+    });
+  });
+
   it("routes the public gateway direct chat helper through the canonical adapter boundary", async () => {
     await createTempHome();
     const loreDir = await createTempLoreDir();
