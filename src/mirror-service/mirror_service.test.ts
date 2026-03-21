@@ -1310,6 +1310,38 @@ describe("mirror service", () => {
     }
   });
 
+  it("exposes an empty standalone sync status endpoint", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "sync-node-empty",
+    });
+
+    try {
+      const sync = (await requestJsonFromApp(service.app, "GET", "/mirror/sync")) as {
+        ok: boolean;
+        daemon_session_id: string;
+        peers_known: number;
+        peers: unknown[];
+      };
+
+      expect(sync).toEqual({
+        ok: true,
+        daemon_session_id: expect.any(String),
+        peers_known: 0,
+        peers: [],
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("exposes canonical runtime state and debug endpoints", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
@@ -1364,6 +1396,18 @@ describe("mirror service", () => {
         total: number;
         providers: Array<{ provider_id: string; selected: boolean }>;
       };
+      const sync = (await requestJsonFromApp(service.app, "GET", "/mirror/sync")) as {
+        ok: boolean;
+        peers_known: number;
+        peers: Array<{
+          peer_id: string;
+          base_url: string;
+          last_seen_at: string;
+          sync_status: string;
+          last_sync_at?: string;
+          last_error?: string;
+        }>;
+      };
 
       expect(runtime.ok).toBe(true);
       expect(runtime.version.length).toBeGreaterThan(0);
@@ -1387,6 +1431,67 @@ describe("mirror service", () => {
       expect(providers.total).toBe(1);
       expect(providers.providers[0]?.provider_id).toBe("primary");
       expect(providers.providers[0]?.selected).toBe(true);
+      expect(sync.ok).toBe(true);
+      expect(sync.peers_known).toBe(0);
+      expect(sync.peers).toEqual([]);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("reflects announced peers on the standalone sync status endpoint", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "sync-node-populated",
+      baseUrl: "http://127.0.0.1:7001",
+    });
+
+    try {
+      await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
+        body: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+        },
+      });
+
+      const sync = (await requestJsonFromApp(service.app, "GET", "/mirror/sync")) as {
+        ok: boolean;
+        daemon_session_id: string;
+        peers_known: number;
+        peers: Array<{
+          peer_id: string;
+          base_url: string;
+          last_seen_at: string;
+          sync_status: string;
+          last_sync_at?: string;
+          last_error?: string;
+        }>;
+      };
+
+      expect(sync.ok).toBe(true);
+      expect(sync.daemon_session_id.length).toBeGreaterThan(0);
+      expect(sync.peers_known).toBe(1);
+      expect(sync.peers).toEqual([
+        {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+          last_seen_at: expect.any(String),
+          sync_status: "idle",
+          last_sync_at: undefined,
+          last_error: undefined,
+        },
+      ]);
     } finally {
       await service.shutdown();
     }

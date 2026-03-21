@@ -4,6 +4,7 @@ import {
   buildHealthSummary,
   buildProvidersSummary,
   buildRuntimeSummary,
+  buildSyncSummary,
 } from "./runtime_state.js";
 
 export function getMirrordaemonRuntimeState(
@@ -32,4 +33,11 @@ export function getMirrordaemonProvidersState(
   params: Parameters<typeof buildProvidersSummary>[1] = {},
 ) {
   return buildProvidersSummary(daemon, params);
+}
+
+export function getMirrordaemonSyncState(
+  daemon: Mirrordaemon,
+  params: Parameters<typeof buildSyncSummary>[1] = {},
+) {
+  return buildSyncSummary(daemon, params);
 }
