@@ -247,6 +247,106 @@ describe("mirror runtime host adapter boundary", () => {
     }
   });
 
+  it("preserves runtime host tool policy denial events and session metadata", async () => {
+    await createTempHome();
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+    const evaluate = vi.fn(async (_input: MirrorPolicyEvaluationInput) => ({
+      allowed: false as const,
+      decision: {
+        allowed: false,
+        code: "tool_blocked",
+        reason: "denied",
+        statusCode: 451,
+      },
+      evaluations: [],
+    }));
+    runtimeHost.gateway.policy.evaluate = evaluate;
+
+    try {
+      await expect(
+        runtimeHost.executeTool(
+          "mirror.find-scroll",
+          { query: "patience vault" },
+          {
+            user_id: "traveler-1",
+          },
+        ),
+      ).rejects.toThrow("denied");
+
+      expect(evaluate).toHaveBeenCalledTimes(1);
+      const policyCall = evaluate.mock.calls[0];
+      const policyInput = policyCall?.[0];
+      expect(policyInput).toBeDefined();
+      if (!policyInput) {
+        throw new Error("Expected policy evaluation input");
+      }
+      expect(policyInput).toMatchObject({
+        phase: "action",
+        target: {
+          kind: "action",
+          action_name: "mirror.find-scroll",
+          input: { query: "patience vault" },
+        },
+        context: {
+          surface: "cli",
+          command: "tool",
+          actor: {
+            user_id: "traveler-1",
+          },
+          metadata: {
+            tool: "mirror.find-scroll",
+            trace_id: expect.any(String),
+          },
+        },
+      });
+      const session = policyInput.context.session;
+      expect(session).toBeDefined();
+      if (!session) {
+        throw new Error("Expected policy session context");
+      }
+      expect(session.session_id).toEqual(expect.any(String));
+
+      const eventTypes = runtimeHost.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("policy.denied");
+      expect(eventTypes).toContain("tool.execution.failed");
+      expect(eventTypes).not.toContain("action.execution.started");
+
+      const deniedEvent = runtimeHost.daemon
+        .getRecentEvents()
+        .find((event) => event.type === "policy.denied");
+      expect(deniedEvent?.payload).toEqual(
+        expect.objectContaining({
+          phase: "action",
+          target: "action",
+          action: "mirror.find-scroll",
+          code: "tool_blocked",
+        }),
+      );
+
+      const daemonSession = runtimeHost.daemon
+        .listSessions()
+        .find(
+          (entry) =>
+            entry.user_id === "traveler-1" && entry.metadata?.tool === "mirror.find-scroll",
+        );
+      expect(daemonSession).toBeDefined();
+      expect(daemonSession).toMatchObject({
+        user_id: "traveler-1",
+        metadata: {
+          surface: "cli",
+          command: "tool",
+          tool: "mirror.find-scroll",
+        },
+      });
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
   it("preserves runtime sync policy denial events and session metadata", async () => {
     await createTempHome();
     const loreDir = await createTempLoreDir();
