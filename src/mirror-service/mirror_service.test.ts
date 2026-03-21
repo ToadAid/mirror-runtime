@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { runMirrorCli } from "../mirror-cli/index.js";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
+import type { MirrorPolicyEngine } from "../mirror-policy/index.js";
+import type { MirrorSyncManager } from "../mirror-sync/index.js";
+import type { Mirrordaemon } from "../mirrordaemon/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
 import {
   loadMirrorServiceConfig,
@@ -14,6 +17,7 @@ import {
   startMirrorService,
   type MirrorRuntimeWsEnvelope,
 } from "./index.js";
+import { createMirrorServiceSyncHandlers } from "./sync_handlers.js";
 
 const tempDirs: string[] = [];
 const originalMirrorLoreDir = process.env.MIRROR_LORE_DIR;
@@ -152,6 +156,94 @@ function createMockResponse() {
       this.body = payload;
       return this;
     },
+  };
+}
+
+function createSyncHandlerTestDeps(
+  overrides: {
+    policyEvaluate?: MirrorPolicyEngine["evaluate"];
+    publishRuntimeEvent?: Mirrordaemon["publishRuntimeEvent"];
+    announcePeer?: MirrorSyncManager["announcePeer"];
+    listPeers?: MirrorSyncManager["listPeers"];
+    getLocalUpdates?: MirrorSyncManager["getLocalUpdates"];
+    pullFromPeer?: MirrorSyncManager["pullFromPeer"];
+  } = {},
+) {
+  const daemon = {
+    publishRuntimeEvent: overrides.publishRuntimeEvent ?? vi.fn(),
+  } as Pick<Mirrordaemon, "publishRuntimeEvent"> as Mirrordaemon;
+  const policy = {
+    evaluate:
+      overrides.policyEvaluate ??
+      vi.fn(async () => ({
+        allowed: true as const,
+        decision: {
+          allowed: true,
+          reason: "allowed",
+          code: "allowed",
+          statusCode: 200,
+        },
+        evaluations: [],
+      })),
+  } as MirrorPolicyEngine;
+  const syncManager = {
+    announcePeer:
+      overrides.announcePeer ??
+      vi.fn(async (input) => ({
+        peer_id: input.peer_id,
+        base_url: input.base_url,
+        last_seen_at: "2026-03-20T00:00:00.000Z",
+        sync_status: "idle" as const,
+      })),
+    listPeers: overrides.listPeers ?? vi.fn(() => []),
+    getLocalUpdates:
+      overrides.getLocalUpdates ??
+      vi.fn(async () => ({
+        node_id: "service-node",
+        base_url: "http://127.0.0.1:7001",
+        canon: {
+          lore_dir: "/tmp/mirror-service-test",
+          index_path: "/tmp/mirror-service-test/_index/KEYWORD_INDEX.json",
+          index_version: 1,
+          latest_update_at: "2026-03-20T00:00:00.000Z",
+          files: [],
+        },
+        graph: {
+          version: "graph-v1",
+          updated_at: "2026-03-20T00:00:00.000Z",
+          updated_at_ms: Date.parse("2026-03-20T00:00:00.000Z"),
+          node_count: 0,
+          edge_count: 0,
+        },
+      })),
+    pullFromPeer:
+      overrides.pullFromPeer ??
+      vi.fn(async () => ({
+        peer_id: "peer-1",
+        peer_base_url: "http://127.0.0.1:7999",
+        pulled_files: [],
+        skipped_files: [],
+        conflicts: [],
+        graph: {
+          remote_version: "graph-v1",
+          local_version: "graph-v1",
+          rebuilt: false,
+        },
+      })),
+    setLocalBaseUrl: vi.fn(),
+    getLocalBaseUrl: vi.fn(() => null),
+    registry: {} as never,
+  } satisfies MirrorSyncManager;
+
+  return {
+    handlers: createMirrorServiceSyncHandlers({
+      daemon,
+      policy,
+      syncManager,
+    }),
+    daemon,
+    policy,
+    syncManager,
   };
 }
 
@@ -440,6 +532,59 @@ async function openRuntimeWebSocket(
 }
 
 describe("mirror service", () => {
+  it("preserves sync handler policy denial responses and events", async () => {
+    const policyEvaluate = vi.fn(async () => ({
+      allowed: false as const,
+      decision: {
+        allowed: false,
+        reason: "denied",
+        code: "operator_auth_required",
+        statusCode: 401,
+      },
+      evaluations: [],
+    }));
+    const publishRuntimeEvent = vi.fn();
+    const { handlers } = createSyncHandlerTestDeps({
+      policyEvaluate,
+      publishRuntimeEvent,
+    });
+    const res = createMockResponse();
+
+    await handlers.pull(
+      {
+        path: "/mirror-sync/pull",
+        method: "POST",
+        body: {
+          peer_id: "peer-1",
+        },
+        header(name: string) {
+          if (name === "x-mirror-session-id") {
+            return "session-1";
+          }
+          if (name === "x-mirror-operator-token") {
+            return "secret";
+          }
+          return undefined;
+        },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({
+      error: "denied",
+      code: "operator_auth_required",
+    });
+    expect(policyEvaluate).toHaveBeenCalledTimes(1);
+    expect(publishRuntimeEvent).toHaveBeenCalledWith("policy.denied", {
+      phase: "action",
+      target: "action",
+      action: "sync.pull",
+      code: "operator_auth_required",
+      route: "/mirror-sync/pull",
+    });
+  });
+
   it("loads config from environment", () => {
     process.env.MIRROR_PORT = "7777";
     process.env.MIRROR_PROVIDER_URL = "http://brain.local/v1/chat/completions";
