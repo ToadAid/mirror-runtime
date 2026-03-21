@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { runMirrorCli } from "../mirror-cli/index.js";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
-import type { MirrorPolicyEngine } from "../mirror-policy/index.js";
+import type { MirrorPolicyEngine, MirrorPolicyEvaluationInput } from "../mirror-policy/index.js";
 import type { MirrorSyncManager } from "../mirror-sync/index.js";
 import type { Mirrordaemon } from "../mirrordaemon/index.js";
 import { parseRequestBodyJson } from "../test/request_init.js";
@@ -953,6 +953,104 @@ describe("mirror service", () => {
           tasks: [],
         },
       });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("preserves tool policy denial responses and runtime events through the service route", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+    const evaluate = vi.fn(async (input: MirrorPolicyEvaluationInput) => {
+      if (
+        input.phase === "action" &&
+        input.target.kind === "action" &&
+        input.target.action_name === "mirror.find-scroll"
+      ) {
+        return {
+          allowed: false as const,
+          decision: {
+            allowed: false,
+            reason: "denied",
+            code: "tool_blocked",
+            statusCode: 451,
+          },
+          evaluations: [],
+        };
+      }
+      return {
+        allowed: true as const,
+        decision: {
+          allowed: true,
+          code: "allowed",
+          reason: "allowed",
+          statusCode: 200,
+        },
+        evaluations: [],
+      };
+    });
+    service.runtimeHost.gateway.policy.evaluate = evaluate;
+
+    try {
+      const response = await requestResponseFromApp(
+        service.app,
+        "POST",
+        "/mirror/tools/mirror.find-scroll",
+        {
+          headers: {
+            "x-mirror-trace-id": "trace-tool-denied-1",
+          },
+          body: {
+            session_id: "runtime-tool-session",
+            user_id: "alice",
+            query: "patience vault",
+          },
+        },
+      );
+
+      expect(response).toEqual({
+        statusCode: 451,
+        body: {
+          error: "denied",
+          code: "tool_blocked",
+        },
+      });
+
+      const eventTypes = service.daemon.getRecentEvents().map((event) => event.type);
+      expect(eventTypes).toContain("tool.execution.started");
+      expect(eventTypes).toContain("action.execution.started");
+      expect(eventTypes).toContain("tool.execution.failed");
+      expect(eventTypes).toContain("policy.denied");
+      expect(eventTypes).toContain("action.execution.failed");
+      expect(eventTypes).not.toContain("tool.execution.finished");
+      expect(eventTypes).not.toContain("action.execution.finished");
+
+      const deniedEvent = service.daemon
+        .getRecentEvents()
+        .find((event) => event.type === "policy.denied");
+      expect(deniedEvent?.payload).toEqual(
+        expect.objectContaining({
+          phase: "adapter",
+          target: "action",
+          tool: "mirror.find-scroll",
+          code: "tool_blocked",
+          route: "/mirror/tools/mirror.find-scroll",
+        }),
+      );
+      expect(deniedEvent?.correlation).toEqual(
+        expect.objectContaining({
+          trace_id: "trace-tool-denied-1",
+          session_id: "runtime-tool-session",
+        }),
+      );
     } finally {
       await service.shutdown();
     }
