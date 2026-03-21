@@ -1178,6 +1178,136 @@ describe("mirror service", () => {
     }
   });
 
+  it("returns announced peers from the read-only sync peers ingress", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "service-node",
+      baseUrl: "http://127.0.0.1:7001",
+    });
+
+    try {
+      await requestJsonFromApp(service.app, "POST", "/mirror-sync/announce", {
+        headers: {
+          "x-mirror-operator-token": "secret",
+        },
+        body: {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+        },
+      });
+
+      const peers = (await requestJsonFromApp(service.app, "GET", "/mirror-sync/peers")) as {
+        peers: Array<{
+          peer_id: string;
+          base_url: string;
+          last_seen_at: string;
+          sync_status: string;
+        }>;
+      };
+
+      expect(peers).toEqual({
+        peers: [
+          {
+            peer_id: "peer-1",
+            base_url: "http://127.0.0.1:7999",
+            last_seen_at: expect.any(String),
+            sync_status: "idle",
+          },
+        ],
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("returns the current sync updates snapshot from the read-only ingress", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "service-node",
+      baseUrl: "http://127.0.0.1:7001",
+    });
+
+    try {
+      const updates = (await requestJsonFromApp(service.app, "GET", "/mirror-sync/updates")) as {
+        node_id: string;
+        base_url: string | null;
+        canon: {
+          lore_dir: string;
+          index_path: string;
+          index_version: number;
+          files: Array<{ path: string }>;
+        };
+        graph: {
+          version: string;
+          node_count: number;
+          edge_count: number;
+        };
+      };
+
+      expect(updates.node_id).toBe("service-node");
+      expect(updates.base_url).toBe("http://127.0.0.1:7001");
+      expect(updates.canon.lore_dir).toBe(loreDir);
+      expect(updates.canon.index_path).toContain("_index/");
+      expect(updates.canon.index_path.endsWith(".json")).toBe(true);
+      expect(typeof updates.canon.index_version).toBe("number");
+      expect(updates.canon.index_version).toBeGreaterThan(0);
+      expect(updates.canon.files[0]?.path).toBe("TOBY_L1219_Rune3_PatienceVaultCancelled.md");
+      expect(typeof updates.graph.version).toBe("string");
+      expect(updates.graph.node_count).toBeGreaterThanOrEqual(0);
+      expect(updates.graph.edge_count).toBeGreaterThanOrEqual(0);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("returns requested file contents from the read-only sync updates ingress", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "service-node",
+      baseUrl: "http://127.0.0.1:7001",
+    });
+
+    try {
+      const updates = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror-sync/updates?include_content=1&paths=TOBY_L1219_Rune3_PatienceVaultCancelled.md",
+      )) as {
+        file_contents?: Record<string, string>;
+      };
+
+      expect(updates.file_contents).toEqual({
+        "TOBY_L1219_Rune3_PatienceVaultCancelled.md": expect.stringContaining(
+          "The Patience Vault was cancelled.",
+        ),
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("preserves invalid sync announce responses and wrapper events", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
