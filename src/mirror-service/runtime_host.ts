@@ -25,6 +25,7 @@ import {
 } from "../mirror-sync/index.js";
 import { resolveDefaultLoreRoot } from "../mirror/lore_sources/index.js";
 import { createMirrordaemon, type Mirrordaemon } from "../mirrordaemon/index.js";
+import { executeMirrorRuntimeAdapterRequest } from "./adapter_runtime.js";
 import type { MirrorServiceConfig } from "./config.js";
 import { initializeMirrorServiceLifecycle, type MirrorServiceLifecycle } from "./lifecycle.js";
 
@@ -173,195 +174,16 @@ export async function createMirrorRuntimeHost(
     },
     async executeAdapterRequest(envelope, runtimeDeps = {}) {
       return await runWithMirrorObservabilityContext(daemon.getObservability(), async () => {
-        const sessionId =
-          envelope.context.session?.session_id ?? envelope.context.session?.external_session_id;
-        const userId = envelope.context.actor?.user_id ?? envelope.context.actor?.external_user_id;
-        const traceId =
-          envelope.context.runtime?.trace_id ??
-          envelope.context.runtime?.correlation_id ??
-          envelope.envelope_id;
-        const correlation = {
-          trace_id: traceId,
-          session_id: sessionId,
-          action_id: envelope.context.action?.tool_call_id,
-        };
-        const isCliIngress = envelope.context.adapter.adapter_id === "mirror-cli";
-        const sessionMetadata =
-          envelope.context.session?.metadata &&
-          typeof envelope.context.session.metadata === "object" &&
-          !Array.isArray(envelope.context.session.metadata)
-            ? envelope.context.session.metadata
-            : undefined;
-        if (sessionId) {
-          const existing = daemon.getSession(sessionId);
-          if (existing) {
-            daemon.touchSession(sessionId, {
-              user_id: userId,
-              metadata: {
-                surface: envelope.context.adapter.adapter_id,
-                ...sessionMetadata,
-              },
-            });
-          } else {
-            daemon.createSession({
-              session_id: sessionId,
-              user_id: userId,
-              metadata: {
-                surface: envelope.context.adapter.adapter_id,
-                ...sessionMetadata,
-              },
-            });
-          }
-        }
-        const actionId = envelope.context.action?.tool_call_id ?? crypto.randomUUID();
-        const executionId = crypto.randomUUID();
-        try {
-          if (isCliIngress && envelope.kind === "chat.request") {
-            daemon.publishRuntimeEvent(
-              "chat.started",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  model: envelope.request.model,
-                },
-                correlation,
-              ),
-            );
-          }
-          if (isCliIngress && envelope.kind === "tool.request") {
-            daemon.publishRuntimeEvent(
-              "tool.execution.started",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: envelope.request.tool_name,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-            daemon.publishRuntimeEvent(
-              "action.execution.started",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  action: envelope.request.tool_name,
-                  execution_id: executionId,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          const response = await gateway.executeAdapterRequest(envelope, {
-            provider: runtimeDeps.provider,
-            providerPlane: runtimeDeps.provider ? undefined : providerPlane,
-            fetchImpl: runtimeDeps.fetchImpl ?? deps.fetchImpl,
-            onRuntimeEvent: daemon.publishRuntimeEvent,
-            correlation,
-          });
-          if (isCliIngress && envelope.kind === "chat.request") {
-            daemon.publishRuntimeEvent(
-              "chat.finished",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  model: response.kind === "chat.response" ? response.response.model : undefined,
-                },
-                correlation,
-              ),
-            );
-          }
-          if (isCliIngress && envelope.kind === "tool.request") {
-            daemon.publishRuntimeEvent(
-              "tool.execution.finished",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: envelope.request.tool_name,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-            daemon.publishRuntimeEvent(
-              "action.execution.finished",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  action: envelope.request.tool_name,
-                  execution_id: executionId,
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          if (sessionId) {
-            daemon.touchSession(sessionId, {
-              user_id: userId,
-              metadata: {
-                surface: envelope.context.adapter.adapter_id,
-                ...sessionMetadata,
-              },
-            });
-          }
-          return response;
-        } catch (error) {
-          if (isCliIngress && envelope.kind === "chat.request") {
-            daemon.publishRuntimeEvent(
-              "chat.failed",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  model: envelope.request.model,
-                  error: String(error),
-                },
-                correlation,
-              ),
-            );
-          }
-          if (isCliIngress && envelope.kind === "tool.request") {
-            daemon.publishRuntimeEvent(
-              "tool.execution.failed",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  tool: envelope.request.tool_name,
-                  error: String(error),
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-            daemon.publishRuntimeEvent(
-              "action.execution.failed",
-              withMirrorCorrelation(
-                {
-                  session_id: sessionId,
-                  action: envelope.request.tool_name,
-                  execution_id: executionId,
-                  error: String(error),
-                },
-                {
-                  ...correlation,
-                  action_id: actionId,
-                },
-              ),
-            );
-          }
-          throw error;
-        }
+        return await executeMirrorRuntimeAdapterRequest(
+          {
+            daemon,
+            gateway,
+            providerPlane,
+            fetchImpl: deps.fetchImpl,
+          },
+          envelope,
+          runtimeDeps,
+        );
       });
     },
     async executeTool(toolName, input, context = {}) {
