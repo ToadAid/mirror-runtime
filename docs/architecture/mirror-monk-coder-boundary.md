@@ -101,3 +101,5 @@ Use this boundary to guide:
 - user-surface design
 - repo split decisions
 - future utility and tool expansion
+
+For the ordered pre-split execution checklist, see [Mirror Runtime Split-Readiness Checklist](./mirror-runtime-split-readiness-checklist.md).
