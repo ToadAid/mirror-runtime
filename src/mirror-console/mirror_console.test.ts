@@ -249,6 +249,67 @@ describe("mirror web console", () => {
     }
   });
 
+  it("returns 404 for unknown tools through the console API", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const consoleServer = await startConsoleHarness({ loreDir });
+
+    try {
+      const res = createMockResponse();
+      await consoleServer.consoleHandlers.executeTool(
+        {
+          params: { tool_name: "mirror.not-a-real-tool" },
+          body: {},
+          header: () => undefined,
+        } as never,
+        res as never,
+      );
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({
+        error: "Unknown Mirror tool: mirror.not-a-real-tool",
+      });
+    } finally {
+      await consoleServer.shutdown();
+    }
+  });
+
+  it("preserves trace header and validation errors through the console API", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+
+    const consoleServer = await startConsoleHarness({ loreDir });
+
+    try {
+      const res = createMockResponse();
+      await consoleServer.consoleHandlers.executeTool(
+        {
+          params: { tool_name: "mirror.find-scroll" },
+          body: {},
+          header(name: string) {
+            if (name.toLowerCase() === "x-mirror-trace-id") {
+              return "trace-console-tool-1";
+            }
+            return undefined;
+          },
+        } as never,
+        res as never,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.headers["x-mirror-trace-id"]).toBeUndefined();
+      expect(res.body).toEqual({
+        error: "Invalid tool input",
+        details: ["missing required field: query"],
+      });
+    } finally {
+      await consoleServer.shutdown();
+    }
+  });
+
   it("routes personal utility tools through the console API", async () => {
     const loreDir = await createTempLoreDir();
     const usersRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-console-users-"));
