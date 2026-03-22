@@ -2300,6 +2300,173 @@ describe("mirror service", () => {
     }
   });
 
+  it("replays backlog only when explicitly requested by subscribe control messages", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "events-ws-subscribe-node",
+    });
+
+    try {
+      let ws;
+      try {
+        ws = await openRuntimeWebSocket(service.port, "?backlog=0");
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      const hello = await ws.waitFor("hello");
+      const initialSubscribed = await ws.waitFor("subscribed");
+      expect(initialSubscribed.backlog_sent).toBe(0);
+
+      service.daemon.publishRuntimeEvent("operator.inspect.snapshot", {
+        trace_id: "trace-subscribe-1",
+        session_id: "session-subscribe-1",
+      });
+      await ws.waitFor(
+        "runtime.event",
+        (message) => message.event.type === "operator.inspect.snapshot",
+      );
+
+      ws.socket.send(JSON.stringify({ type: "subscribe", backlog: false }));
+      const noReplaySubscribed = await ws.waitFor(
+        "subscribed",
+        (message) => message !== initialSubscribed && message.backlog_sent === 0,
+      );
+      expect(noReplaySubscribed.connection_id).toBe(hello.connection_id);
+
+      const messageCountBeforeReplay = ws.messages.length;
+      ws.socket.send(JSON.stringify({ type: "subscribe", backlog: true }));
+      const replaySubscribed = await ws.waitFor(
+        "subscribed",
+        (message) => message !== initialSubscribed && message.backlog_sent > 0,
+      );
+      expect(replaySubscribed.connection_id).toBe(hello.connection_id);
+
+      const replayedMessages = ws.messages.slice(messageCountBeforeReplay);
+      const replayedRuntimeEvents = replayedMessages.filter(
+        (message): message is Extract<MirrorRuntimeWsEnvelope, { type: "runtime.event" }> =>
+          message.type === "runtime.event",
+      );
+
+      expect(replayedRuntimeEvents).toHaveLength(replaySubscribed.backlog_sent);
+      expect(
+        replayedRuntimeEvents.some(
+          (message) =>
+            message.event.type === "operator.inspect.snapshot" &&
+            message.event.correlation?.trace_id === "trace-subscribe-1",
+        ),
+      ).toBe(true);
+      expect(
+        replayedRuntimeEvents.some((message) => message.event.type === "runtime.started"),
+      ).toBe(true);
+
+      ws.socket.close();
+      await new Promise<void>((resolve) => {
+        ws.socket.once("close", () => resolve());
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("returns websocket error envelopes for unsupported control messages", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "events-ws-unsupported-node",
+    });
+
+    try {
+      let ws;
+      try {
+        ws = await openRuntimeWebSocket(service.port, "?backlog=0");
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      const hello = await ws.waitFor("hello");
+      await ws.waitFor("subscribed");
+
+      ws.socket.send(JSON.stringify({ type: "unknown-control-message" }));
+      const errorEnvelope = await ws.waitFor(
+        "error",
+        (message) => message.code === "unsupported_message",
+      );
+      expect(errorEnvelope.connection_id).toBe(hello.connection_id);
+      expect(errorEnvelope.message).toBe("Unsupported Mirror runtime websocket message");
+
+      ws.socket.close();
+      await new Promise<void>((resolve) => {
+        ws.socket.once("close", () => resolve());
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("returns websocket error envelopes for invalid control payloads", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "events-ws-invalid-node",
+    });
+
+    try {
+      let ws;
+      try {
+        ws = await openRuntimeWebSocket(service.port, "?backlog=0");
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      const hello = await ws.waitFor("hello");
+      await ws.waitFor("subscribed");
+
+      ws.socket.send("not-json");
+      const errorEnvelope = await ws.waitFor("error", (message) => message.code === "invalid_json");
+      expect(errorEnvelope.connection_id).toBe(hello.connection_id);
+      expect(errorEnvelope.message).toBe("Invalid Mirror runtime websocket payload");
+
+      ws.socket.close();
+      await new Promise<void>((resolve) => {
+        ws.socket.once("close", () => resolve());
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("keeps service, console, daemon, observability, and status surfaces in sync", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
