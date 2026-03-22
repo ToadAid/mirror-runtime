@@ -2553,7 +2553,6 @@ describe("mirror service", () => {
       await service.shutdown();
     }
   });
-
   it("keeps service, console, daemon, observability, and status surfaces in sync", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
