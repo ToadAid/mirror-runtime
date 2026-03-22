@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadRuntimeSourceFilesForGuardrails } from "../test-utils/runtime-source-guardrail-scan.js";
 
 const MIRROR_OWNED_PREFIXES = ["src/mirror/", "src/mirror-runtime/", "src/mirror-cli/"] as const;
-const ALLOWED_PATHS = [] as const;
+const ALLOWED_PATHS: readonly string[] = new Set([]);
 const OPENCLAW_IMPORT_PATTERNS = [
   /\bimport\s+type\s+[^;]*?\bfrom\s*["'`](?<specifier>[^"'`]*openclaw[^"'`]*)["'`]/gu,
   /\bimport\s+[^;]*?\bfrom\s*["'`](?<specifier>[^"'`]*openclaw[^"'`]*)["'`]/gu,
@@ -25,7 +25,7 @@ describe("Mirror-owned OpenClaw import boundary", () => {
       if (!MIRROR_OWNED_PREFIXES.some((prefix) => relativePath.startsWith(prefix))) {
         continue;
       }
-      if (ALLOWED_PATHS.includes(relativePath)) {
+      if (ALLOWED_PATHS.has(relativePath)) {
         continue;
       }
 
