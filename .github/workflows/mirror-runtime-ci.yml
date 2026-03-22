@@ -20,6 +20,7 @@ on:
       - "scripts/verify-mirror-runtime-dist.ts"
       - "packaging/mirror-runtime/**"
       - "src/compat/openclaw/shim-boundary.test.ts"
+      - "src/runtime/compat-legacy-boundary.test.ts"
       - "test/mirror-package-boundary.test.ts"
       - "docs/debug/mirror-runtime-canonical-entrypoints.md"
       - ".github/workflows/mirror-runtime-ci.yml"
