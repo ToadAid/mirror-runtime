@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createMirrordaemon, getMirrordaemonActionsState } from "./index.js";
+import {
+  buildDebugSnapshot,
+  buildRuntimeSummary,
+  createMirrordaemon,
+  getMirrordaemonActionsState,
+} from "./index.js";
 
 const baseConfig = {
   port: 7777,
@@ -108,5 +113,59 @@ describe("mirrordaemon runtime state", () => {
         },
       ],
     });
+  });
+
+  it("keeps websocket inspection truth aligned between runtime summary and debug snapshots", () => {
+    const daemon = createMirrordaemon({
+      config: baseConfig,
+      lifecycle: {
+        discoveredLoreFiles: 2,
+        shutdown: async () => undefined,
+      },
+      runtimeStartedAt: "2026-03-13T00:00:00.000Z",
+    });
+
+    daemon.publishRuntimeEvent("runtime.ws.connected", {
+      connection_id: "conn-1",
+      path: "/mirror/runtime/ws",
+    });
+    daemon.publishRuntimeEvent("runtime.ws.disconnected", {
+      connection_id: "conn-1",
+      path: "/mirror/runtime/ws",
+    });
+
+    const runtime = buildRuntimeSummary(daemon, {
+      port: 7788,
+      baseUrl: "http://127.0.0.1:7788",
+      wsConnections: 2,
+      sseAvailable: true,
+      wsAvailable: true,
+    });
+    const debug = buildDebugSnapshot(daemon, {
+      port: 7788,
+      baseUrl: "http://127.0.0.1:7788",
+      wsConnections: 2,
+      sseAvailable: true,
+      wsAvailable: true,
+    });
+
+    expect(debug.runtime).toMatchObject({
+      node_id: runtime.node_id,
+      port: runtime.port,
+      base_url: runtime.base_url,
+      event_stream: runtime.event_stream,
+    });
+    expect(runtime.event_stream.ws_connections).toBe(2);
+    expect(debug.runtime.event_stream.ws_connections).toBe(2);
+    expect(runtime.event_stream.sse_available).toBe(true);
+    expect(debug.runtime.event_stream.sse_available).toBe(true);
+    expect(runtime.event_stream.ws_available).toBe(true);
+    expect(debug.runtime.event_stream.ws_available).toBe(true);
+    expect(runtime.event_stream.recent_events).toBe(debug.recent_events.length);
+    expect(debug.runtime.event_stream.recent_events).toBe(debug.recent_events.length);
+    expect(debug.recent_events.some((event) => event.type === "runtime.ws.connected")).toBe(true);
+    expect(debug.recent_events.some((event) => event.type === "runtime.ws.disconnected")).toBe(
+      true,
+    );
   });
 });
