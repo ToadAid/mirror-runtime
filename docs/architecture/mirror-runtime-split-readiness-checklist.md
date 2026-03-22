@@ -59,35 +59,38 @@ Current score: `yellow`
 Current reality:
 
 - Service runtime state is real and daemon-backed.
-- Console and CLI parity improved materially, but should still be treated as a seam until one runtime truth is clearly universal.
+- CLI parity improved materially for status and sync summary flows.
+- Console and some compatibility entrypoints should still be treated as a seam until one runtime truth is clearly universal.
 
 ### 2. Service and operator surfaces
 
 Current score: `yellow`
 
-- [ ] Canonical read-only operator surfaces are present and stable.
-- [ ] Health, runtime, debug, actions, providers, and sync surfaces are consistent in style and ownership.
+- [x] Canonical read-only operator surfaces are present and stable.
+- [x] Health, runtime, debug, actions, providers, and sync surfaces are consistent in style and ownership.
 - [ ] Operator-facing surfaces do not depend on legacy `src/runtime/**` wrappers.
-- [ ] Additive runtime/status endpoints are covered by service-level tests.
+- [x] Additive runtime/status endpoints are covered by service-level tests.
 
 Current reality:
 
 - `/mirror/health`, `/mirror/status`, `/mirror/runtime`, `/mirror/runtime/debug`, `/mirror/actions`, `/mirror/providers`, and `/mirror/sync` are real.
-- This area is close, but operator truth is still uneven in CLI status and verify-lore flows.
+- `mirror status` is daemon-backed and limited to runtime truth only on the canonical Mirror path.
+- This area is materially improved, but should remain yellow until compatibility-only wrappers stop competing with the canonical operator path.
 
 ### 3. Sync and runtime state visibility
 
 Current score: `yellow`
 
-- [ ] Sync peer state is available on a canonical read-only runtime surface.
-- [ ] `/mirror-sync/peers` and `/mirror-sync/updates` have focused service-level regression coverage.
+- [x] Sync peer state is available on a canonical read-only runtime surface.
+- [x] `/mirror-sync/peers` and `/mirror-sync/updates` have focused service-level regression coverage.
 - [ ] Runtime event surfaces expose enough state to understand sync activity without reading internal modules.
-- [ ] Sync state is summarized consistently between operator surfaces and runtime state.
+- [x] Sync state is summarized consistently between operator surfaces and runtime state.
 
 Current reality:
 
 - Sync read surfaces are real.
 - `/mirror/sync` now exposes read-only peer state from the live registry.
+- CLI status parity now covers the daemon-backed sync summary.
 - Sync is still a seam because execution state is not fully daemon-owned beyond the current registry and event stream summaries.
 
 ### 4. CLI and service parity
@@ -96,12 +99,14 @@ Current score: `yellow`
 
 - [ ] `mirror` CLI commands execute through the same canonical runtime plane used by service ingress.
 - [ ] Read operations and mutable operations report the same runtime truth regardless of surface.
-- [ ] Focused parity tests exist for status, sync, and key tool flows.
+- [x] Focused parity tests exist for status, sync, and key tool flows.
 - [ ] Operator commands do not silently fall back to stale or compatibility-only logic.
 
 Current reality:
 
-- CLI coverage is much better than before, but this should not be treated as fully green until parity is explicit for all critical operator surfaces.
+- `mirror status` and sync summary parity are now explicit and tested.
+- The canonical `mirror verify-lore` path is aligned on `MIRROR_LORE_DIR`.
+- CLI coverage is much better than before, but this should not be treated as fully green until parity is explicit for all critical operator surfaces and compatibility-only entrypoints are no longer misleading.
 
 ### 5. Observability ownership
 
@@ -122,13 +127,14 @@ Current reality:
 Current score: `red`
 
 - [ ] `src/runtime/server.ts`, `src/runtime/brain-chat.ts`, `src/runtime/health.ts`, and `src/cli/mirror-cli.ts` are either quarantined clearly or removed.
-- [ ] Mirror-owned runtime modules do not read `OPENCLAW_*` env vars except in explicit compatibility files.
+- [x] Mirror-owned runtime modules do not read `OPENCLAW_*` env vars except in explicit compatibility files.
 - [ ] Canonical operator docs and entrypoints point to Mirror-native paths first.
 - [ ] Compatibility code is not the hidden owner of any required runtime behavior.
 
 Current reality:
 
-- Compatibility edges are still materially present at entrypoint and env-boundary level.
+- Canonical Mirror-owned source no longer reads `OPENCLAW_*` directly outside tests and explicit compatibility paths.
+- Compatibility edges are still materially present at entrypoint and wrapper level.
 - This is still one of the clearest blockers to a clean split.
 
 ### 7. Packaging and build boundary
@@ -156,20 +162,19 @@ Current reality:
 
 - Runtime tests exist.
 - Dedicated split-readiness gates are still missing.
+- macOS shard-order instability should be treated as a CI lane, not as a product seam in this checklist.
 
 ## Current known gaps
 
 The next small, high-signal gaps remain:
 
-1. Make any remaining console and CLI execution seams explicitly daemon-backed where they are still partial.
+1. Quarantine or retire compatibility-only runtime wrappers and legacy entrypoints.
 2. Continue enriching daemon-owned runtime events where operator/runtime inspection is still thin.
 3. Move observability ownership under daemon/runtime control.
-4. Remove OpenClaw env usage from canonical Mirror runtime modules.
-5. Fix operator truth for `mirror status`.
-6. Fix operator truth for `mirror verify-lore`.
-7. Quarantine or retire compatibility-only runtime wrappers.
-8. Create a Mirror-native package/build boundary.
-9. Add dedicated Mirror runtime CI gates.
+4. Create a Mirror-native package/build boundary.
+5. Add dedicated Mirror runtime CI gates.
+6. Make any remaining console execution seams explicitly daemon-backed where they are still partial.
+7. Keep parity coverage growing only where a canonical operator/runtime seam is still weak.
 
 ## Do Not Split Before
 
