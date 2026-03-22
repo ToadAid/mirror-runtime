@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadRuntimeSourceFilesForGuardrails } from "../test-utils/runtime-source-guardrail-scan.js";
 
 const MIRROR_OWNED_PREFIXES = ["src/mirror/", "src/mirror-runtime/", "src/mirror-cli/"] as const;
-const ALLOWED_PATHS: readonly string[] = new Set([]);
+const ALLOWED_PATHS: ReadonlySet<string> = new Set();
 const OPENCLAW_ENV_PATTERN = /\bOPENCLAW_[A-Z0-9_]+\b/g;
 
 describe("Mirror-owned OpenClaw env boundary", () => {
