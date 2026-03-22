@@ -53,26 +53,34 @@ describe("mirror cli wiring", () => {
     const doctor = getSubcommand(mirror, "doctor");
     const status = getSubcommand(mirror, "status");
     const passport = getSubcommand(mirror, "passport");
+    const verifyLore = getSubcommand(mirror, "verify-lore");
     const tail = getSubcommand(telemetry, "tail");
     expect(doctor).toBeDefined();
     expect(status).toBeDefined();
     expect(passport).toBeDefined();
+    expect(verifyLore).toBeDefined();
     expect(tail).toBeDefined();
-    if (!doctor || !status || !passport || !tail) {
-      throw new Error("expected mirror doctor/status/tail commands to be registered");
+    if (!doctor || !status || !passport || !verifyLore || !tail) {
+      throw new Error("expected mirror doctor/status/verify-lore/tail commands to be registered");
     }
 
     const doctorOptions = getLongOptionFlags(doctor);
     const statusOptions = getLongOptionFlags(status);
+    const verifyLoreOptions = getLongOptionFlags(verifyLore);
     const tailOptions = getLongOptionFlags(tail);
 
     expect(doctorOptions.has("--json")).toBe(true);
     expect(statusOptions.has("--json")).toBe(true);
+    expect(verifyLoreOptions.has("--manifest")).toBe(true);
+    expect(verifyLoreOptions.has("--dir")).toBe(true);
     expect(tailOptions.has("--json")).toBe(true);
     expect(tailOptions.has("--limit")).toBe(true);
+    expect(verifyLore.opts<{ manifest?: string; dir?: string }>().manifest).toBeUndefined();
+    expect(verifyLore.opts<{ manifest?: string; dir?: string }>().dir).toBeUndefined();
     expect(mirror.description()).toContain("compatibility");
     expect(doctor.description()).toContain("Compatibility-only");
     expect(status.description()).toContain("Compatibility wrapper");
+    expect(verifyLore.description()).toContain("Compatibility wrapper");
     expect(passport.description()).toContain("Compatibility-only");
     expect(tail.description()).toContain("Compatibility-only");
   });
