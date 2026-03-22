@@ -9,6 +9,7 @@ const steps = [
       "src/mirrordaemon/mirrordaemon.test.ts",
       "src/mirrordaemon/runtime_state.test.ts",
       "src/compat/openclaw/shim-boundary.test.ts",
+      "src/runtime/compat-legacy-boundary.test.ts",
     ],
   ],
   [
