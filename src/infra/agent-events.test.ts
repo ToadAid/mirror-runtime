@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   clearAgentRunContext,
   emitAgentEvent,
@@ -9,8 +9,11 @@ import {
 } from "./agent-events.js";
 
 describe("agent-events sequencing", () => {
-  test("stores and clears run context", async () => {
+  beforeEach(() => {
     resetAgentRunContextForTest();
+  });
+
+  test("stores and clears run context", async () => {
     registerAgentRunContext("run-1", { sessionKey: "main" });
     expect(getAgentRunContext("run-1")?.sessionKey).toBe("main");
     clearAgentRunContext("run-1");
@@ -60,5 +63,15 @@ describe("agent-events sequencing", () => {
     stop();
 
     expect(phases).toEqual(["start", "end"]);
+  });
+
+  test("clears subscribed listeners via the test reset helper", async () => {
+    const leakedListener = vi.fn();
+    onAgentEvent(leakedListener);
+
+    resetAgentRunContextForTest();
+    emitAgentEvent({ runId: "run-reset", stream: "lifecycle", data: { phase: "start" } });
+
+    expect(leakedListener).not.toHaveBeenCalled();
   });
 });
