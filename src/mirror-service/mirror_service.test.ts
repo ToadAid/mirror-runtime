@@ -1627,6 +1627,93 @@ describe("mirror service", () => {
     }
   });
 
+  it("reflects websocket connection counts on the runtime summary as sockets connect and disconnect", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "runtime-ws-count-node",
+    });
+
+    try {
+      const initialRuntime = (await requestJsonFromApp(service.app, "GET", "/mirror/runtime")) as {
+        event_stream: { ws_connections: number };
+      };
+      expect(initialRuntime.event_stream.ws_connections).toBe(0);
+
+      let firstSocket;
+      let secondSocket;
+      try {
+        firstSocket = await openRuntimeWebSocket(service.port, "?backlog=0");
+        await firstSocket.waitFor("hello");
+        await firstSocket.waitFor("subscribed");
+
+        const oneConnectionRuntime = (await requestJsonFromApp(
+          service.app,
+          "GET",
+          "/mirror/runtime",
+        )) as {
+          event_stream: { ws_connections: number };
+        };
+        expect(oneConnectionRuntime.event_stream.ws_connections).toBe(1);
+
+        secondSocket = await openRuntimeWebSocket(service.port, "?backlog=0");
+        await secondSocket.waitFor("hello");
+        await secondSocket.waitFor("subscribed");
+
+        const twoConnectionRuntime = (await requestJsonFromApp(
+          service.app,
+          "GET",
+          "/mirror/runtime",
+        )) as {
+          event_stream: { ws_connections: number };
+        };
+        expect(twoConnectionRuntime.event_stream.ws_connections).toBe(2);
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      secondSocket.socket.close();
+      await new Promise<void>((resolve) => {
+        secondSocket.socket.once("close", () => resolve());
+      });
+
+      const backToOneRuntime = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/runtime",
+      )) as {
+        event_stream: { ws_connections: number };
+      };
+      expect(backToOneRuntime.event_stream.ws_connections).toBe(1);
+
+      firstSocket.socket.close();
+      await new Promise<void>((resolve) => {
+        firstSocket.socket.once("close", () => resolve());
+      });
+
+      const backToZeroRuntime = (await requestJsonFromApp(
+        service.app,
+        "GET",
+        "/mirror/runtime",
+      )) as {
+        event_stream: { ws_connections: number };
+      };
+      expect(backToZeroRuntime.event_stream.ws_connections).toBe(0);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("reports active actions while an action execution is in flight", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
