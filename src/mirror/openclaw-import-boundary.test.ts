@@ -15,7 +15,13 @@ const MIRROR_OWNED_FILES: ReadonlySet<string> = new Set([
   "src/mirror-package.ts",
 ]);
 const ALLOWED_PATHS: ReadonlySet<string> = new Set<string>([]);
-const OPENCLAW_ENV_PATTERNS = [/\bOPENCLAW_[A-Z0-9_]+\b/g, /\bCLAWDBOT_[A-Z0-9_]+\b/g] as const;
+const MODULE_SPECIFIER_PATTERNS = [
+  /\bimport\s+type\s+[^;]*?\bfrom\s*["'`](?<specifier>[^"'`]*)["'`]/gu,
+  /\bimport\s+[^;]*?\bfrom\s*["'`](?<specifier>[^"'`]*)["'`]/gu,
+  /\bexport\s+[^;]*?\bfrom\s*["'`](?<specifier>[^"'`]*)["'`]/gu,
+  /\bimport\s*\(\s*["'`](?<specifier>[^"'`]*)["'`]\s*\)/gu,
+  /\brequire\s*\(\s*["'`](?<specifier>[^"'`]*)["'`]\s*\)/gu,
+] as const;
 
 function isCanonicalMirrorOwnedFile(relativePath: string): boolean {
   if (!relativePath.endsWith(".ts") && !relativePath.endsWith(".tsx")) {
@@ -34,8 +40,18 @@ function stripCommentsForScan(input: string): string {
   return input.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-describe("Mirror-owned OpenClaw env boundary", () => {
-  it("rejects direct OpenClaw-specific env/config coupling in canonical Mirror-owned modules", async () => {
+function isOpenClawCompatSpecifier(specifier: string): boolean {
+  const normalized = specifier.replaceAll("\\", "/");
+  return (
+    normalized === "openclaw" ||
+    normalized.startsWith("openclaw/") ||
+    normalized.includes("/compat/openclaw/") ||
+    normalized.endsWith("/compat/openclaw")
+  );
+}
+
+describe("Mirror-owned OpenClaw import boundary", () => {
+  it("rejects direct OpenClaw/compat import coupling in canonical Mirror-owned modules", async () => {
     const files = await loadRuntimeSourceFilesForGuardrails(process.cwd());
     const offenders: string[] = [];
 
@@ -47,9 +63,12 @@ describe("Mirror-owned OpenClaw env boundary", () => {
 
       const scanSource = stripCommentsForScan(file.source);
       const matches = new Set<string>();
-      for (const pattern of OPENCLAW_ENV_PATTERNS) {
+      for (const pattern of MODULE_SPECIFIER_PATTERNS) {
         for (const match of scanSource.matchAll(pattern)) {
-          matches.add(match[0]);
+          const specifier = match.groups?.specifier?.trim();
+          if (specifier && isOpenClawCompatSpecifier(specifier)) {
+            matches.add(specifier);
+          }
         }
       }
 
