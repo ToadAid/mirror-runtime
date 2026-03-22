@@ -10,6 +10,7 @@ const steps = [
       "src/mirrordaemon/mirrordaemon.test.ts",
       "src/mirrordaemon/runtime_state.test.ts",
       "src/mirror/openclaw-env-boundary.test.ts",
+      "src/mirror/openclaw-import-boundary.test.ts",
     ],
   },
   {
