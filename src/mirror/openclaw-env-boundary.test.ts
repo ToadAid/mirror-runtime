@@ -10,7 +10,10 @@ const MIRROR_OWNED_PREFIXES = [
   "src/mirror-gateway/",
   "src/mirrordaemon/",
 ] as const;
-const MIRROR_OWNED_FILES = ["src/mirror-entry.ts", "src/mirror-package.ts"] as const;
+const MIRROR_OWNED_FILES: ReadonlySet<string> = new Set([
+  "src/mirror-entry.ts",
+  "src/mirror-package.ts",
+]);
 const ALLOWED_PATHS: ReadonlySet<string> = new Set<string>([]);
 const OPENCLAW_ENV_PATTERNS = [/\bOPENCLAW_[A-Z0-9_]+\b/g, /\bCLAWDBOT_[A-Z0-9_]+\b/g] as const;
 
@@ -23,7 +26,7 @@ function isCanonicalMirrorOwnedFile(relativePath: string): boolean {
   }
   return (
     MIRROR_OWNED_PREFIXES.some((prefix) => relativePath.startsWith(prefix)) ||
-    MIRROR_OWNED_FILES.includes(relativePath)
+    MIRROR_OWNED_FILES.has(relativePath)
   );
 }
 
