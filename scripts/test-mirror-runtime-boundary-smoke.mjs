@@ -73,3 +73,5 @@ for (const step of steps) {
     process.exit(result.status ?? 1);
   }
 }
+
+process.stdout.write(`\n[mirror-smoke] completed: ${steps.map((step) => step.name).join(" | ")}\n`);
