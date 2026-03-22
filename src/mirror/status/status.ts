@@ -1,4 +1,3 @@
-import type { MirrorMetricsSnapshot } from "../../mirror-observability/index.js";
 import type { MirrorRuntimeHost } from "../../mirror-service/index.js";
 import {
   getMirrordaemonHealthState,
@@ -6,8 +5,6 @@ import {
 } from "../../mirrordaemon/index.js";
 
 export type MirrorStatus = {
-  ts: string;
-  cwd: string;
   runtime: ReturnType<typeof getMirrordaemonRuntimeState>;
   service: {
     lore_dir: string;
@@ -45,25 +42,16 @@ export type MirrorStatus = {
     base_url: string | null;
     peers_known: number;
   };
-  observability: {
-    metrics: MirrorMetricsSnapshot;
-    diagnostics_events: number;
-  };
 };
 
 export type GetMirrorStatusOptions = {
   runtimeHost: MirrorRuntimeHost;
-  cwd?: string;
-  now?: Date;
 };
 
 export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<MirrorStatus> {
-  const now = opts.now ?? new Date();
-  const cwd = opts.cwd ?? process.cwd();
   const daemon = opts.runtimeHost.daemon;
   const boot = daemon.getBootSnapshot();
-  const observability = daemon.getObservability();
-  const metrics = observability.getMetrics();
+  const metrics = daemon.getObservability().getMetrics();
   const peersKnown = metrics.gauges.peers_known || opts.runtimeHost.syncManager.listPeers().length;
   const baseUrl = opts.runtimeHost.syncManager.getLocalBaseUrl();
   const runtime = getMirrordaemonRuntimeState(daemon, {
@@ -77,8 +65,6 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
   });
 
   return {
-    ts: now.toISOString(),
-    cwd,
     runtime,
     service: {
       lore_dir: boot.config.lore_dir,
@@ -115,10 +101,6 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
       node_id: boot.readiness.sync.node_id,
       base_url: health.service.base_url,
       peers_known: health.sync.peers_known,
-    },
-    observability: {
-      metrics,
-      diagnostics_events: observability.getDiagnostics().events.length,
     },
   };
 }

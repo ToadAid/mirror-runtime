@@ -7,8 +7,6 @@ function yesNo(value: boolean): string {
 export function formatMirrorStatusHuman(status: MirrorStatus): string {
   const lines = [
     "🪞 Mirror Runtime",
-    `ts: ${status.ts}`,
-    `cwd: ${status.cwd}`,
     "runtime:",
     `- nodeId: ${status.runtime.node_id}`,
     `- startedAt: ${status.runtime.runtime_started_at}`,
@@ -40,10 +38,6 @@ export function formatMirrorStatusHuman(status: MirrorStatus): string {
     `- nodeId: ${status.sync.node_id}`,
     `- baseUrl: ${status.sync.base_url ?? "-"}`,
     `- peersKnown: ${status.sync.peers_known}`,
-    "observability:",
-    `- diagnosticsEvents: ${status.observability.diagnostics_events}`,
-    `- chatRequests: ${status.observability.metrics.counters.chat_requests}`,
-    `- toolExecutions: ${status.observability.metrics.counters.tool_executions}`,
     "",
   ];
 
