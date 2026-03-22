@@ -9,7 +9,16 @@ const steps = [
       "run",
       "src/mirrordaemon/mirrordaemon.test.ts",
       "src/mirrordaemon/runtime_state.test.ts",
+    ],
+  },
+  {
+    name: "Mirror-owned OpenClaw env/import boundary gates",
+    command: "pnpm",
+    args: [
+      "vitest",
+      "run",
       "src/mirror/openclaw-env-boundary.test.ts",
+      "src/mirror/openclaw-import-boundary.test.ts",
     ],
   },
   {
