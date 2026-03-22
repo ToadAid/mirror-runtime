@@ -2146,6 +2146,160 @@ describe("mirror service", () => {
     }
   });
 
+  it("surfaces runtime websocket connect and disconnect events to live subscribers", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "events-ws-live-node",
+    });
+
+    try {
+      let observer;
+      let subject;
+      try {
+        observer = await openRuntimeWebSocket(service.port, "?backlog=0");
+        subject = await openRuntimeWebSocket(service.port, "?backlog=0");
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      await observer.waitFor("hello");
+      const observerSubscribed = await observer.waitFor("subscribed");
+      expect(observerSubscribed.backlog_sent).toBe(0);
+
+      const subjectHello = await subject.waitFor("hello");
+      const subjectSubscribed = await subject.waitFor("subscribed");
+      expect(subjectSubscribed.backlog_sent).toBe(0);
+
+      const connected = await observer.waitFor(
+        "runtime.event",
+        (message) =>
+          message.event.type === "runtime.ws.connected" &&
+          message.event.payload.connection_id === subjectHello.connection_id,
+      );
+      expect(connected.event.payload).toEqual(
+        expect.objectContaining({
+          connection_id: subjectHello.connection_id,
+          path: MIRROR_RUNTIME_WS_PATH,
+        }),
+      );
+
+      subject.socket.close();
+      await new Promise<void>((resolve) => {
+        subject.socket.once("close", () => resolve());
+      });
+
+      const disconnected = await observer.waitFor(
+        "runtime.event",
+        (message) =>
+          message.event.type === "runtime.ws.disconnected" &&
+          message.event.payload.connection_id === subjectHello.connection_id,
+      );
+      expect(disconnected.event.payload).toEqual(
+        expect.objectContaining({
+          connection_id: subjectHello.connection_id,
+          path: MIRROR_RUNTIME_WS_PATH,
+        }),
+      );
+
+      observer.socket.close();
+      await new Promise<void>((resolve) => {
+        observer.socket.once("close", () => resolve());
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("replays prior websocket transport events from backlog to reconnecting subscribers", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+    process.env.MIRROR_OPERATOR_TOKEN = "secret";
+
+    const service = await startMirrorService({
+      port: 0,
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+      nodeId: "events-ws-replay-node",
+    });
+
+    try {
+      let firstSocket;
+      let reconnectingSocket;
+      try {
+        firstSocket = await openRuntimeWebSocket(service.port, "?backlog=0");
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      const firstHello = await firstSocket.waitFor("hello");
+      const firstSubscribed = await firstSocket.waitFor("subscribed");
+      expect(firstSubscribed.backlog_sent).toBe(0);
+
+      firstSocket.socket.close();
+      await new Promise<void>((resolve) => {
+        firstSocket.socket.once("close", () => resolve());
+      });
+
+      try {
+        reconnectingSocket = await openRuntimeWebSocket(service.port);
+      } catch (error) {
+        if (isLoopbackSocketPermissionError(error)) {
+          return;
+        }
+        throw error;
+      }
+
+      await reconnectingSocket.waitFor("hello");
+      const reconnectSubscribed = await reconnectingSocket.waitFor("subscribed");
+      expect(reconnectSubscribed.backlog_sent).toBeGreaterThan(0);
+
+      const backlogTransportEvents = reconnectingSocket.messages.filter(
+        (message): message is Extract<MirrorRuntimeWsEnvelope, { type: "runtime.event" }> =>
+          message.type === "runtime.event" &&
+          (message.event.type === "runtime.ws.connected" ||
+            message.event.type === "runtime.ws.disconnected"),
+      );
+
+      expect(
+        backlogTransportEvents.some(
+          (message) =>
+            message.event.type === "runtime.ws.connected" &&
+            message.event.payload.connection_id === firstHello.connection_id,
+        ),
+      ).toBe(true);
+      expect(
+        backlogTransportEvents.some(
+          (message) =>
+            message.event.type === "runtime.ws.disconnected" &&
+            message.event.payload.connection_id === firstHello.connection_id,
+        ),
+      ).toBe(true);
+
+      reconnectingSocket.socket.close();
+      await new Promise<void>((resolve) => {
+        reconnectingSocket.socket.once("close", () => resolve());
+      });
+    } finally {
+      await service.shutdown();
+    }
+  });
+
   it("keeps service, console, daemon, observability, and status surfaces in sync", async () => {
     const loreDir = await createTempLoreDir();
     await seedLoreCorpus(loreDir);
