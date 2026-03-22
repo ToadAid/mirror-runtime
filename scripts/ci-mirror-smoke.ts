@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 type MirrorService = {
   app: { handle: (req: unknown, res: unknown) => void };
@@ -16,6 +17,36 @@ type MirrorPackageModule = {
     },
   ) => Promise<MirrorService>;
 };
+
+type SmokeOptions = {
+  runtimeRoot?: string;
+};
+
+function parseArgs(argv: string[]): SmokeOptions {
+  const options: SmokeOptions = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--runtime-root") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error("Missing value for --runtime-root");
+      }
+      options.runtimeRoot = path.resolve(value);
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unsupported argument: ${arg}`);
+  }
+  return options;
+}
+
+async function loadMirrorPackageModule(runtimeRoot?: string): Promise<MirrorPackageModule> {
+  if (!runtimeRoot) {
+    return (await import("../dist/mirror-package.js")) as MirrorPackageModule;
+  }
+  const modulePath = path.join(runtimeRoot, "dist", "mirror-package.js");
+  return (await import(pathToFileURL(modulePath).href)) as MirrorPackageModule;
+}
 
 async function seedLoreCorpus(loreDir: string): Promise<void> {
   const indexDir = path.join(loreDir, "_index");
@@ -116,6 +147,7 @@ async function requestJsonFromApp(
 }
 
 async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2));
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mirror-ci-smoke-"));
   const loreDir = path.join(tempRoot, "lore-scrolls");
   const memoryDbPath = path.join(tempRoot, "mirror-memory.sqlite");
@@ -126,7 +158,7 @@ async function main(): Promise<void> {
     process.env.MIRROR_LORE_DIR = loreDir;
     process.env.MIRROR_MEMORY_DB_PATH = memoryDbPath;
 
-    const mirrorPackage = (await import("../dist/mirror-package.js")) as MirrorPackageModule;
+    const mirrorPackage = await loadMirrorPackageModule(options.runtimeRoot);
     const fetchImpl: typeof fetch = async (_url, _init) =>
       ({
         ok: true,

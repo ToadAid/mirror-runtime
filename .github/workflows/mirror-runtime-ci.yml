@@ -100,5 +100,8 @@ jobs:
       - name: Smoke packaged Mirror CLI entry
         run: /tmp/mirror-runtime-smoke/mirror-runtime-linux/rootfs/opt/mirror-runtime/bin/mirror help
 
+      - name: Smoke packaged Mirror runtime service
+        run: node --import tsx scripts/ci-mirror-smoke.ts --runtime-root /tmp/mirror-runtime-smoke/mirror-runtime-linux/rootfs/opt/mirror-runtime
+
       - name: Smoke built Mirror runtime service
         run: pnpm smoke:mirror && pnpm verify:mirror-runtime-dist
