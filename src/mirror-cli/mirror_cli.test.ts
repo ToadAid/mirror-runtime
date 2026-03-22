@@ -1083,6 +1083,67 @@ describe("mirror cli", () => {
     }
   });
 
+  it("keeps mirror status limited to canonical runtime truth after sync announce", async () => {
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+
+    try {
+      await runMirrorCli(
+        [
+          "mirror",
+          "sync",
+          "announce",
+          "--peer-id",
+          "peer-alpha",
+          "--base-url",
+          "https://peer.example.test",
+        ],
+        { runtimeHost },
+      );
+
+      const statusJsonText = await runMirrorCli(["mirror", "status", "--json"], { runtimeHost });
+      const statusJson = JSON.parse(statusJsonText) as {
+        ok: boolean;
+        command: string;
+        status: {
+          runtime: { node_id: string };
+          service: { lore_dir: string };
+          sync: { node_id: string; peers_known: number };
+          ts?: string;
+          cwd?: string;
+          observability?: unknown;
+        };
+      };
+
+      expect(statusJson.ok).toBe(true);
+      expect(statusJson.command).toBe("status");
+      expect(statusJson.status.sync.peers_known).toBe(runtimeHost.syncManager.listPeers().length);
+      expect(statusJson.status.sync.peers_known).toBe(1);
+      expect(statusJson.status.sync.node_id).toBe(
+        runtimeHost.daemon.getBootSnapshot().config.node_id,
+      );
+      expect(statusJson.status.service.lore_dir).toBe(
+        runtimeHost.daemon.getBootSnapshot().config.lore_dir,
+      );
+      expect(statusJson.status).not.toHaveProperty("ts");
+      expect(statusJson.status).not.toHaveProperty("cwd");
+      expect(statusJson.status).not.toHaveProperty("observability");
+
+      const human = await runMirrorCli(["mirror", "status"], { runtimeHost });
+      expect(human).toContain("sync:");
+      expect(human).toContain("- peersKnown: 1");
+      expect(human).not.toContain("ts:");
+      expect(human).not.toContain("cwd:");
+      expect(human).not.toContain("observability:");
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
   it("returns stable JSON shapes for monk commands", async () => {
     process.env.MIRROR_USER_WORKSPACE_DIR = await createTempWorkspaceUsersRoot();
     process.env.MIRROR_USER_ID = "alice";
