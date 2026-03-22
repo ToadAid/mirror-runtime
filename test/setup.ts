@@ -34,6 +34,8 @@ const [{ installProcessWarningFilter }, { setActivePluginRegistry }, { createTes
 
 installProcessWarningFilter();
 
+let fetchAtTestStart: typeof globalThis.fetch;
+
 const pickSendFn = (id: ChannelId, deps?: OutboundSendDeps) => {
   switch (id) {
     case "discord":
@@ -178,10 +180,17 @@ const createDefaultRegistry = () =>
 const DEFAULT_PLUGIN_REGISTRY = createDefaultRegistry();
 
 beforeEach(() => {
+  fetchAtTestStart = globalThis.fetch;
   setActivePluginRegistry(DEFAULT_PLUGIN_REGISTRY);
 });
 
 afterEach(() => {
+  if (fetchAtTestStart) {
+    globalThis.fetch = fetchAtTestStart;
+  } else {
+    delete (globalThis as { fetch?: typeof fetch }).fetch;
+  }
+
   // Guard against leaked fake timers across test files/workers.
   if (vi.isFakeTimers()) {
     vi.useRealTimers();
