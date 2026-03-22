@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDebugSnapshot,
+  buildHealthSummary,
   buildRuntimeSummary,
   createMirrordaemon,
   getMirrordaemonActionsState,
@@ -167,5 +168,48 @@ describe("mirrordaemon runtime state", () => {
     expect(debug.recent_events.some((event) => event.type === "runtime.ws.disconnected")).toBe(
       true,
     );
+  });
+
+  it("preserves websocket event stream truth between runtime and health summaries", () => {
+    const daemon = createMirrordaemon({
+      config: baseConfig,
+      lifecycle: {
+        discoveredLoreFiles: 2,
+        shutdown: async () => undefined,
+      },
+      runtimeStartedAt: "2026-03-13T00:00:00.000Z",
+    });
+
+    daemon.publishRuntimeEvent("runtime.ws.connected", {
+      connection_id: "conn-1",
+      path: "/mirror/runtime/ws",
+    });
+    daemon.publishRuntimeEvent("runtime.ws.disconnected", {
+      connection_id: "conn-1",
+      path: "/mirror/runtime/ws",
+    });
+
+    const runtime = buildRuntimeSummary(daemon, {
+      port: 7788,
+      baseUrl: "http://127.0.0.1:7788",
+      wsConnections: 3,
+      sseAvailable: true,
+      wsAvailable: true,
+    });
+    const health = buildHealthSummary(daemon, {
+      port: 7788,
+      baseUrl: "http://127.0.0.1:7788",
+      wsConnections: 3,
+      sseAvailable: true,
+      wsAvailable: true,
+      peersKnown: 2,
+    });
+
+    expect(health.event_stream).toEqual(runtime.event_stream);
+    expect(health.event_stream.ws_connections).toBe(3);
+    expect(health.event_stream.sse_available).toBe(true);
+    expect(health.event_stream.ws_available).toBe(true);
+    expect(health.event_stream.recent_events).toBe(daemon.getRecentEvents().length);
+    expect(health.sync.peers_known).toBe(2);
   });
 });
