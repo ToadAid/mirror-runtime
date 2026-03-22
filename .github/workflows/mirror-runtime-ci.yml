@@ -14,10 +14,12 @@ on:
       - "tsdown.mirror.config.ts"
       - "vitest.mirror.config.ts"
       - "scripts/ci-mirror-smoke.ts"
+      - "scripts/test-mirror-runtime-boundary-smoke.mjs"
       - "scripts/assemble-mirror-runtime-dist.ts"
       - "scripts/copy-mirror-runtime-assets.ts"
       - "scripts/verify-mirror-runtime-dist.ts"
       - "packaging/mirror-runtime/**"
+      - "src/compat/openclaw/shim-boundary.test.ts"
       - "test/mirror-package-boundary.test.ts"
       - "docs/debug/mirror-runtime-canonical-entrypoints.md"
       - ".github/workflows/mirror-runtime-ci.yml"
@@ -78,6 +80,9 @@ jobs:
         uses: ./.github/actions/setup-node-env
         with:
           install-bun: "false"
+
+      - name: Run Mirror runtime boundary smoke target
+        run: pnpm test:mirror:smoke
 
       - name: Download Mirror runtime dist artifact
         uses: actions/download-artifact@v4
