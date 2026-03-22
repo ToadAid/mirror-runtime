@@ -590,13 +590,13 @@ describe("mirror cli", () => {
     const statusOutput = JSON.parse(await runMirrorCli(["mirror", "status", "--json"])) as {
       ok: boolean;
       command: string;
-      status: { runtime: object; service: object; observability: object };
+      status: { runtime: object; service: object; sync: object };
     };
     expect(statusOutput.ok).toBe(true);
     expect(statusOutput.command).toBe("status");
     expect(typeof statusOutput.status.runtime).toBe("object");
     expect(typeof statusOutput.status.service).toBe("object");
-    expect(typeof statusOutput.status.observability).toBe("object");
+    expect(typeof statusOutput.status.sync).toBe("object");
 
     const verifyOutput = JSON.parse(
       await runMirrorCli([
@@ -1056,15 +1056,8 @@ describe("mirror cli", () => {
         command: string;
         status: {
           runtime: { node_id: string; sessions: { total: number; open: number } };
-          sync: { node_id: string };
-          observability: {
-            metrics: {
-              counters: {
-                tool_executions: number;
-              };
-            };
-            diagnostics_events: number;
-          };
+          sync: { node_id: string; peers_known: number };
+          service: { lore_dir: string; operator_auth_configured: boolean };
         };
       };
 
@@ -1074,15 +1067,16 @@ describe("mirror cli", () => {
         runtimeHost.daemon.getBootSnapshot().config.node_id,
       );
       expect(output.status.sync.node_id).toBe(runtimeHost.daemon.getBootSnapshot().config.node_id);
+      expect(output.status.sync.peers_known).toBe(runtimeHost.syncManager.listPeers().length);
+      expect(output.status.service.lore_dir).toBe(
+        runtimeHost.daemon.getBootSnapshot().config.lore_dir,
+      );
+      expect(output.status.service.operator_auth_configured).toBe(
+        runtimeHost.daemon.getBootSnapshot().config.operator_auth_configured,
+      );
       expect(output.status.runtime.sessions.total).toBe(runtimeHost.daemon.listSessions().length);
       expect(output.status.runtime.sessions.open).toBe(
         runtimeHost.daemon.listSessions().filter((session) => session.status === "open").length,
-      );
-      expect(output.status.observability.metrics.counters.tool_executions).toBe(
-        runtimeHost.daemon.getObservability().getMetrics().counters.tool_executions,
-      );
-      expect(output.status.observability.diagnostics_events).toBe(
-        runtimeHost.daemon.getObservability().getDiagnostics().events.length,
       );
     } finally {
       await runtimeHost.shutdown();
