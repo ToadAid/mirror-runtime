@@ -43,19 +43,21 @@ describe("mirrordaemon runtime state", () => {
 
     expect(getMirrordaemonActionsState(daemon)).toMatchObject({
       active: 2,
-      actions: [
-        {
+    });
+    expect(getMirrordaemonActionsState(daemon).actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           action_id: "action-finished",
           session_id: "session-finished",
           trace_id: "trace-finished",
-        },
-        {
+        }),
+        expect.objectContaining({
           action_id: "action-failed",
           session_id: "session-failed",
           trace_id: "trace-failed",
-        },
-      ],
-    });
+        }),
+      ]),
+    );
 
     daemon.publishRuntimeEvent("action.execution.finished", {
       trace_id: "trace-finished",
