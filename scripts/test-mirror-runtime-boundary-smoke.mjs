@@ -1,20 +1,30 @@
 import { spawnSync } from "node:child_process";
 
 const steps = [
-  [
-    "pnpm",
-    [
+  {
+    name: "daemon/runtime-state truth",
+    command: "pnpm",
+    args: [
       "vitest",
       "run",
       "src/mirrordaemon/mirrordaemon.test.ts",
       "src/mirrordaemon/runtime_state.test.ts",
+    ],
+  },
+  {
+    name: "compatibility-quarantine guardrails",
+    command: "pnpm",
+    args: [
+      "vitest",
+      "run",
       "src/compat/openclaw/shim-boundary.test.ts",
       "src/runtime/compat-legacy-boundary.test.ts",
     ],
-  ],
-  [
-    "pnpm",
-    [
+  },
+  {
+    name: "websocket transport/control/summary truth",
+    command: "pnpm",
+    args: [
       "vitest",
       "run",
       "src/mirror-service/mirror_service.test.ts",
@@ -32,10 +42,11 @@ const steps = [
         "keeps service, console, daemon, observability, and status surfaces in sync",
       ].join("|"),
     ],
-  ],
-  [
-    "pnpm",
-    [
+  },
+  {
+    name: "Mirror CLI/operator truth",
+    command: "pnpm",
+    args: [
       "vitest",
       "run",
       "src/mirror-cli/mirror_cli.test.ts",
@@ -49,11 +60,12 @@ const steps = [
         "keeps mirror status limited to canonical runtime truth after sync announce",
       ].join("|"),
     ],
-  ],
+  },
 ];
 
-for (const [command, args] of steps) {
-  const result = spawnSync(command, args, {
+for (const step of steps) {
+  process.stdout.write(`\n[mirror-smoke] ${step.name}\n`);
+  const result = spawnSync(step.command, step.args, {
     stdio: "inherit",
     shell: process.platform === "win32",
   });
