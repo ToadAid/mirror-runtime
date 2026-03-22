@@ -9,6 +9,7 @@ const steps = [
       "run",
       "src/mirrordaemon/mirrordaemon.test.ts",
       "src/mirrordaemon/runtime_state.test.ts",
+      "src/mirror/openclaw-env-boundary.test.ts",
     ],
   },
   {
