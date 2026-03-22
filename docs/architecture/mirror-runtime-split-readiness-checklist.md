@@ -59,8 +59,9 @@ Current score: `yellow`
 Current reality:
 
 - Service runtime state is real and daemon-backed.
-- CLI parity improved materially for status and sync summary flows.
-- Console and some compatibility entrypoints should still be treated as a seam until one runtime truth is clearly universal.
+- CLI parity improved materially for status, sync summary, and key operator-truth flows.
+- Daemon-side runtime, debug, and health websocket truth is now covered with focused tests.
+- Console execution and a few remaining compatibility edges should still be treated as the next ownership seam until one runtime truth is clearly universal.
 
 ### 2. Service and operator surfaces
 
@@ -75,7 +76,8 @@ Current reality:
 
 - `/mirror/health`, `/mirror/status`, `/mirror/runtime`, `/mirror/runtime/debug`, `/mirror/actions`, `/mirror/providers`, and `/mirror/sync` are real.
 - `mirror status` is daemon-backed and limited to runtime truth only on the canonical Mirror path.
-- This area is materially improved, but should remain yellow until compatibility-only wrappers stop competing with the canonical operator path.
+- Websocket transport/control/summary truth is now materially covered at both service and daemon state layers.
+- This area is materially improved, but should remain yellow until compatibility-only wrappers stop competing with the canonical operator path and console/runtime ownership is tighter.
 
 ### 3. Sync and runtime state visibility
 
@@ -92,6 +94,7 @@ Current reality:
 - `/mirror/sync` now exposes read-only peer state from the live registry.
 - CLI status parity now covers the daemon-backed sync summary.
 - Sync is still a seam because execution state is not fully daemon-owned beyond the current registry and event stream summaries.
+- The remaining small gap here is narrower now: understanding sync activity from daemon-owned inspection without reading internal execution modules.
 
 ### 4. CLI and service parity
 
@@ -106,7 +109,8 @@ Current reality:
 
 - `mirror status` and sync summary parity are now explicit and tested.
 - The canonical `mirror verify-lore` path is aligned on `MIRROR_LORE_DIR`.
-- CLI coverage is much better than before, but this should not be treated as fully green until parity is explicit for all critical operator surfaces and compatibility-only entrypoints are no longer misleading.
+- CLI/operator-truth seams are materially improved and now included in the dedicated Mirror smoke lane.
+- This should not be treated as fully green until parity is explicit for all critical operator surfaces and compatibility-only entrypoints are no longer misleading.
 
 ### 5. Observability ownership
 
@@ -120,22 +124,23 @@ Current score: `red`
 Current reality:
 
 - Observability surfaces exist and are useful.
-- Ownership is still process-global enough that this remains a pre-split blocker.
+- Ownership is still process-global enough that this remains the clearest technical pre-split blocker.
 
 ### 6. Compatibility quarantine
 
-Current score: `red`
+Current score: `yellow`
 
-- [ ] `src/runtime/server.ts`, `src/runtime/brain-chat.ts`, `src/runtime/health.ts`, and `src/cli/mirror-cli.ts` are either quarantined clearly or removed.
+- [x] `src/runtime/server.ts`, `src/runtime/brain-chat.ts`, `src/runtime/health.ts`, and `src/cli/mirror-cli.ts` are clearly marked as compatibility shims.
 - [x] Mirror-owned runtime modules do not read `OPENCLAW_*` env vars except in explicit compatibility files.
+- [x] Focused guardrail coverage exists for the main shims and the remaining legacy runtime entrypoints.
 - [ ] Canonical operator docs and entrypoints point to Mirror-native paths first.
 - [ ] Compatibility code is not the hidden owner of any required runtime behavior.
 
 Current reality:
 
 - Canonical Mirror-owned source no longer reads `OPENCLAW_*` directly outside tests and explicit compatibility paths.
-- Compatibility edges are still materially present at entrypoint and wrapper level.
-- This is still one of the clearest blockers to a clean split.
+- Compatibility edges are still materially present at entrypoint and wrapper level, but they are now better quarantined and guarded.
+- This should remain yellow until the remaining compat entrypoints stop competing with canonical ownership in practice and docs/entrypoints point Mirror-native first.
 
 ### 7. Packaging and build boundary
 
@@ -149,32 +154,35 @@ Current reality:
 
 - Mirror runtime behavior is increasingly standalone.
 - Package, bin, and release identity are still shared enough that splitting now would be premature.
+- This is now a clearer next blocker than smoke-lane existence or basic compat-wrapper guardrails.
 
 ### 8. CI gates before split
 
-Current score: `red`
+Current score: `yellow`
 
-- [ ] A dedicated Mirror runtime smoke lane exists.
+- [x] A dedicated Mirror runtime smoke lane exists.
+- [x] Split-critical runtime-boundary and daemon-truth tests are visible without depending on the full repo matrix.
 - [ ] A boundary gate prevents new OpenClaw-specific env/config coupling inside Mirror-owned runtime modules.
-- [ ] Split-critical runtime tests are visible without depending on the full repo matrix.
+- [ ] Mirror-specific checks are isolated enough to serve as a true split gate rather than an early smoke lane.
 
 Current reality:
 
-- Runtime tests exist.
-- Dedicated split-readiness gates are still missing.
+- A dedicated Mirror-owned smoke target now exists and is wired into the dedicated Mirror runtime workflow.
+- Runtime-boundary, daemon-truth, websocket, CLI/operator-truth, and compatibility-quarantine seams are now visible in a narrow CI lane.
+- Dedicated split-readiness gates are still incomplete because env/config boundary enforcement is not yet a first-class CI gate.
 - macOS shard-order instability should be treated as a CI lane, not as a product seam in this checklist.
 
 ## Current known gaps
 
 The next small, high-signal gaps remain:
 
-1. Quarantine or retire compatibility-only runtime wrappers and legacy entrypoints.
-2. Continue enriching daemon-owned runtime events where operator/runtime inspection is still thin.
-3. Move observability ownership under daemon/runtime control.
+1. Move observability ownership under daemon/runtime control.
+2. Make any remaining console execution seams explicitly daemon-backed where they are still partial.
+3. Continue enriching daemon-owned runtime inspection only where sync/runtime understanding is still thin.
 4. Create a Mirror-native package/build boundary.
-5. Add dedicated Mirror runtime CI gates.
-6. Make any remaining console execution seams explicitly daemon-backed where they are still partial.
-7. Keep parity coverage growing only where a canonical operator/runtime seam is still weak.
+5. Add a true CI boundary gate for new OpenClaw-specific env/config coupling inside Mirror-owned modules.
+6. Keep parity coverage growing only where a canonical operator/runtime seam is still weak.
+7. Continue shrinking compatibility entrypoints from “guarded” to “non-owning in practice.”
 
 ## Do Not Split Before
 
