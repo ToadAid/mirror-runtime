@@ -34,7 +34,7 @@ const [{ installProcessWarningFilter }, { setActivePluginRegistry }, { createTes
 
 installProcessWarningFilter();
 
-const ORIGINAL_GLOBAL_FETCH = globalThis.fetch;
+let fetchAtTestStart: typeof globalThis.fetch;
 
 const pickSendFn = (id: ChannelId, deps?: OutboundSendDeps) => {
   switch (id) {
@@ -180,17 +180,13 @@ const createDefaultRegistry = () =>
 const DEFAULT_PLUGIN_REGISTRY = createDefaultRegistry();
 
 beforeEach(() => {
-  if (ORIGINAL_GLOBAL_FETCH) {
-    globalThis.fetch = ORIGINAL_GLOBAL_FETCH;
-  } else {
-    delete (globalThis as { fetch?: typeof fetch }).fetch;
-  }
+  fetchAtTestStart = globalThis.fetch;
   setActivePluginRegistry(DEFAULT_PLUGIN_REGISTRY);
 });
 
 afterEach(() => {
-  if (ORIGINAL_GLOBAL_FETCH) {
-    globalThis.fetch = ORIGINAL_GLOBAL_FETCH;
+  if (fetchAtTestStart) {
+    globalThis.fetch = fetchAtTestStart;
   } else {
     delete (globalThis as { fetch?: typeof fetch }).fetch;
   }
