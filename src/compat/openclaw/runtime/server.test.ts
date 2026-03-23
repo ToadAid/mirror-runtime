@@ -215,6 +215,41 @@ async function requestResponseFromApp(
 }
 
 describe("compat runtime server", () => {
+  it("derives /health provider truth from runtimeHost instead of raw wrapper args", async () => {
+    process.env.MIRROR_ENABLE_RUNTIME = "true";
+    const loreDir = await createTempLoreDir();
+    await seedLoreCorpus(loreDir);
+    process.env.MIRROR_LORE_DIR = loreDir;
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
+
+    const runtimeHost = await createMirrorRuntimeHost({
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+      providerAuthToken: "token",
+    });
+
+    try {
+      const app = await startRuntimeServer(createNonExitingRuntime(), undefined, undefined, {
+        runtimeHost,
+      });
+      const health = (await requestJsonFromApp(app, "GET", "/health")) as {
+        ok: boolean;
+        version: string;
+        features: string[];
+        brain: { configured: boolean };
+        auth: { configured: boolean };
+      };
+
+      expect(health.ok).toBe(true);
+      expect(health.version.length).toBeGreaterThan(0);
+      expect(health.features).toEqual(expect.arrayContaining(["brain", "auth"]));
+      expect(health.brain.configured).toBe(true);
+      expect(health.auth.configured).toBe(true);
+    } finally {
+      await runtimeHost.shutdown();
+    }
+  });
+
   it("routes /api/brain/chat through runtimeHost.executeAdapterRequest and preserves the raw response shape", async () => {
     process.env.MIRROR_ENABLE_RUNTIME = "true";
     const loreDir = await createTempLoreDir();
