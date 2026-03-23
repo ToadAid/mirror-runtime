@@ -194,9 +194,11 @@ export type MirrordaemonProvidersSummary = {
     provider_id: string;
     label: string;
     kind: string;
+    url: string;
     ready: boolean;
     configured: boolean;
     selected: boolean;
+    last_error?: string;
   }>;
 };
 
