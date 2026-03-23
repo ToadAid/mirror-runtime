@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getMirrorDiagnostics,
   getMirrorMetrics,
+  incrementMetric,
+  logMirrorEvent,
   resetMirrorDiagnostics,
   resetMirrorMetrics,
 } from "../mirror-observability/index.js";
@@ -120,6 +122,43 @@ function createMockResponse() {
       return this;
     },
   };
+}
+
+function createTestSyncObservabilityHooks() {
+  return {
+    onConflictWarning: () => {
+      incrementMetric("conflict_warnings");
+    },
+    onUpdatesPulled: (count: number) => {
+      incrementMetric("updates_pulled", count);
+    },
+    onSyncFailure: () => {
+      incrementMetric("sync_failures");
+    },
+    onPeerAnnounced: (payload: { peer_id: string; base_url: string }) => {
+      logMirrorEvent("sync.peer.announced", payload);
+    },
+    onPullCompleted: (payload: {
+      peer_id: string;
+      pulled_files: number;
+      conflicts: number;
+      graph_rebuilt: boolean;
+    }) => {
+      logMirrorEvent("sync.pull.completed", payload);
+    },
+    onPullFailed: (payload: { peer_id: string; error: string }) => {
+      logMirrorEvent("sync.pull.failed", payload);
+    },
+  };
+}
+
+function createObservedSyncManager(
+  options: Parameters<typeof createMirrorSyncManager>[0],
+): MirrorSyncManager {
+  return createMirrorSyncManager({
+    ...options,
+    observability: createTestSyncObservabilityHooks(),
+  });
 }
 
 describe("mirror sync", () => {
@@ -381,7 +420,7 @@ describe("mirror sync", () => {
     );
     await seedIndexFiles(loreDir, { stillness: ["TOBY_L0001_SeedOfStillness.md"] });
 
-    const manager = createMirrorSyncManager({
+    const manager = createObservedSyncManager({
       nodeId: "node-a",
       loreDir,
       baseUrl: "http://127.0.0.1:7001",
@@ -407,7 +446,7 @@ describe("mirror sync", () => {
     );
     await seedIndexFiles(loreDir, { renewal: ["TOBY_L0001_SeedOfStillness.md"] });
 
-    const manager = createMirrorSyncManager({
+    const manager = createObservedSyncManager({
       nodeId: "node-a",
       loreDir,
       baseUrl: "http://127.0.0.1:7001",
@@ -450,12 +489,12 @@ describe("mirror sync", () => {
       pond: ["TOBY_L0002_PondMemory.md"],
     });
 
-    const remoteManager = createMirrorSyncManager({
+    const remoteManager = createObservedSyncManager({
       nodeId: "node-remote",
       loreDir: remoteLoreDir,
       baseUrl: "http://127.0.0.1:7002",
     });
-    const localManager = createMirrorSyncManager({
+    const localManager = createObservedSyncManager({
       nodeId: "node-local",
       loreDir: localLoreDir,
       baseUrl: "http://127.0.0.1:7001",
@@ -499,12 +538,12 @@ describe("mirror sync", () => {
     await fs.utimes(path.join(localLoreDir, "TOBY_L0001_SeedOfStillness.md"), oldTime, oldTime);
     await fs.utimes(path.join(remoteLoreDir, "TOBY_L0001_SeedOfStillness.md"), newTime, newTime);
 
-    const remoteManager = createMirrorSyncManager({
+    const remoteManager = createObservedSyncManager({
       nodeId: "node-remote",
       loreDir: remoteLoreDir,
       baseUrl: "http://127.0.0.1:7002",
     });
-    const localManager = createMirrorSyncManager({
+    const localManager = createObservedSyncManager({
       nodeId: "node-local",
       loreDir: localLoreDir,
       baseUrl: "http://127.0.0.1:7001",
@@ -543,12 +582,12 @@ describe("mirror sync", () => {
     );
     await seedIndexFiles(remoteLoreDir, { invalid: ["TOBY_L0002_InvalidRemote.md"] });
 
-    const remoteManager = createMirrorSyncManager({
+    const remoteManager = createObservedSyncManager({
       nodeId: "node-remote",
       loreDir: remoteLoreDir,
       baseUrl: "http://127.0.0.1:7002",
     });
-    const localManager = createMirrorSyncManager({
+    const localManager = createObservedSyncManager({
       nodeId: "node-local",
       loreDir: localLoreDir,
       baseUrl: "http://127.0.0.1:7001",
@@ -599,12 +638,12 @@ describe("mirror sync", () => {
       pond: ["TOBY_L0002_PondMemory.md"],
     });
 
-    const remoteManager = createMirrorSyncManager({
+    const remoteManager = createObservedSyncManager({
       nodeId: "node-remote",
       loreDir: remoteLoreDir,
       baseUrl: "http://127.0.0.1:7002",
     });
-    const localManager = createMirrorSyncManager({
+    const localManager = createObservedSyncManager({
       nodeId: "node-local",
       loreDir: localLoreDir,
       baseUrl: "http://127.0.0.1:7001",
