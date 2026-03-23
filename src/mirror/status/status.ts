@@ -1,6 +1,7 @@
 import type { MirrorRuntimeHost } from "../../mirror-service/index.js";
 import {
   getMirrordaemonHealthState,
+  getMirrordaemonProvidersState,
   getMirrordaemonRuntimeState,
 } from "../../mirrordaemon/index.js";
 
@@ -61,6 +62,9 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
     baseUrl,
     peers,
   });
+  const providers = getMirrordaemonProvidersState(daemon, {
+    providerPlane: opts.runtimeHost.providerPlane,
+  });
 
   return {
     runtime,
@@ -73,11 +77,11 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
     provider: {
       configured: health.provider.configured,
       ready: health.provider.ready,
-      active_provider_id: health.provider.active_provider_id,
-      total: health.provider.total,
-      available: health.provider.available,
-      fallback_available: health.provider.fallback_available,
-      providers: opts.runtimeHost.providerPlane.listProviders().map((provider) => ({
+      active_provider_id: providers.active_provider_id,
+      total: providers.total,
+      available: providers.available,
+      fallback_available: providers.fallback_available,
+      providers: providers.providers.map((provider) => ({
         provider_id: provider.provider_id,
         label: provider.label,
         url: provider.url,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildProvidersSummary,
   buildDebugSnapshot,
   buildHealthSummary,
   buildRuntimeSummary,
@@ -226,5 +227,66 @@ describe("mirrordaemon runtime state", () => {
     expect(health.event_stream.ws_available).toBe(true);
     expect(health.event_stream.recent_events).toBe(daemon.getRecentEvents().length);
     expect(health.sync.peers_known).toBe(2);
+  });
+
+  it("includes provider url and last_error in the daemon provider summary", () => {
+    const daemon = createMirrordaemon({
+      config: baseConfig,
+      lifecycle: {
+        discoveredLoreFiles: 2,
+        shutdown: async () => undefined,
+      },
+      runtimeStartedAt: "2026-03-13T00:00:00.000Z",
+    });
+
+    const providers = buildProvidersSummary(daemon, {
+      providerPlane: {
+        listProviders: () => [
+          {
+            provider_id: "primary",
+            label: "Primary",
+            kind: "openai-compatible",
+            url: "http://brain.local/v1/chat/completions",
+            ready: true,
+            configured: true,
+            selected: true,
+            last_error: undefined,
+          },
+          {
+            provider_id: "fallback",
+            label: "Fallback",
+            kind: "openai-compatible",
+            url: "http://brain.local/v1/fallback",
+            ready: false,
+            configured: false,
+            selected: false,
+            last_error: "provider unavailable",
+          },
+        ],
+      } as never,
+    });
+
+    expect(providers.providers).toEqual([
+      {
+        provider_id: "primary",
+        label: "Primary",
+        kind: "openai-compatible",
+        url: "http://brain.local/v1/chat/completions",
+        ready: true,
+        configured: true,
+        selected: true,
+        last_error: undefined,
+      },
+      {
+        provider_id: "fallback",
+        label: "Fallback",
+        kind: "openai-compatible",
+        url: "http://brain.local/v1/fallback",
+        ready: false,
+        configured: false,
+        selected: false,
+        last_error: "provider unavailable",
+      },
+    ]);
   });
 });
