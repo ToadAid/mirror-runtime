@@ -95,9 +95,11 @@ export function buildProvidersSummary(
       provider_id: provider.provider_id,
       label: provider.label,
       kind: provider.kind,
+      url: provider.url,
       ready: provider.ready,
       configured: provider.configured,
       selected: provider.selected,
+      last_error: provider.last_error,
     })) ?? [];
 
   return {
