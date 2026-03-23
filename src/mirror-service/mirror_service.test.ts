@@ -1407,6 +1407,7 @@ describe("mirror service", () => {
         daemon_session_id: string;
         uptime_ms: number;
         service: { node_id: string; port: number };
+        sync: { peers_known: number };
         event_stream: { sse_available: boolean; ws_available: boolean };
         correlation: { trace_id: boolean; session_id: boolean };
       };
@@ -1416,6 +1417,7 @@ describe("mirror service", () => {
         version: string;
         daemon_session_id: string;
         service: { node_id: string; port: number };
+        sync: { peers_known: number };
       };
 
       expect(health.ok).toBe(true);
@@ -1425,6 +1427,7 @@ describe("mirror service", () => {
       expect(health.uptime_ms).toBeGreaterThanOrEqual(0);
       expect(health.service.node_id).toBe("health-node");
       expect(health.service.port).toBe(service.port);
+      expect(health.sync.peers_known).toBe(0);
       expect(health.event_stream.sse_available).toBe(true);
       expect(health.event_stream.ws_available).toBe(true);
       expect(health.correlation.trace_id).toBe(true);
@@ -1435,6 +1438,7 @@ describe("mirror service", () => {
       expect(status.daemon_session_id).toBe(health.daemon_session_id);
       expect(status.service.node_id).toBe(health.service.node_id);
       expect(status.service.port).toBe(health.service.port);
+      expect(status.sync.peers_known).toBe(health.sync.peers_known);
     } finally {
       await service.shutdown();
     }
@@ -1595,6 +1599,11 @@ describe("mirror service", () => {
         },
       });
 
+      const health = (await requestJsonFromApp(service.app, "GET", "/mirror/health")) as {
+        ok: boolean;
+        sync: { peers_known: number };
+      };
+
       const sync = (await requestJsonFromApp(service.app, "GET", "/mirror/sync")) as {
         ok: boolean;
         daemon_session_id: string;
@@ -1609,6 +1618,8 @@ describe("mirror service", () => {
         }>;
       };
 
+      expect(health.ok).toBe(true);
+      expect(health.sync.peers_known).toBe(1);
       expect(sync.ok).toBe(true);
       expect(sync.daemon_session_id.length).toBeGreaterThan(0);
       expect(sync.peers_known).toBe(1);

@@ -23,6 +23,10 @@ type RuntimeStateOverrides = {
   wsAvailable?: boolean;
 };
 
+type HealthStateOverrides = RuntimeStateOverrides & {
+  peers?: MirrorSyncPeer[];
+};
+
 function buildCorrelationCapabilities() {
   return {
     trace_id: true as const,
@@ -180,7 +184,7 @@ export function buildRuntimeSummary(
 
 export function buildHealthSummary(
   daemon: Mirrordaemon,
-  overrides: RuntimeStateOverrides & { peersKnown?: number } = {},
+  overrides: HealthStateOverrides = {},
 ): MirrordaemonHealthSummary {
   const runtime = buildRuntimeSummary(daemon, overrides);
   const boot = daemon.getBootSnapshot();
@@ -205,7 +209,7 @@ export function buildHealthSummary(
       fallback_available: boot.readiness.provider.fallback_available,
     },
     sync: {
-      peers_known: overrides.peersKnown ?? metrics.gauges.peers_known ?? 0,
+      peers_known: overrides.peers?.length ?? metrics.gauges.peers_known ?? 0,
     },
     observability: {
       metrics_available: true,
