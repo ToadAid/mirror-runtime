@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Mirrordaemon, MirrordaemonRuntimeEvent } from "../mirrordaemon/index.js";
+import {
+  getMirrordaemonRuntimeState,
+  type Mirrordaemon,
+  type MirrordaemonRuntimeEvent,
+} from "../mirrordaemon/index.js";
 
 export const MIRROR_RUNTIME_WS_PROTOCOL = "mirror.runtime.ws.v1";
 export const MIRROR_RUNTIME_WS_PATH = "/mirror/runtime/ws";
@@ -121,7 +125,7 @@ export function createMirrorRuntimeWebSocketServer(params: {
   wss.on("connection", (ws, req) => {
     sockets.add(ws);
     const connectionId = randomUUID();
-    const boot = params.daemon.getBootSnapshot();
+    const runtime = getMirrordaemonRuntimeState(params.daemon);
     const url = new URL(req.url ?? MIRROR_RUNTIME_WS_PATH, "http://127.0.0.1");
 
     params.daemon.publishRuntimeEvent("runtime.ws.connected", {
@@ -133,8 +137,8 @@ export function createMirrorRuntimeWebSocketServer(params: {
       protocol: MIRROR_RUNTIME_WS_PROTOCOL,
       type: "hello",
       connection_id: connectionId,
-      node_id: boot.config.node_id,
-      runtime_started_at: boot.runtime_started_at,
+      node_id: runtime.node_id,
+      runtime_started_at: runtime.runtime_started_at,
       stream: RUNTIME_EVENT_STREAM,
     });
 
