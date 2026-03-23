@@ -51,8 +51,7 @@ export type GetMirrorStatusOptions = {
 export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<MirrorStatus> {
   const daemon = opts.runtimeHost.daemon;
   const boot = daemon.getBootSnapshot();
-  const metrics = daemon.getObservability().getMetrics();
-  const peersKnown = metrics.gauges.peers_known || opts.runtimeHost.syncManager.listPeers().length;
+  const peers = opts.runtimeHost.syncManager.listPeers();
   const baseUrl = opts.runtimeHost.syncManager.getLocalBaseUrl();
   const runtime = getMirrordaemonRuntimeState(daemon, {
     port: opts.runtimeHost.config.port,
@@ -61,7 +60,7 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
   const health = getMirrordaemonHealthState(daemon, {
     port: opts.runtimeHost.config.port,
     baseUrl,
-    peersKnown,
+    peers,
   });
 
   return {

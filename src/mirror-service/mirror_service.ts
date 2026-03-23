@@ -126,7 +126,7 @@ export async function startMirrorService(
       wsConnections: runtimeWebSocket.getConnectionCount(),
       sseAvailable: true,
       wsAvailable: true,
-      peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
+      peers: syncManager.listPeers(),
     });
     daemon.publishRuntimeEvent("runtime.health.requested", {
       path: "/mirror/health",
@@ -150,7 +150,7 @@ export async function startMirrorService(
       getMirrordaemonHealthState(daemon, {
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
-        peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
+        peers: syncManager.listPeers(),
       }),
     getBaseUrl: () => syncManager.getLocalBaseUrl(),
   });
