@@ -5,7 +5,7 @@
  */
 
 import type { Command } from "commander";
-import { runMirrorTelemetryTailCli } from "../../../mirror/telemetry_tail/cli.js";
+import { runMirrorTelemetryTailCli } from "../../../mirror/telemetry_tail/index.js";
 
 function parseLimit(raw: string): number {
   const value = Number.parseInt(raw, 10);
