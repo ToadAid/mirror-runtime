@@ -37,6 +37,8 @@ describe("mirror status", () => {
       expect(status.runtime.node_id).toBe("status-node");
       expect(status.runtime.sessions.total).toBe(0);
       expect(status.service.lore_dir).toBe(path.resolve(loreDir));
+      expect(status.lore.dir).toBe(status.service.lore_dir);
+      expect(status.service.workspace_users_root).toBe(status.workspace.users_root);
       expect(status.provider.configured).toBe(false);
       expect(status.provider.active_provider_id).toBe("primary");
       expect(status.provider.total).toBe(1);
@@ -71,6 +73,7 @@ describe("mirror status", () => {
 
       expect(status.runtime.sessions.total).toBe(1);
       expect(status.runtime.sessions.open).toBe(1);
+      expect(status.sync.node_id).toBe(status.runtime.node_id);
       expect(status.provider.providers[0]?.provider_id).toBe("primary");
 
       const json = JSON.stringify(status);
