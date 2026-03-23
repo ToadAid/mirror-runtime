@@ -10,7 +10,6 @@ import { createMirrorSyncHandlers, createMirrorSyncManager } from "../mirror-syn
 import {
   createMirrorObservabilityContext,
   createMirrorObservabilityHandlers,
-  getDefaultMirrorObservabilityContext,
   getMirrorMetrics,
   incrementMetric,
   resetMirrorDiagnostics,
@@ -208,48 +207,8 @@ describe("mirror observability", () => {
         return await gateway.executeAdapterRequest(envelope);
       }),
     });
-    await gatewayHandlers.executeChat(
-      {
-        body: {
-          model: "mirror-default",
-          messages: [{ role: "user", content: "What happened to the patience vault?" }],
-        },
-      } as never,
-      createMockResponse() as never,
-    );
-    await gatewayHandlers.executeTool(
-      {
-        params: { tool_name: "mirror.find-scroll" },
-        body: { query: "patience vault" },
-        header: () => undefined,
-      } as never,
-      createMockResponse() as never,
-    );
-    process.env.MIRROR_USER_WORKSPACE_DIR = await fs.mkdtemp(
-      path.join(os.tmpdir(), "mirror-observe-users-"),
-    );
-    tempDirs.push(process.env.MIRROR_USER_WORKSPACE_DIR);
-    await gatewayHandlers.executeTool(
-      {
-        params: { tool_name: "mirror.task.create" },
-        body: { user_id: "alice", title: "Review open work" },
-        header: (name: string) =>
-          name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
-      } as never,
-      createMockResponse() as never,
-    );
-    await gatewayHandlers.executeTool(
-      {
-        params: { tool_name: "mirror.monk.context" },
-        body: { user_id: "alice" },
-        header: () => undefined,
-      } as never,
-      createMockResponse() as never,
-    );
-
-    const observabilityHandlers = createMirrorObservabilityHandlers(
-      getDefaultMirrorObservabilityContext(),
-    );
+    const observability = createMirrorObservabilityContext();
+    const observabilityHandlers = createMirrorObservabilityHandlers(observability);
     const syncHandlers = createMirrorSyncHandlers(
       createMirrorSyncManager({
         nodeId: "observe-node",
@@ -258,17 +217,58 @@ describe("mirror observability", () => {
     );
     const consoleHandlers = createMirrorConsoleHandlers(gatewayHandlers, {
       syncHandlers,
+      observability,
       observabilityHandlers,
       health: (_req, res) => res.json({ ok: true }),
     });
-    await consoleHandlers.relatedScrolls(
-      { query: { scroll: "TOBY_L1219" } } as never,
-      createMockResponse() as never,
-    );
+    await runWithMirrorObservabilityContext(observability, async () => {
+      await gatewayHandlers.executeChat(
+        {
+          body: {
+            model: "mirror-default",
+            messages: [{ role: "user", content: "What happened to the patience vault?" }],
+          },
+        } as never,
+        createMockResponse() as never,
+      );
+      await gatewayHandlers.executeTool(
+        {
+          params: { tool_name: "mirror.find-scroll" },
+          body: { query: "patience vault" },
+          header: () => undefined,
+        } as never,
+        createMockResponse() as never,
+      );
+      process.env.MIRROR_USER_WORKSPACE_DIR = await fs.mkdtemp(
+        path.join(os.tmpdir(), "mirror-observe-users-"),
+      );
+      tempDirs.push(process.env.MIRROR_USER_WORKSPACE_DIR);
+      await gatewayHandlers.executeTool(
+        {
+          params: { tool_name: "mirror.task.create" },
+          body: { user_id: "alice", title: "Review open work" },
+          header: (name: string) =>
+            name.toLowerCase() === "x-mirror-operator-token" ? "secret" : undefined,
+        } as never,
+        createMockResponse() as never,
+      );
+      await gatewayHandlers.executeTool(
+        {
+          params: { tool_name: "mirror.monk.context" },
+          body: { user_id: "alice" },
+          header: () => undefined,
+        } as never,
+        createMockResponse() as never,
+      );
+      await consoleHandlers.relatedScrolls(
+        { query: { scroll: "TOBY_L1219" } } as never,
+        createMockResponse() as never,
+      );
 
-    await reviewDraftForCanon({
-      loreDir,
-      draftContent: validDraft("The Patience Vault was not cancelled."),
+      await reviewDraftForCanon({
+        loreDir,
+        draftContent: validDraft("The Patience Vault was not cancelled."),
+      });
     });
 
     const metricsRes = createMockResponse();

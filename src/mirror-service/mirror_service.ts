@@ -135,6 +135,7 @@ export async function startMirrorService(
   };
   const consoleHandlers = createMirrorConsoleHandlers(handlers, {
     syncHandlers,
+    observability,
     observabilityHandlers,
     health: healthHandler,
   });

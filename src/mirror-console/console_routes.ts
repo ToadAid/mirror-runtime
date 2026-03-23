@@ -7,8 +7,10 @@ import {
   findScrollsSharingSymbols,
   findSupersessionChains,
 } from "../mirror-lore-graph/index.js";
-import { incrementMetric, logMirrorEvent } from "../mirror-observability/index.js";
-import type { MirrorObservabilityHandlers } from "../mirror-observability/index.js";
+import type {
+  MirrorObservabilityContext,
+  MirrorObservabilityHandlers,
+} from "../mirror-observability/index.js";
 import type { MirrorSyncHandlers } from "../mirror-sync/index.js";
 import { renderMirrorConsoleHtml } from "./console_static.js";
 
@@ -33,6 +35,7 @@ export function createMirrorConsoleHandlers(
   gatewayHandlers: MirrorGatewayHandlers,
   deps: {
     syncHandlers: MirrorSyncHandlers;
+    observability: MirrorObservabilityContext;
     observabilityHandlers: MirrorObservabilityHandlers;
     health: (req: express.Request, res: express.Response) => void;
   },
@@ -51,29 +54,29 @@ export function createMirrorConsoleHandlers(
     diagnostics: deps.observabilityHandlers.diagnostics,
     health: deps.health,
     async relatedScrolls(req, res) {
-      incrementMetric("graph_query_frequency");
-      logMirrorEvent("graph.query", { type: "related" });
+      deps.observability.incrementMetric("graph_query_frequency");
+      deps.observability.logEvent("graph.query", { type: "related" });
       const graph = await buildLoreGraph();
       const scroll = typeof req.query.scroll === "string" ? req.query.scroll : "";
       res.json({ related_scrolls: findRelatedScrolls(graph, scroll) });
     },
     async symbolClusters(req, res) {
-      incrementMetric("graph_query_frequency");
-      logMirrorEvent("graph.query", { type: "symbols" });
+      deps.observability.incrementMetric("graph_query_frequency");
+      deps.observability.logEvent("graph.query", { type: "symbols" });
       const graph = await buildLoreGraph();
       const symbol = typeof req.query.symbol === "string" ? req.query.symbol : "";
       res.json({ scrolls: findScrollsSharingSymbols(graph, symbol) });
     },
     async supersessionChains(req, res) {
-      incrementMetric("graph_query_frequency");
-      logMirrorEvent("graph.query", { type: "supersession" });
+      deps.observability.incrementMetric("graph_query_frequency");
+      deps.observability.logEvent("graph.query", { type: "supersession" });
       const graph = await buildLoreGraph();
       const scroll = typeof req.query.scroll === "string" ? req.query.scroll : "";
       res.json({ chain: findSupersessionChains(graph, scroll) });
     },
     async conceptClusters(_req, res) {
-      incrementMetric("graph_query_frequency");
-      logMirrorEvent("graph.query", { type: "clusters" });
+      deps.observability.incrementMetric("graph_query_frequency");
+      deps.observability.logEvent("graph.query", { type: "clusters" });
       const graph = await buildLoreGraph();
       res.json({ clusters: findConceptClusters(graph) });
     },
