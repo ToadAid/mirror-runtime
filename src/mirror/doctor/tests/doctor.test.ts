@@ -19,7 +19,7 @@ vi.mock("../index.js", () => ({
   runMirrorDoctor,
 }));
 
-const { runMirrorDoctorCli } = await import("../../telemetry_tail/cli.js");
+const { runMirrorDoctorCli } = await import("../../telemetry_tail/index.js");
 
 function getSubcommand(parent: Command, name: string): Command | undefined {
   return parent.commands.find((command) => command.name() === name);
