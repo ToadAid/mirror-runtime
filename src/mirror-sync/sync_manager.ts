@@ -1,4 +1,5 @@
 import express from "express";
+import type { MirrorObservabilityContext } from "../mirror-observability/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
 import {
   applyRemoteCanonUpdates,
@@ -39,6 +40,25 @@ export type MirrorSyncHandlers = {
   pull: (req: express.Request, res: express.Response) => Promise<unknown>;
 };
 
+export type MirrorSyncObservabilityHooks = {
+  onConflictWarning?: () => void;
+  onUpdatesPulled?: (count: number) => void;
+  onSyncFailure?: () => void;
+  onPeerAnnounced?: (payload: { peer_id: string; base_url: string }) => void;
+  onPullCompleted?: (payload: {
+    peer_id: string;
+    pulled_files: number;
+    conflicts: number;
+    graph_rebuilt: boolean;
+  }) => void;
+  onPullFailed?: (payload: { peer_id: string; error: string }) => void;
+};
+
+type MirrorSyncObservabilityContextLike = Pick<
+  MirrorObservabilityContext,
+  "incrementMetric" | "logEvent"
+>;
+
 type MirrorSyncManagerOptions = {
   nodeId: string;
   loreDir: string;
@@ -46,20 +66,52 @@ type MirrorSyncManagerOptions = {
   fetchImpl?: FetchLike;
   registry?: MirrorPeerRegistry;
   onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
-  observability?: {
-    onConflictWarning?: () => void;
-    onUpdatesPulled?: (count: number) => void;
-    onSyncFailure?: () => void;
-    onPeerAnnounced?: (payload: { peer_id: string; base_url: string }) => void;
-    onPullCompleted?: (payload: {
-      peer_id: string;
-      pulled_files: number;
-      conflicts: number;
-      graph_rebuilt: boolean;
-    }) => void;
-    onPullFailed?: (payload: { peer_id: string; error: string }) => void;
-  };
+  observability?: MirrorSyncObservabilityHooks | MirrorSyncObservabilityContextLike;
 };
+
+function hasMirrorSyncObservabilityContext(
+  observability: MirrorSyncManagerOptions["observability"],
+): observability is MirrorSyncObservabilityContextLike {
+  return (
+    !!observability &&
+    typeof observability === "object" &&
+    "incrementMetric" in observability &&
+    typeof observability.incrementMetric === "function" &&
+    "logEvent" in observability &&
+    typeof observability.logEvent === "function"
+  );
+}
+
+function normalizeMirrorSyncObservabilityHooks(
+  observability: MirrorSyncManagerOptions["observability"],
+): MirrorSyncObservabilityHooks {
+  if (!observability) {
+    return {};
+  }
+  if (!hasMirrorSyncObservabilityContext(observability)) {
+    return observability;
+  }
+  return {
+    onConflictWarning: () => {
+      observability.incrementMetric("conflict_warnings");
+    },
+    onUpdatesPulled: (count) => {
+      observability.incrementMetric("updates_pulled", count);
+    },
+    onSyncFailure: () => {
+      observability.incrementMetric("sync_failures");
+    },
+    onPeerAnnounced: (payload) => {
+      observability.logEvent("sync.peer.announced", payload);
+    },
+    onPullCompleted: (payload) => {
+      observability.logEvent("sync.pull.completed", payload);
+    },
+    onPullFailed: (payload) => {
+      observability.logEvent("sync.pull.failed", payload);
+    },
+  };
+}
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -237,6 +289,7 @@ function collectMirrorSyncPullNeededPaths(
 export function createMirrorSyncManager(options: MirrorSyncManagerOptions): MirrorSyncManager {
   const fetchImpl = options.fetchImpl ?? fetch;
   const registry = options.registry ?? createMirrorPeerRegistry();
+  const observability = normalizeMirrorSyncObservabilityHooks(options.observability);
   let localBaseUrl = options.baseUrl ? normalizeMirrorPeerBaseUrl(options.baseUrl) : null;
 
   return {
@@ -253,7 +306,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
         peer_id: peer.peer_id,
         base_url: peer.base_url,
       });
-      options.observability?.onPeerAnnounced?.({
+      observability.onPeerAnnounced?.({
         peer_id: peer.peer_id,
         base_url: peer.base_url,
       });
@@ -318,10 +371,10 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           remoteContents,
           metrics: {
             onConflictWarning: () => {
-              options.observability?.onConflictWarning?.();
+              observability.onConflictWarning?.();
             },
             onUpdatesPulled: (count) => {
-              options.observability?.onUpdatesPulled?.(count);
+              observability.onUpdatesPulled?.(count);
             },
           },
         });
@@ -338,7 +391,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           conflicts: canonResult.conflicts.length,
           graph_rebuilt: graphResult.rebuilt,
         });
-        options.observability?.onPullCompleted?.({
+        observability.onPullCompleted?.({
           peer_id: peer.peer_id,
           pulled_files: canonResult.pulledFiles.length,
           conflicts: canonResult.conflicts.length,
@@ -352,13 +405,13 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           graphResult,
         });
       } catch (error) {
-        options.observability?.onSyncFailure?.();
+        observability.onSyncFailure?.();
         registry.markStatus(peer.peer_id, "error", String(error));
         options.onRuntimeEvent?.("sync.pull.failed", {
           peer_id: peer.peer_id,
           error: String(error),
         });
-        options.observability?.onPullFailed?.({
+        observability.onPullFailed?.({
           peer_id: peer.peer_id,
           error: String(error),
         });
