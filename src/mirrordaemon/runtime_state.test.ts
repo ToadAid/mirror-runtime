@@ -204,7 +204,20 @@ describe("mirrordaemon runtime state", () => {
       wsConnections: 3,
       sseAvailable: true,
       wsAvailable: true,
-      peersKnown: 2,
+      peers: [
+        {
+          peer_id: "peer-1",
+          base_url: "http://127.0.0.1:7999",
+          last_seen_at: "2026-03-13T00:01:00.000Z",
+          sync_status: "idle",
+        },
+        {
+          peer_id: "peer-2",
+          base_url: "http://127.0.0.1:8000",
+          last_seen_at: "2026-03-13T00:02:00.000Z",
+          sync_status: "ok",
+        },
+      ],
     });
 
     expect(health.event_stream).toEqual(runtime.event_stream);
