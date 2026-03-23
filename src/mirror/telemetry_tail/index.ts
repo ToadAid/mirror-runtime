@@ -1,4 +1,8 @@
-export { runMirrorDoctorCli, runMirrorTelemetryTailCli } from "./cli.js";
+export {
+  registerMirrorTelemetryCli,
+  runMirrorDoctorCli,
+  runMirrorTelemetryTailCli,
+} from "./cli.js";
 export { buildTelemetryFilter, tailMirrorTelemetry } from "./tail.js";
 export type { MirrorTelemetryTailCliOptions } from "./cli.js";
 export type {
