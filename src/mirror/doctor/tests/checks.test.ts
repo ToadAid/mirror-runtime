@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runMirrorDoctorChecks } from "../checks.js";
+import { runMirrorDoctorChecks } from "../index.js";
 
 describe("mirror doctor checks", () => {
   it("detects Mirror-native identity env keys only", async () => {
