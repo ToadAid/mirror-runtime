@@ -10,6 +10,7 @@ import { createMirrorSyncHandlers, createMirrorSyncManager } from "../mirror-syn
 import {
   createMirrorObservabilityContext,
   createMirrorObservabilityHandlers,
+  getDefaultMirrorObservabilityContext,
   getMirrorMetrics,
   incrementMetric,
   resetMirrorDiagnostics,
@@ -246,7 +247,9 @@ describe("mirror observability", () => {
       createMockResponse() as never,
     );
 
-    const observabilityHandlers = createMirrorObservabilityHandlers();
+    const observabilityHandlers = createMirrorObservabilityHandlers(
+      getDefaultMirrorObservabilityContext(),
+    );
     const syncHandlers = createMirrorSyncHandlers(
       createMirrorSyncManager({
         nodeId: "observe-node",

@@ -1,8 +1,5 @@
 import express from "express";
-import {
-  getDefaultMirrorObservabilityContext,
-  type MirrorObservabilityContext,
-} from "./context.js";
+import { type MirrorObservabilityContext } from "./context.js";
 
 export type MirrorObservabilityHandlers = {
   metrics: (req: express.Request, res: express.Response) => void;
@@ -10,7 +7,7 @@ export type MirrorObservabilityHandlers = {
 };
 
 export function createMirrorObservabilityHandlers(
-  observability: MirrorObservabilityContext = getDefaultMirrorObservabilityContext(),
+  observability: MirrorObservabilityContext,
 ): MirrorObservabilityHandlers {
   return {
     metrics: (_req, res) => {
@@ -23,7 +20,7 @@ export function createMirrorObservabilityHandlers(
 }
 
 export function createMirrorObservabilityRouter(
-  handlers = createMirrorObservabilityHandlers(),
+  handlers: MirrorObservabilityHandlers,
 ): express.Router {
   const router = express.Router();
   router.get("/mirror/metrics", handlers.metrics);
