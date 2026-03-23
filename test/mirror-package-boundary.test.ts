@@ -34,9 +34,28 @@ describe("mirror package boundary", () => {
       "node --import tsx scripts/ci-mirror-smoke.ts",
     );
     expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
-    expect(packageJson.exports?.["./mirror-runtime"]).toBeDefined();
+    expect(packageJson.exports?.["./mirror-runtime"]).toBe("./dist/mirror-package.js");
     expect(packageJson.exports?.["./openclaw-compat"]).toBe("./dist/index.js");
     expect(packageJson.exports?.["./cli-entry"]).toBe("./mirror.mjs");
+  });
+
+  it("keeps canonical mirror exports quarantined from compat OpenClaw surfaces", () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
+    ) as {
+      exports?: Record<string, unknown>;
+    };
+    const mirrorPackageSource = fs.readFileSync(
+      path.join(process.cwd(), "src/mirror-package.ts"),
+      "utf8",
+    );
+
+    expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
+    expect(packageJson.exports?.["./mirror-runtime"]).toBe("./dist/mirror-package.js");
+    expect(packageJson.exports?.["./openclaw-compat"]).toBe("./dist/index.js");
+
+    expect(mirrorPackageSource).not.toContain("compat/openclaw");
+    expect(mirrorPackageSource).not.toContain("openclaw-compat");
   });
 
   it("defines an explicit openclaw compatibility workspace package", () => {
