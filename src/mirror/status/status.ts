@@ -50,7 +50,6 @@ export type GetMirrorStatusOptions = {
 
 export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<MirrorStatus> {
   const daemon = opts.runtimeHost.daemon;
-  const boot = daemon.getBootSnapshot();
   const peers = opts.runtimeHost.syncManager.listPeers();
   const baseUrl = opts.runtimeHost.syncManager.getLocalBaseUrl();
   const runtime = getMirrordaemonRuntimeState(daemon, {
@@ -66,10 +65,10 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
   return {
     runtime,
     service: {
-      lore_dir: boot.config.lore_dir,
-      provider_url: boot.config.provider_url,
-      operator_auth_configured: boot.config.operator_auth_configured,
-      workspace_users_root: boot.config.workspace_users_root,
+      lore_dir: health.service.lore_dir,
+      provider_url: health.service.provider_url,
+      operator_auth_configured: health.service.operator_auth_configured,
+      workspace_users_root: runtime.readiness.workspace.users_root,
     },
     provider: {
       configured: health.provider.configured,
@@ -88,16 +87,16 @@ export async function getMirrorStatus(opts: GetMirrorStatusOptions): Promise<Mir
       })),
     },
     lore: {
-      ready: boot.readiness.lore.ready,
-      discovered_files: boot.readiness.lore.discovered_files,
-      dir: boot.config.lore_dir,
+      ready: runtime.readiness.lore.ready,
+      discovered_files: runtime.readiness.lore.discovered_files,
+      dir: health.service.lore_dir,
     },
     workspace: {
-      ready: boot.readiness.workspace.ready,
-      users_root: boot.readiness.workspace.users_root,
+      ready: runtime.readiness.workspace.ready,
+      users_root: runtime.readiness.workspace.users_root,
     },
     sync: {
-      node_id: boot.readiness.sync.node_id,
+      node_id: runtime.node_id,
       base_url: health.service.base_url,
       peers_known: health.sync.peers_known,
     },
