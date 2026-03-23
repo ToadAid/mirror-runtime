@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { incrementMetric } from "../mirror-observability/index.js";
 import { ensureScrollIndexUpToDate } from "../mirror/lore_sources/index.js";
 import { validateLoreDraftInCorpusContext } from "../mirror/lore_validation/index.js";
 import type {
@@ -9,6 +8,11 @@ import type {
   MirrorCanonUpdatesSnapshot,
   MirrorSyncConflict,
 } from "./sync_types.js";
+
+type MirrorCanonSyncMetricHooks = {
+  onConflictWarning?: () => void;
+  onUpdatesPulled?: (count: number) => void;
+};
 
 async function listCanonicalMarkdownFiles(loreDir: string): Promise<string[]> {
   const files: string[] = [];
@@ -131,6 +135,7 @@ export async function applyRemoteCanonUpdates(params: {
   local: MirrorCanonUpdatesSnapshot;
   remote: MirrorCanonUpdatesSnapshot;
   remoteContents: Record<string, string>;
+  metrics?: MirrorCanonSyncMetricHooks;
 }): Promise<{
   pulledFiles: string[];
   skippedFiles: Array<{ path: string; reason: string }>;
@@ -145,7 +150,7 @@ export async function applyRemoteCanonUpdates(params: {
   for (const remoteFile of remoteByPath.values()) {
     const safePath = resolveSafeCanonPath(params.loreDir, remoteFile.path);
     if (!safePath) {
-      incrementMetric("conflict_warnings");
+      params.metrics?.onConflictWarning?.();
       conflicts.push({
         path: remoteFile.path,
         reason: "unsafe_path",
@@ -161,7 +166,7 @@ export async function applyRemoteCanonUpdates(params: {
     }
 
     if (localFile && localFile.updated_at_ms > remoteFile.updated_at_ms) {
-      incrementMetric("conflict_warnings");
+      params.metrics?.onConflictWarning?.();
       conflicts.push({
         path: remoteFile.path,
         reason: "local_newer",
@@ -175,7 +180,7 @@ export async function applyRemoteCanonUpdates(params: {
       localFile.updated_at_ms === remoteFile.updated_at_ms &&
       localFile.sha256 !== remoteFile.sha256
     ) {
-      incrementMetric("conflict_warnings");
+      params.metrics?.onConflictWarning?.();
       conflicts.push({
         path: remoteFile.path,
         reason: "same_timestamp_different_content",
@@ -189,7 +194,7 @@ export async function applyRemoteCanonUpdates(params: {
       params.remote.index_version < params.local.index_version &&
       remoteFile.updated_at_ms <= localFile.updated_at_ms
     ) {
-      incrementMetric("conflict_warnings");
+      params.metrics?.onConflictWarning?.();
       conflicts.push({
         path: remoteFile.path,
         reason: "remote_older_index",
@@ -210,7 +215,7 @@ export async function applyRemoteCanonUpdates(params: {
       draftContent: content,
     });
     if (validation.warningCount > 0) {
-      incrementMetric("conflict_warnings");
+      params.metrics?.onConflictWarning?.();
       conflicts.push({
         path: remoteFile.path,
         reason: "invalid_remote_canon",
@@ -225,7 +230,7 @@ export async function applyRemoteCanonUpdates(params: {
 
   if (pulledFiles.length > 0) {
     await ensureScrollIndexUpToDate(params.loreDir);
-    incrementMetric("updates_pulled", pulledFiles.length);
+    params.metrics?.onUpdatesPulled?.(pulledFiles.length);
   }
 
   return {

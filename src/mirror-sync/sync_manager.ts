@@ -304,6 +304,14 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           local: localUpdates.canon,
           remote: remoteUpdates.canon,
           remoteContents,
+          metrics: {
+            onConflictWarning: () => {
+              incrementMetric("conflict_warnings");
+            },
+            onUpdatesPulled: (count) => {
+              incrementMetric("updates_pulled", count);
+            },
+          },
         });
 
         const graphResult = await syncLocalGraphFromRemote({
