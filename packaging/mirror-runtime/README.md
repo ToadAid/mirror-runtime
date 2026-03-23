@@ -37,7 +37,7 @@ The package boundary intentionally excludes repository-only content:
 
 ## Linux-first Distribution Shape
 
-The generated distribution tree is:
+The generated distribution tree inside `mirror-runtime-linux.tar.gz` is:
 
 ```text
 dist/mirror-runtime-linux/
