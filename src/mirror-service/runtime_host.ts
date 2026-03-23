@@ -123,26 +123,7 @@ export async function createMirrorRuntimeHost(
     baseUrl: config.baseUrl,
     fetchImpl: deps.fetchImpl,
     onRuntimeEvent: daemon.publishRuntimeEvent,
-    observability: {
-      onConflictWarning: () => {
-        daemon.getObservability().incrementMetric("conflict_warnings");
-      },
-      onUpdatesPulled: (count) => {
-        daemon.getObservability().incrementMetric("updates_pulled", count);
-      },
-      onSyncFailure: () => {
-        daemon.getObservability().incrementMetric("sync_failures");
-      },
-      onPeerAnnounced: (payload) => {
-        daemon.getObservability().logEvent("sync.peer.announced", payload);
-      },
-      onPullCompleted: (payload) => {
-        daemon.getObservability().logEvent("sync.pull.completed", payload);
-      },
-      onPullFailed: (payload) => {
-        daemon.getObservability().logEvent("sync.pull.failed", payload);
-      },
-    },
+    observability: daemon.getObservability(),
   });
 
   return {
