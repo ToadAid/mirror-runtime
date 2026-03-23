@@ -1,5 +1,4 @@
 import express from "express";
-import { incrementMetric, logMirrorEvent } from "../mirror-observability/index.js";
 import type { FetchLike } from "../mirror-provider/index.js";
 import {
   applyRemoteCanonUpdates,
@@ -47,6 +46,19 @@ type MirrorSyncManagerOptions = {
   fetchImpl?: FetchLike;
   registry?: MirrorPeerRegistry;
   onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
+  observability?: {
+    onConflictWarning?: () => void;
+    onUpdatesPulled?: (count: number) => void;
+    onSyncFailure?: () => void;
+    onPeerAnnounced?: (payload: { peer_id: string; base_url: string }) => void;
+    onPullCompleted?: (payload: {
+      peer_id: string;
+      pulled_files: number;
+      conflicts: number;
+      graph_rebuilt: boolean;
+    }) => void;
+    onPullFailed?: (payload: { peer_id: string; error: string }) => void;
+  };
 };
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -241,7 +253,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
         peer_id: peer.peer_id,
         base_url: peer.base_url,
       });
-      logMirrorEvent("sync.peer.announced", {
+      options.observability?.onPeerAnnounced?.({
         peer_id: peer.peer_id,
         base_url: peer.base_url,
       });
@@ -306,10 +318,10 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           remoteContents,
           metrics: {
             onConflictWarning: () => {
-              incrementMetric("conflict_warnings");
+              options.observability?.onConflictWarning?.();
             },
             onUpdatesPulled: (count) => {
-              incrementMetric("updates_pulled", count);
+              options.observability?.onUpdatesPulled?.(count);
             },
           },
         });
@@ -326,7 +338,7 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           conflicts: canonResult.conflicts.length,
           graph_rebuilt: graphResult.rebuilt,
         });
-        logMirrorEvent("sync.pull.completed", {
+        options.observability?.onPullCompleted?.({
           peer_id: peer.peer_id,
           pulled_files: canonResult.pulledFiles.length,
           conflicts: canonResult.conflicts.length,
@@ -340,13 +352,13 @@ export function createMirrorSyncManager(options: MirrorSyncManagerOptions): Mirr
           graphResult,
         });
       } catch (error) {
-        incrementMetric("sync_failures");
+        options.observability?.onSyncFailure?.();
         registry.markStatus(peer.peer_id, "error", String(error));
         options.onRuntimeEvent?.("sync.pull.failed", {
           peer_id: peer.peer_id,
           error: String(error),
         });
-        logMirrorEvent("sync.pull.failed", {
+        options.observability?.onPullFailed?.({
           peer_id: peer.peer_id,
           error: String(error),
         });
