@@ -133,28 +133,29 @@ Current score: `yellow`
 - [x] `src/runtime/server.ts`, `src/runtime/brain-chat.ts`, `src/runtime/health.ts`, and `src/cli/mirror-cli.ts` are clearly marked as compatibility shims.
 - [x] Mirror-owned runtime modules do not read `OPENCLAW_*` env vars except in explicit compatibility files.
 - [x] Focused guardrail coverage exists for the main shims and the remaining legacy runtime entrypoints.
-- [ ] Canonical operator docs and entrypoints point to Mirror-native paths first.
+- [x] Canonical operator docs and entrypoints point to Mirror-native paths first.
 - [ ] Compatibility code is not the hidden owner of any required runtime behavior.
 
 Current reality:
 
 - Canonical Mirror-owned source no longer reads `OPENCLAW_*` directly outside tests and explicit compatibility paths.
+- Canonical entrypoint, operator, and JSON automation docs now point to Mirror-native paths first and describe `openclaw mirror ...` as compatibility-only.
 - Compatibility edges are still materially present at entrypoint and wrapper level, but they are now better quarantined and guarded.
-- This should remain yellow until the remaining compat entrypoints stop competing with canonical ownership in practice and docs/entrypoints point Mirror-native first.
+- This should remain yellow until the remaining compat entrypoints stop competing with canonical ownership in practice and compatibility code stops owning any required behavior.
 
 ### 7. Packaging and build boundary
 
-Current score: `red`
+Current score: `yellow`
 
-- [ ] Mirror has a first-class package and build boundary inside the repo.
-- [ ] Mirror artifacts can be built and tested without treating OpenClaw as the primary product identity.
-- [ ] Release and packaging paths for Mirror are explicit enough to survive a repo split.
+- [x] Mirror has a first-class package and build boundary inside the repo.
+- [x] Mirror artifacts can be built and tested without treating OpenClaw as the primary product identity.
+- [x] Release and packaging paths for Mirror are explicit enough to survive a repo split.
 
 Current reality:
 
-- Mirror runtime behavior is increasingly standalone.
-- Package, bin, and release identity are still shared enough that splitting now would be premature.
-- This is now a clearer next blocker than smoke-lane existence or basic compat-wrapper guardrails.
+- Mirror now has an explicit package boundary, standalone Linux runtime artifact, extracted-artifact smoke, dist verification, and bootstrap verification.
+- Package, bin, and release identity are materially more explicit and guarded than they were before the recent split-readiness PRs.
+- This area should remain yellow because the package/build boundary is now real, but the remaining blockers are runtime ownership and observability rather than packaging viability.
 
 ### 8. CI gates before split
 
@@ -162,14 +163,14 @@ Current score: `yellow`
 
 - [x] A dedicated Mirror runtime smoke lane exists.
 - [x] Split-critical runtime-boundary and daemon-truth tests are visible without depending on the full repo matrix.
-- [ ] A boundary gate prevents new OpenClaw-specific env/config coupling inside Mirror-owned runtime modules.
-- [ ] Mirror-specific checks are isolated enough to serve as a true split gate rather than an early smoke lane.
+- [x] Boundary gates prevent new OpenClaw-specific env/config and import/package coupling inside Mirror-owned runtime modules.
+- [x] Mirror-specific checks are isolated enough to serve as a true split gate rather than an early smoke lane.
 
 Current reality:
 
 - A dedicated Mirror-owned smoke target now exists and is wired into the dedicated Mirror runtime workflow.
-- Runtime-boundary, daemon-truth, websocket, CLI/operator-truth, and compatibility-quarantine seams are now visible in a narrow CI lane.
-- Dedicated split-readiness gates are still incomplete because env/config boundary enforcement is not yet a first-class CI gate.
+- Runtime-boundary, daemon-truth, websocket, CLI/operator-truth, compatibility-quarantine, packaged-runtime truth, and OpenClaw env/import boundary seams are now visible in a narrow CI lane.
+- Dedicated split-readiness gates now include first-class boundary enforcement for new OpenClaw-specific env/config and import/package coupling inside Mirror-owned modules.
 - macOS shard-order instability should be treated as a CI lane, not as a product seam in this checklist.
 
 ## Current known gaps
@@ -179,10 +180,9 @@ The next small, high-signal gaps remain:
 1. Move observability ownership under daemon/runtime control.
 2. Make any remaining console execution seams explicitly daemon-backed where they are still partial.
 3. Continue enriching daemon-owned runtime inspection only where sync/runtime understanding is still thin.
-4. Create a Mirror-native package/build boundary.
-5. Add a true CI boundary gate for new OpenClaw-specific env/config coupling inside Mirror-owned modules.
-6. Keep parity coverage growing only where a canonical operator/runtime seam is still weak.
-7. Continue shrinking compatibility entrypoints from “guarded” to “non-owning in practice.”
+4. Keep parity coverage growing only where a canonical operator/runtime seam is still weak.
+5. Continue shrinking compatibility entrypoints from “guarded” to “non-owning in practice.”
+6. Keep package/release verification narrow and trustworthy while the remaining runtime seams are closed.
 
 ## Do Not Split Before
 
