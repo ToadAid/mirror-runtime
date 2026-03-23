@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMirrorConsoleHandlers } from "../mirror-console/console_routes.js";
+import { createMirrorConsoleHandlers } from "../mirror-console/index.js";
 import { createMirrorGateway, createMirrorGatewayHandlers } from "../mirror-gateway/index.js";
 import { closeMirrorMemoryDb } from "../mirror-memory/db.js";
 import { reviewDraftForCanon } from "../mirror-review/index.js";
