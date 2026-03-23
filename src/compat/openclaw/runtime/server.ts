@@ -56,7 +56,7 @@ export async function startRuntimeServer(
 
   app.get("/health", async (_req, res) => {
     try {
-      const health = await handleHealthEndpoint(env, brainUrl, authToken);
+      const health = await handleHealthEndpoint(runtimeHost);
       res.json(health);
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });

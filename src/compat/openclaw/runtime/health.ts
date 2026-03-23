@@ -4,7 +4,8 @@
  * Canonical Mirror service health lives under `/mirror/health`.
  */
 
-import type { RuntimeEnv } from "../../../runtime.js";
+import type { MirrorRuntimeHost } from "../../../mirror-service/index.js";
+import { getMirrordaemonRuntimeState } from "../../../mirrordaemon/index.js";
 
 interface HealthResponse {
   ok: boolean;
@@ -21,19 +22,26 @@ interface HealthResponse {
   };
 }
 
+function hasConfiguredValue(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 export async function handleHealthEndpoint(
-  _env: RuntimeEnv,
-  brainUrl: string | undefined,
-  authToken: string | undefined,
+  runtimeHost: MirrorRuntimeHost,
 ): Promise<HealthResponse> {
   const mode = process.env.MIRROR_RUNTIME_MODE || "lan";
-  const version = process.env.MIRROR_RUNTIME_VERSION || "unknown";
+  const runtime = getMirrordaemonRuntimeState(runtimeHost.daemon, {
+    port: runtimeHost.config.port,
+    baseUrl: runtimeHost.syncManager.getLocalBaseUrl(),
+  });
   const commit = process.env.MIRROR_RUNTIME_COMMIT || "unknown";
+  const brainConfigured = hasConfiguredValue(runtimeHost.config.providerUrl);
+  const authConfigured = hasConfiguredValue(runtimeHost.config.providerAuthToken);
   const features: string[] = [];
-  if (brainUrl) {
+  if (brainConfigured) {
     features.push("brain");
   }
-  if (authToken) {
+  if (authConfigured) {
     features.push("auth");
   }
 
@@ -41,14 +49,14 @@ export async function handleHealthEndpoint(
     ok: true,
     time: new Date().toISOString(),
     mode: mode as "lan" | "intranet",
-    version,
+    version: runtime.version,
     commit,
     features,
     brain: {
-      configured: !!brainUrl,
+      configured: brainConfigured,
     },
     auth: {
-      configured: !!authToken,
+      configured: authConfigured,
     },
   };
 }
