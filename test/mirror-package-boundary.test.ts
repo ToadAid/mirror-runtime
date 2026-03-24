@@ -35,6 +35,8 @@ describe("mirror package boundary", () => {
     expect(packageJson.scripts?.["smoke:mirror"]).toBe(
       "node --import tsx scripts/ci-mirror-smoke.ts",
     );
+    expect(packageJson.scripts?.openclaw).toBeUndefined();
+    expect(packageJson.scripts?.["openclaw:rpc"]).toBeUndefined();
     expect(packageJson.files).not.toContain("openclaw.mjs");
     expect(packageJson.bin?.openclaw).toBeUndefined();
     expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
