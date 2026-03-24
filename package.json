@@ -39,7 +39,6 @@
   "exports": {
     ".": "./dist/mirror-package.js",
     "./mirror-runtime": "./dist/mirror-package.js",
-    "./openclaw-compat": "./dist/index.js",
     "./plugin-sdk": {
       "types": "./dist/plugin-sdk/index.d.ts",
       "default": "./dist/plugin-sdk/index.js"
