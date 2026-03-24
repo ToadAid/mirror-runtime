@@ -13,6 +13,13 @@ Compatibility-only path:
 
 - `openclaw mirror ...` for legacy diagnostics and telemetry workflows
 
+Boundary note:
+
+- `openclaw mirror ...` commands in this guide are compatibility-only
+- they are preserved for legacy operational workflows
+- they are not part of the canonical standalone Mirror operator surface
+- they are not part of the intended extracted Mirror-native repo surface
+
 Mirror provides operators with read-only inspection tools for:
 
 - Runtime diagnostics and health checks
@@ -78,6 +85,11 @@ Compatibility wrapper:
 ```bash
 openclaw mirror status
 ```
+
+Purpose:
+
+- Preserve legacy operator entrypoints during the compatibility period
+- Redirect operators to the canonical `mirror status` standalone surface
 
 ### passport
 
@@ -187,6 +199,11 @@ Compatibility wrapper:
 openclaw mirror verify-lore
 ```
 
+Purpose:
+
+- Preserve the legacy wrapper during the compatibility period
+- Keep the canonical standalone validation surface on `mirror verify-lore`
+
 ## Environment Variables
 
 ### Core telemetry flags
@@ -242,9 +259,13 @@ openclaw mirror status
 openclaw mirror telemetry tail
 ```
 
+Use this only when validating or debugging legacy compatibility paths.
+
 Compatibility debugging workflow:
 
 ```bash
 openclaw mirror telemetry index
 openclaw mirror telemetry query
 ```
+
+These telemetry commands remain compatibility-only and are not part of the standalone Mirror operator surface.
