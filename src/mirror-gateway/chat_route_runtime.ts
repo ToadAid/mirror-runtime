@@ -3,7 +3,7 @@ import {
   buildHttpChatAdapterEnvelope,
   type MirrorAdapterResponseEnvelope,
 } from "../mirror-adapters/index.js";
-import { incrementMetric, logMirrorEvent } from "../mirror-observability/index.js";
+import type { MirrorObservabilityContext } from "../mirror-observability/index.js";
 import type { MirrorPolicyContext } from "../mirror-policy/index.js";
 import { withMirrorCorrelation } from "../mirror-runtime/index.js";
 
@@ -22,6 +22,7 @@ type ExecuteMirrorGatewayChatRouteOptions = {
   executeAdapterRequest: (
     envelope: ReturnType<typeof buildHttpChatAdapterEnvelope>,
   ) => Promise<MirrorAdapterResponseEnvelope>;
+  observability: Pick<MirrorObservabilityContext, "incrementMetric" | "logEvent">;
   onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
   readIngressAdapterDescriptor: ReadIngressAdapterDescriptor;
   readIngressRoutePath: (req: express.Request) => string;
@@ -48,8 +49,8 @@ export async function executeMirrorGatewayChatRoute(
     const adapterDescriptor = options.readIngressAdapterDescriptor(
       options.readIngressRoutePath(req),
     );
-    incrementMetric("chat_requests");
-    logMirrorEvent("chat.pipeline", { route: "mirror.chat" });
+    options.observability.incrementMetric("chat_requests");
+    options.observability.logEvent("chat.pipeline", { route: "mirror.chat" });
     options.onRuntimeEvent?.(
       "chat.started",
       withMirrorCorrelation(

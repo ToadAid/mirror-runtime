@@ -4,7 +4,10 @@ import {
   buildHttpToolAdapterEnvelope,
   type MirrorAdapterResponseEnvelope,
 } from "../mirror-adapters/index.js";
-import { incrementMetric, logMirrorEvent } from "../mirror-observability/index.js";
+import {
+  getCurrentMirrorObservabilityContext,
+  type MirrorObservabilityContext,
+} from "../mirror-observability/index.js";
 import { type MirrorPolicyContext } from "../mirror-policy/index.js";
 import { type MirrorProviderConfig, type MirrorProviderPlane } from "../mirror-provider/index.js";
 import { resolveMirrorTraceId } from "../mirror-runtime/index.js";
@@ -83,6 +86,10 @@ export type MirrorGatewayHandlers = {
 export function createMirrorGatewayHandlers(
   registry = createMirrorToolRegistry(getMirrorNativeSkillTools()),
   options: {
+    observability?: Pick<
+      MirrorObservabilityContext,
+      "incrementMetric" | "incrementToolExecution" | "logEvent"
+    >;
     provider?: MirrorProviderConfig;
     providerPlane?: MirrorProviderPlane;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
@@ -93,6 +100,23 @@ export function createMirrorGatewayHandlers(
     ) => Promise<MirrorAdapterResponseEnvelope>;
   },
 ): MirrorGatewayHandlers {
+  const observability =
+    options.observability ??
+    ({
+      incrementMetric(name, amount) {
+        getCurrentMirrorObservabilityContext().incrementMetric(name, amount);
+      },
+      incrementToolExecution(toolName) {
+        getCurrentMirrorObservabilityContext().incrementToolExecution(toolName);
+      },
+      logEvent(event, fields) {
+        getCurrentMirrorObservabilityContext().logEvent(event, fields);
+      },
+    } satisfies Pick<
+      MirrorObservabilityContext,
+      "incrementMetric" | "incrementToolExecution" | "logEvent"
+    >);
+
   function buildPolicyContext(
     req: express.Request,
     body: Record<string, unknown>,
@@ -140,30 +164,30 @@ export function createMirrorGatewayHandlers(
 
   function recordWorkspaceToolObservability(toolName: string): void {
     if (toolName.startsWith("mirror.task.")) {
-      incrementMetric("workspace_events");
-      incrementMetric("task_operations");
-      logMirrorEvent("workspace.task", { tool: toolName });
+      observability.incrementMetric("workspace_events");
+      observability.incrementMetric("task_operations");
+      observability.logEvent("workspace.task", { tool: toolName });
       return;
     }
 
     if (toolName.startsWith("mirror.reminder.")) {
-      incrementMetric("workspace_events");
-      incrementMetric("reminder_operations");
-      logMirrorEvent("workspace.reminder", { tool: toolName });
+      observability.incrementMetric("workspace_events");
+      observability.incrementMetric("reminder_operations");
+      observability.logEvent("workspace.reminder", { tool: toolName });
       return;
     }
 
     if (toolName.startsWith("mirror.heartbeat.")) {
-      incrementMetric("workspace_events");
-      incrementMetric("heartbeat_operations");
-      logMirrorEvent("workspace.heartbeat", { tool: toolName });
+      observability.incrementMetric("workspace_events");
+      observability.incrementMetric("heartbeat_operations");
+      observability.logEvent("workspace.heartbeat", { tool: toolName });
       return;
     }
 
     if (toolName.startsWith("mirror.monk.")) {
-      incrementMetric("workspace_events");
-      incrementMetric("monk_actions");
-      logMirrorEvent("workspace.monk", { tool: toolName });
+      observability.incrementMetric("workspace_events");
+      observability.incrementMetric("monk_actions");
+      observability.logEvent("workspace.monk", { tool: toolName });
     }
   }
 
@@ -206,6 +230,7 @@ export function createMirrorGatewayHandlers(
         {
           buildPolicyContext,
           executeAdapterRequest: options.executeAdapterRequest,
+          observability,
           onRuntimeEvent: options.onRuntimeEvent,
           readIngressAdapterDescriptor,
           readIngressRoutePath,
@@ -231,6 +256,7 @@ export function createMirrorGatewayHandlers(
         {
           buildPolicyContext,
           executeAdapterRequest: options.executeAdapterRequest,
+          observability,
           onRuntimeEvent: options.onRuntimeEvent,
           readIngressAdapterDescriptor,
           readIngressRoutePath,
