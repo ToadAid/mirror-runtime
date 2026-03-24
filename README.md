@@ -30,9 +30,24 @@ If you want a personal, single-user assistant that feels local, fast, and always
 > The OpenClaw-branded material and `openclaw ...` examples below are upstream or compatibility context, not the intended extracted Mirror-native surface.
 > For Mirror-native operator paths in this repo, see `docs/mirror/MIRROR_OPERATOR_GUIDE.md`.
 
-Preferred setup: run the onboarding wizard (`openclaw onboard`) in your terminal.
-The wizard guides you step by step through setting up the gateway, workspace, channels, and skills. The CLI wizard is the recommended path and works on **macOS, Linux, and Windows (via WSL2; strongly recommended)**.
-Works with npm, pnpm, or bun.
+## Mirror-native entrypoints in this repo
+
+Use these paths first when operating `mirror-runtime` directly:
+
+```bash
+mirror help
+mirror status --json
+mirror verify-lore --json
+```
+
+Mirror-native operator guide:
+
+- `docs/mirror/MIRROR_OPERATOR_GUIDE.md`
+
+## Legacy OpenClaw setup examples (upstream or compatibility context)
+
+The examples below are preserved as upstream or compatibility context. They are not the intended extracted Mirror-native operator surface for this repository.
+
 New install? Start here: [Getting started](https://docs.openclaw.ai/start/getting-started)
 
 ## Sponsors
@@ -52,7 +67,7 @@ Model note: while any model is supported, I strongly recommend **Anthropic Pro/M
 - Models config + CLI: [Models](https://docs.openclaw.ai/concepts/models)
 - Auth profile rotation (OAuth vs API keys) + fallbacks: [Model failover](https://docs.openclaw.ai/concepts/model-failover)
 
-## Install (recommended)
+## Legacy OpenClaw install (upstream or compatibility context)
 
 Runtime: **Node ≥22**.
 
@@ -65,7 +80,7 @@ openclaw onboard --install-daemon
 
 The wizard installs the Gateway daemon (launchd/systemd user service) so it stays running.
 
-## Quick start (TL;DR)
+## Legacy OpenClaw quick start (upstream or compatibility context)
 
 Runtime: **Node ≥22**.
 
@@ -94,7 +109,7 @@ Upgrading? [Updating guide](https://docs.openclaw.ai/install/updating) (and run 
 Switch channels (git + npm): `openclaw update --channel stable|beta|dev`.
 Details: [Development channels](https://docs.openclaw.ai/install/development-channels).
 
-## From source (development)
+## Legacy OpenClaw from source (upstream or compatibility context)
 
 Prefer `pnpm` for builds from source. Bun is optional for running TypeScript directly.
 
