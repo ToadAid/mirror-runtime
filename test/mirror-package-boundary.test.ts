@@ -33,10 +33,12 @@ describe("mirror package boundary", () => {
     expect(packageJson.scripts?.["smoke:mirror"]).toBe(
       "node --import tsx scripts/ci-mirror-smoke.ts",
     );
+    expect(packageJson.bin?.openclaw).toBeUndefined();
     expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
     expect(packageJson.exports?.["./mirror-runtime"]).toBe("./dist/mirror-package.js");
     expect(packageJson.exports?.["./openclaw-compat"]).toBeUndefined();
     expect(packageJson.exports?.["./cli-entry"]).toBe("./mirror.mjs");
+    expect(packageJson.exports?.["./openclaw-cli-entry"]).toBeUndefined();
   });
 
   it("keeps canonical mirror exports quarantined from compat OpenClaw surfaces", () => {
