@@ -35,6 +35,12 @@ describe("mirror package boundary", () => {
     expect(packageJson.scripts?.["smoke:mirror"]).toBe(
       "node --import tsx scripts/ci-mirror-smoke.ts",
     );
+    expect(packageJson.scripts?.["android:assemble"]).toBeUndefined();
+    expect(packageJson.scripts?.["android:install"]).toBeUndefined();
+    expect(packageJson.scripts?.["android:test"]).toBeUndefined();
+    expect(packageJson.scripts?.["ios:build"]).toBeUndefined();
+    expect(packageJson.scripts?.["ios:gen"]).toBeUndefined();
+    expect(packageJson.scripts?.["ios:open"]).toBeUndefined();
     expect(packageJson.scripts?.openclaw).toBeUndefined();
     expect(packageJson.scripts?.["openclaw:rpc"]).toBeUndefined();
     expect(packageJson.files).not.toContain("openclaw.mjs");
