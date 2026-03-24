@@ -402,7 +402,7 @@ export function registerMirrorTelemetryCli(program: Command): void {
   mirror
     .command("verify-lore")
     .description("Compatibility wrapper for mirror verify-lore")
-    .option("--manifest <path>", "Lore manifest path (default: <MIRROR_LORE_DIR>/manifest.json)")
+    .option("--manifest <path>", "Lore manifest path (default: <resolved lore dir>/manifest.json)")
     .option("--dir <path>", "Canonical lore directory (default: MIRROR_LORE_DIR or ./lore-scrolls)")
     .option("--json", "Output machine-readable JSON", false)
     .action(async (opts: { manifest?: string; dir?: string; json?: boolean }) => {

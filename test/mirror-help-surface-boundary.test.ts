@@ -32,5 +32,8 @@ describe("mirror standalone help surface", () => {
     expect(schemaSource).toContain('command: "status"');
     expect(schemaSource).toContain('command: "verify-lore"');
     expect(schemaSource).toContain('command: "sync"');
+    expect(schemaSource).toContain(
+      "--manifest <path>: lore manifest path (default: <resolved lore dir>/manifest.json)",
+    );
   });
 });

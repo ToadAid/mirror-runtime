@@ -286,7 +286,7 @@ export const MIRROR_CLI_COMMAND_HELP: MirrorCliCommandHelp[] = [
     description: "Verify canonical lore files against a lore manifest.",
     args: [],
     options: [
-      "--manifest <path>: lore manifest path (default: <MIRROR_LORE_DIR>/manifest.json)",
+      "--manifest <path>: lore manifest path (default: <resolved lore dir>/manifest.json)",
       "--dir <path>: canonical lore directory (default: MIRROR_LORE_DIR or ./lore-scrolls)",
       "--json: emit stable machine-readable JSON",
     ],
