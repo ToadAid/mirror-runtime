@@ -9,6 +9,8 @@ describe("mirror package boundary", () => {
     ) as {
       name?: string;
       main?: string;
+      files?: string[];
+      bin?: Record<string, string>;
       scripts?: Record<string, string>;
       exports?: Record<string, unknown>;
     };
@@ -33,6 +35,7 @@ describe("mirror package boundary", () => {
     expect(packageJson.scripts?.["smoke:mirror"]).toBe(
       "node --import tsx scripts/ci-mirror-smoke.ts",
     );
+    expect(packageJson.files).not.toContain("openclaw.mjs");
     expect(packageJson.bin?.openclaw).toBeUndefined();
     expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
     expect(packageJson.exports?.["./mirror-runtime"]).toBe("./dist/mirror-package.js");
