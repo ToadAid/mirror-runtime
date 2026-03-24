@@ -2,13 +2,21 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { closeMirrorMemoryDb } from "../../../mirror-memory/db.js";
 import { createMirrorRuntimeHost } from "../../../mirror-service/index.js";
 import { formatMirrorStatusHuman } from "../format.js";
 import { getMirrorStatus } from "../status.js";
 
 const tempDirs: string[] = [];
+const originalMirrorMemoryDbPath = process.env.MIRROR_MEMORY_DB_PATH;
 
 afterEach(async () => {
+  closeMirrorMemoryDb();
+  if (originalMirrorMemoryDbPath === undefined) {
+    delete process.env.MIRROR_MEMORY_DB_PATH;
+  } else {
+    process.env.MIRROR_MEMORY_DB_PATH = originalMirrorMemoryDbPath;
+  }
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -18,9 +26,15 @@ async function createTempDir(): Promise<string> {
   return dir;
 }
 
+async function createTempMemoryDbPath(): Promise<string> {
+  const dir = await createTempDir();
+  return path.join(dir, "mirror-memory.sqlite");
+}
+
 describe("mirror status", () => {
   it("returns daemon-backed runtime and lore truth", async () => {
     const loreDir = await createTempDir();
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
     const runtimeHost = await createMirrorRuntimeHost({
       loreDir,
       nodeId: "status-node",
@@ -53,6 +67,7 @@ describe("mirror status", () => {
 
   it("reflects current daemon metrics and sessions", async () => {
     const loreDir = await createTempDir();
+    process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
     const runtimeHost = await createMirrorRuntimeHost({
       loreDir,
       nodeId: "status-metrics-node",

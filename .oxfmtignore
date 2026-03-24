@@ -1,0 +1,8 @@
+vendor/a2ui/renderers/lit/**
+apps/shared/OpenClawKit/Tools/CanvasA2UI/**
+assets/chrome-extension/**
+dist/**
+src/auto-reply/reply/export-html/template.js
+src/auto-reply/reply/export-html/template.security.test.ts
+src/auto-reply/reply/export-html/vendor/**
+src/canvas-host/a2ui/a2ui.bundle.js
