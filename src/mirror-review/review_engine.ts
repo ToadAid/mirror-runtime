@@ -1,10 +1,18 @@
-import { incrementMetric, logMirrorEvent } from "../mirror-observability/index.js";
+import {
+  getCurrentMirrorObservabilityContext,
+  type MirrorObservabilityContext,
+} from "../mirror-observability/index.js";
 import { retrieveCanonicalScrolls } from "../mirror/lore_retrieval/index.js";
 import { detectCanonConflicts } from "./canon_conflict.js";
 import { detectNarrativeSimilarity } from "./narrative_similarity.js";
 import { MIRROR_REVIEW_RULES } from "./review_rules.js";
 import type { MirrorCanonReviewResult, MirrorReviewStatus } from "./review_types.js";
 import { validateDraftSymbols } from "./symbol_validation.js";
+
+export type MirrorReviewObservability = Pick<
+  MirrorObservabilityContext,
+  "incrementMetric" | "logEvent"
+>;
 
 function deriveStatus(params: {
   conflicts: MirrorCanonReviewResult["conflicts"];
@@ -31,10 +39,14 @@ function deriveStatus(params: {
   return "approved";
 }
 
-export async function reviewDraftForCanon(params: {
-  loreDir: string;
-  draftContent: string;
-}): Promise<MirrorCanonReviewResult> {
+export async function reviewDraftForCanon(
+  params: {
+    loreDir: string;
+    draftContent: string;
+  },
+  deps: { observability?: MirrorReviewObservability } = {},
+): Promise<MirrorCanonReviewResult> {
+  const observability = deps.observability ?? getCurrentMirrorObservabilityContext();
   const retrieval = await retrieveCanonicalScrolls(params.draftContent, {
     loreDir: params.loreDir,
     limit: 5,
@@ -58,9 +70,9 @@ export async function reviewDraftForCanon(params: {
   });
 
   if (status === "conflict_detected") {
-    incrementMetric("review_conflicts");
+    observability.incrementMetric("review_conflicts");
   }
-  logMirrorEvent("review.decision", {
+  observability.logEvent("review.decision", {
     status,
     conflicts: conflicts.length,
     similarities: similarities.length,
