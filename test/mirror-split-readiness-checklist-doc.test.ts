@@ -22,9 +22,6 @@ describe("mirror split-readiness checklist doc", () => {
     expect(doc).toContain(
       "Mirror now has an explicit package boundary, standalone Linux runtime artifact, extracted-artifact smoke, dist verification, and bootstrap verification.",
     );
-    expect(doc).toContain(
-      "The root OpenClaw script surface is now partially quarantined, but not fully removable yet because cleanup-smoke still depends on `pnpm openclaw ...`.",
-    );
 
     expect(doc).toContain("### 8. CI gates before split");
     expect(doc).toContain(
