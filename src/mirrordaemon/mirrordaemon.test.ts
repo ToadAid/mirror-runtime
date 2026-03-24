@@ -109,7 +109,6 @@ describe("mirrordaemon", () => {
     const debug = getMirrordaemonDebugState(daemon, {
       port: 7788,
       baseUrl: "http://127.0.0.1:7788",
-      peersKnown: 2,
     });
 
     expect(runtime.node_id).toBe("daemon-node");

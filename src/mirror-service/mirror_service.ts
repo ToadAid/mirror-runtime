@@ -180,7 +180,6 @@ export async function startMirrorService(
       getMirrordaemonDebugState(daemon, {
         port: boundPort,
         baseUrl: syncManager.getLocalBaseUrl(),
-        peersKnown: observability.getMetrics().gauges.peers_known || syncManager.listPeers().length,
       }),
     );
   });
