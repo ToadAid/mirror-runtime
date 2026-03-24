@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { reviewDraftForCanon, type MirrorCanonReviewResult } from "../../../mirror-review/index.js";
+import { getCurrentMirrorObservabilityContext } from "../../../mirror-observability/index.js";
+import {
+  reviewDraftForCanon,
+  type MirrorCanonReviewResult,
+  type MirrorReviewObservability,
+} from "../../../mirror-review/index.js";
 import { resolveLoreRetrievalRoot } from "../../lore_retrieval/index.js";
 import { ensureScrollIndexUpToDate } from "../../lore_sources/scroll_index.js";
 import {
@@ -225,6 +230,7 @@ async function writeCanonicalFileAtomically(finalPath: string, content: string):
 }
 
 export async function commitScroll(input: CommitScrollInput): Promise<CommitScrollResult> {
+  const observability: MirrorReviewObservability = getCurrentMirrorObservabilityContext();
   const params = validateInput(input);
   const family =
     input.family_override ??
@@ -260,10 +266,15 @@ export async function commitScroll(input: CommitScrollInput): Promise<CommitScro
     draftPath: finalFilename,
     draftContent: finalContent,
   });
-  const review = await reviewDraftForCanon({
-    loreDir,
-    draftContent: finalContent,
-  });
+  const review = await reviewDraftForCanon(
+    {
+      loreDir,
+      draftContent: finalContent,
+    },
+    {
+      observability,
+    },
+  );
 
   if (validation.warningCount > 0) {
     return {

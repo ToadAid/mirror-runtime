@@ -1,4 +1,5 @@
 export { reviewDraftForCanon } from "./review_engine.js";
+export type { MirrorReviewObservability } from "./review_engine.js";
 export { MIRROR_REVIEW_RULES } from "./review_rules.js";
 export { detectCanonConflicts } from "./canon_conflict.js";
 export { detectNarrativeSimilarity } from "./narrative_similarity.js";
