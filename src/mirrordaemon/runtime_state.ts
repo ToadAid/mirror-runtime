@@ -222,7 +222,7 @@ export function buildHealthSummary(
 
 export function buildDebugSnapshot(
   daemon: Mirrordaemon,
-  overrides: RuntimeStateOverrides & { peersKnown?: number } = {},
+  overrides: RuntimeStateOverrides = {},
 ): MirrordaemonDebugSnapshot {
   const observability = daemon.getObservability();
   return {
