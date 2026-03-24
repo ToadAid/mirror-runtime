@@ -63,7 +63,7 @@ pnpm gateway:dev
 OPENCLAW_PROFILE=dev openclaw tui
 ```
 
-If you don’t have a global install yet, run the CLI via `pnpm openclaw ...`.
+If you don’t have a global install yet, run the canonical repo CLI via `pnpm mirror ...`.
 
 What this does:
 
