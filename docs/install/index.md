@@ -126,7 +126,7 @@ For VPS/cloud hosts, avoid third-party "1-click" marketplace images when possibl
         pnpm link --global
         ```
 
-        Alternatively, skip the link and run commands via `pnpm openclaw ...` from inside the repo.
+        Alternatively, skip the link and run canonical repo commands via `pnpm mirror ...` from inside the repo.
       </Step>
       <Step title="Run onboarding">
         ```bash
