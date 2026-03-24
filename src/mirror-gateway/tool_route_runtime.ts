@@ -4,7 +4,7 @@ import {
   buildHttpToolAdapterEnvelope,
   type MirrorAdapterResponseEnvelope,
 } from "../mirror-adapters/index.js";
-import { incrementToolExecution, logMirrorEvent } from "../mirror-observability/index.js";
+import type { MirrorObservabilityContext } from "../mirror-observability/index.js";
 import type { MirrorPolicyContext } from "../mirror-policy/index.js";
 import { withMirrorCorrelation } from "../mirror-runtime/index.js";
 import type { MirrorSkillTool } from "../mirror/skills/index.js";
@@ -25,6 +25,7 @@ type ExecuteMirrorGatewayToolRouteOptions = {
   executeAdapterRequest: (
     envelope: ReturnType<typeof buildHttpToolAdapterEnvelope>,
   ) => Promise<MirrorAdapterResponseEnvelope>;
+  observability: Pick<MirrorObservabilityContext, "incrementToolExecution" | "logEvent">;
   onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
   readIngressAdapterDescriptor: ReadIngressAdapterDescriptor;
   readIngressRoutePath: (req: express.Request) => string;
@@ -78,9 +79,9 @@ export async function executeMirrorGatewayToolRoute(
         },
       ),
     );
-    incrementToolExecution(options.tool.metadata.name);
-    logMirrorEvent("tool.execution", { tool: options.tool.metadata.name });
-    logMirrorEvent("action.execution", { action: options.tool.metadata.name });
+    options.observability.incrementToolExecution(options.tool.metadata.name);
+    options.observability.logEvent("tool.execution", { tool: options.tool.metadata.name });
+    options.observability.logEvent("action.execution", { action: options.tool.metadata.name });
     options.onRuntimeEvent?.(
       "action.execution.started",
       withMirrorCorrelation(

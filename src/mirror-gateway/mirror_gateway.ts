@@ -14,6 +14,7 @@ import {
   type MirrorAdapterRequestEnvelope,
   type MirrorAdapterResponseEnvelope,
 } from "../mirror-adapters/index.js";
+import type { MirrorObservabilityContext } from "../mirror-observability/index.js";
 import {
   buildMirrorChatPolicyTarget,
   buildMirrorAdapterPolicyTarget,
@@ -185,7 +186,14 @@ function buildAdapterPolicyContext(envelope: MirrorAdapterRequestEnvelope): Mirr
 
 export function createMirrorGateway(
   basePath = "/mirror",
-  options: { providerPlane?: MirrorProviderPlane; policy?: MirrorPolicyEngine } = {},
+  options: {
+    observability?: Pick<
+      MirrorObservabilityContext,
+      "incrementMetric" | "incrementToolExecution" | "logEvent"
+    >;
+    providerPlane?: MirrorProviderPlane;
+    policy?: MirrorPolicyEngine;
+  } = {},
 ): MirrorGateway {
   const registry = createMirrorToolRegistry(getMirrorNativeSkillTools());
   const actionRuntime = createMirrorActionRuntime(
@@ -309,6 +317,7 @@ export function createMirrorGateway(
   }
 
   const handlers = createMirrorGatewayHandlers(toolRegistry, {
+    observability: options.observability,
     providerPlane: options.providerPlane,
     executeAdapterRequest: executeAdapterRequestInternal,
   });

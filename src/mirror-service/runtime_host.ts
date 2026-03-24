@@ -116,7 +116,10 @@ export async function createMirrorRuntimeHost(
     lifecycle,
     providerPlane,
   });
-  const gateway = createMirrorGateway("/mirror", { providerPlane });
+  const gateway = createMirrorGateway("/mirror", {
+    observability: daemon.getObservability(),
+    providerPlane,
+  });
   const syncManager = createMirrorSyncManager({
     nodeId: config.nodeId,
     loreDir: config.loreDir,
