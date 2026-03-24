@@ -4,7 +4,7 @@ import {
   type MirrorRuntimeCorrelation,
 } from "../mirror-runtime/index.js";
 import type { MirrorServiceConfig } from "../mirror-service/config.js";
-import type { FetchLike } from "./mirror_provider.js";
+import type { FetchLike, MirrorProviderObservability } from "./mirror_provider.js";
 import { executeMirrorProviderRequest } from "./mirror_provider.js";
 import type { MirrorProviderConfig, MirrorProviderRequest } from "./provider_request.js";
 import type { MirrorProviderResponse } from "./provider_response.js";
@@ -66,6 +66,7 @@ export type MirrorProviderPlane = {
     request: MirrorProviderRequest,
     deps?: {
       fetchImpl?: FetchLike;
+      observability?: MirrorProviderObservability;
       onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
       selection?: MirrorProviderSelectionInput;
       correlation?: Partial<MirrorRuntimeCorrelation>;
@@ -253,6 +254,7 @@ export function createMirrorProviderPlane(
             toProviderConfig(entry.descriptor),
             {
               fetchImpl: deps.fetchImpl,
+              observability: deps.observability,
               correlation,
               onRuntimeEvent: (type, payload) => {
                 deps.onRuntimeEvent?.(type, withMirrorCorrelation(payload ?? {}, correlation));

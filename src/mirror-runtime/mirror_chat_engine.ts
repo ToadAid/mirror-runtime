@@ -1,4 +1,7 @@
-import { logMirrorEvent, recordLatency } from "../mirror-observability/index.js";
+import {
+  getCurrentMirrorObservabilityContext,
+  type MirrorObservabilityContext,
+} from "../mirror-observability/index.js";
 import {
   buildPrimaryProviderDescriptorFromConfig,
   createMirrorProviderPlane,
@@ -15,6 +18,11 @@ import type {
   MirrorChatResponse,
   MirrorPreparedChatRequest,
 } from "./mirror_response.js";
+
+type MirrorChatRuntimeObservability = Pick<
+  MirrorObservabilityContext,
+  "recordLatency" | "logEvent"
+>;
 
 function isDebugMode(): boolean {
   const level = (process.env.MIRROR_LOG_LEVEL ?? "").toLowerCase();
@@ -73,8 +81,12 @@ function resolveUserId(request: MirrorChatRequest): string | undefined {
 
 export async function prepareMirrorChatRequest(
   request: MirrorChatRequest,
+  deps: {
+    observability?: MirrorChatRuntimeObservability;
+  } = {},
 ): Promise<MirrorPreparedChatRequest> {
   validateMirrorChatRequest(request);
+  const observability = deps.observability ?? getCurrentMirrorObservabilityContext();
 
   const temperature =
     request.temperature !== undefined ? Math.min(Math.max(request.temperature, 0), 1) : 0.7;
@@ -92,8 +104,8 @@ export async function prepareMirrorChatRequest(
       userId: resolveUserId(request),
     });
     const retrievalDurationMs = Date.now() - retrievalStartedAt;
-    recordLatency("retrieval_time_ms", retrievalDurationMs);
-    logMirrorEvent("chat.retrieval", {
+    observability.recordLatency("retrieval_time_ms", retrievalDurationMs);
+    observability.logEvent("chat.retrieval", {
       lore_dir: retrieval.diagnostics.loreDir,
       returned_candidates: retrieval.candidates.length,
       latency_ms: retrievalDurationMs,
@@ -163,6 +175,7 @@ export async function executeMirrorChatRequest(
 export async function executeMirrorChatWithProvider(
   request: MirrorChatRequest,
   deps: {
+    observability?: MirrorChatRuntimeObservability;
     provider: MirrorProviderConfig;
     fetchImpl?: FetchLike;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
@@ -180,6 +193,7 @@ export async function executeMirrorChatWithProvider(
   return executeMirrorChatWithProviderPlane(request, {
     providerPlane,
     fetchImpl: deps.fetchImpl,
+    observability: deps.observability,
     onRuntimeEvent: deps.onRuntimeEvent,
   });
 }
@@ -187,6 +201,7 @@ export async function executeMirrorChatWithProvider(
 export async function executeMirrorChatWithProviderPlane(
   request: MirrorChatRequest,
   deps: {
+    observability?: MirrorChatRuntimeObservability;
     providerPlane: MirrorProviderPlane;
     fetchImpl?: FetchLike;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
@@ -198,7 +213,9 @@ export async function executeMirrorChatWithProviderPlane(
     };
   },
 ): Promise<MirrorChatResponse> {
-  const prepared = await prepareMirrorChatRequest(request);
+  const prepared = await prepareMirrorChatRequest(request, {
+    observability: deps.observability,
+  });
   const correlation = mergeMirrorCorrelation(request.correlation, deps.correlation, {
     session_id: request.session?.session_id,
     provider_id:
@@ -206,6 +223,7 @@ export async function executeMirrorChatWithProviderPlane(
   });
   const execution = await deps.providerPlane.execute(prepared.modelRequest, {
     fetchImpl: deps.fetchImpl,
+    observability: deps.observability,
     onRuntimeEvent: deps.onRuntimeEvent,
     correlation,
     selection: {
