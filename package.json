@@ -102,8 +102,6 @@
     "mac:restart": "bash scripts/restart-mac.sh",
     "mirror": "node mirror.mjs",
     "moltbot:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
-    "openclaw": "node scripts/run-node.mjs",
-    "openclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "package:mirror-runtime": "pnpm build:mirror && node --import tsx scripts/assemble-mirror-runtime-dist.ts",
     "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
     "prepack": "pnpm build && pnpm ui:build",
