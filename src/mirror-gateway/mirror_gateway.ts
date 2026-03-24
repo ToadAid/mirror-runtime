@@ -189,7 +189,7 @@ export function createMirrorGateway(
   options: {
     observability?: Pick<
       MirrorObservabilityContext,
-      "incrementMetric" | "incrementToolExecution" | "logEvent"
+      "incrementMetric" | "incrementToolExecution" | "recordLatency" | "logEvent"
     >;
     providerPlane?: MirrorProviderPlane;
     policy?: MirrorPolicyEngine;
@@ -244,6 +244,7 @@ export function createMirrorGateway(
     return executeMirrorChatWithProviderPlane(request, {
       providerPlane,
       fetchImpl: deps.fetchImpl,
+      observability: options.observability,
       onRuntimeEvent: deps.onRuntimeEvent,
       correlation: deps.correlation,
     });

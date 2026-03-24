@@ -1,16 +1,24 @@
-import { logMirrorEvent, recordLatency } from "../mirror-observability/index.js";
+import {
+  getCurrentMirrorObservabilityContext,
+  type MirrorObservabilityContext,
+} from "../mirror-observability/index.js";
 import { withMirrorCorrelation, type MirrorRuntimeCorrelation } from "../mirror-runtime/index.js";
 import { buildMirrorProviderHeaders } from "./provider_auth.js";
 import type { MirrorProviderConfig, MirrorProviderRequest } from "./provider_request.js";
 import type { MirrorProviderResponse } from "./provider_response.js";
 
 export type FetchLike = typeof fetch;
+export type MirrorProviderObservability = Pick<
+  MirrorObservabilityContext,
+  "recordLatency" | "logEvent"
+>;
 
 export async function executeMirrorProviderRequest(
   request: MirrorProviderRequest,
   config: MirrorProviderConfig,
   deps: {
     fetchImpl?: FetchLike;
+    observability?: MirrorProviderObservability;
     onRuntimeEvent?: (type: string, payload?: Record<string, unknown>) => void;
     correlation?: Partial<MirrorRuntimeCorrelation>;
   } = {},
@@ -32,6 +40,7 @@ export async function executeMirrorProviderRequest(
   );
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
+  const observability = deps.observability ?? getCurrentMirrorObservabilityContext();
 
   try {
     const response = await (deps.fetchImpl ?? fetch)(config.url, {
@@ -48,7 +57,7 @@ export async function executeMirrorProviderRequest(
 
     const payload = (await response.json()) as MirrorProviderResponse;
     const durationMs = Date.now() - startedAt;
-    recordLatency("provider_latency_ms", durationMs);
+    observability.recordLatency("provider_latency_ms", durationMs);
     deps.onRuntimeEvent?.(
       "provider.call.finished",
       withMirrorCorrelation(
@@ -60,7 +69,7 @@ export async function executeMirrorProviderRequest(
         deps.correlation,
       ),
     );
-    logMirrorEvent("provider.call", {
+    observability.logEvent("provider.call", {
       url: config.url,
       latency_ms: durationMs,
     });
