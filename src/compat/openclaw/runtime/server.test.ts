@@ -286,12 +286,10 @@ describe("compat runtime server", () => {
     const executeAdapterRequestSpy = vi.spyOn(runtimeHost, "executeAdapterRequest");
 
     try {
-      const app = await startRuntimeServer(
-        createNonExitingRuntime(),
-        "http://brain.local/v1/chat/completions",
-        "token",
-        { runtimeHost, fetchImpl },
-      );
+      const app = await startRuntimeServer(createNonExitingRuntime(), undefined, undefined, {
+        runtimeHost,
+        fetchImpl,
+      });
       const body = (await requestJsonFromApp(app, "POST", "/api/brain/chat", {
         headers: {
           "x-mirror-session-id": "sess-compat-1",
@@ -496,15 +494,15 @@ describe("compat runtime server", () => {
     process.env.MIRROR_LORE_DIR = loreDir;
     process.env.MIRROR_MEMORY_DB_PATH = await createTempMemoryDbPath();
 
-    const runtimeHost = await createMirrorRuntimeHost({ loreDir });
+    const runtimeHost = await createMirrorRuntimeHost({
+      loreDir,
+      providerUrl: "http://brain.local/v1/chat/completions",
+    });
     const executeAdapterRequestSpy = vi.spyOn(runtimeHost, "executeAdapterRequest");
     try {
-      const app = await startRuntimeServer(
-        createNonExitingRuntime(),
-        "http://brain.local/v1/chat/completions",
-        undefined,
-        { runtimeHost },
-      );
+      const app = await startRuntimeServer(createNonExitingRuntime(), undefined, undefined, {
+        runtimeHost,
+      });
       const response = await requestResponseFromApp(app, "POST", "/api/brain/chat", {
         body: {
           model: "mirror-default",
