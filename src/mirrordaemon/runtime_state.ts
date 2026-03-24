@@ -190,7 +190,6 @@ export function buildHealthSummary(
 ): MirrordaemonHealthSummary {
   const runtime = buildRuntimeSummary(daemon, overrides);
   const boot = daemon.getBootSnapshot();
-  const metrics = daemon.getObservability().getMetrics();
 
   return {
     ...runtime,
@@ -211,7 +210,7 @@ export function buildHealthSummary(
       fallback_available: boot.readiness.provider.fallback_available,
     },
     sync: {
-      peers_known: overrides.peers?.length ?? metrics.gauges.peers_known ?? 0,
+      peers_known: overrides.peers?.length ?? 0,
     },
     observability: {
       metrics_available: true,
