@@ -44,6 +44,8 @@ export async function startRuntimeServer(
       },
       { fetchImpl: deps.fetchImpl },
     ));
+  const providerUrl = runtimeHost.config.providerUrl;
+  const providerAuthToken = runtimeHost.config.providerAuthToken;
   const { gateway, providerPlane, daemon } = runtimeHost;
   const handlers = createMirrorGatewayHandlers(gateway.registry, {
     providerPlane,
@@ -65,10 +67,10 @@ export async function startRuntimeServer(
 
   app.post("/api/brain/chat", async (req, res) => {
     try {
-      if (!brainUrl) {
+      if (!providerUrl) {
         return res.status(400).json({ error: "brainUrl not configured" });
       }
-      if (!authToken) {
+      if (!providerAuthToken) {
         return res.status(400).json({ error: "authToken not configured" });
       }
 
@@ -95,8 +97,8 @@ export async function startRuntimeServer(
           }),
           {
             provider: {
-              url: brainUrl,
-              authToken,
+              url: providerUrl,
+              authToken: providerAuthToken,
             },
             fetchImpl: deps.fetchImpl,
           },
