@@ -155,7 +155,6 @@ Current reality:
 
 - Mirror now has an explicit package boundary, standalone Linux runtime artifact, extracted-artifact smoke, dist verification, and bootstrap verification.
 - Package, bin, and release identity are materially more explicit and guarded than they were before the recent split-readiness PRs.
-- The root OpenClaw script surface is now partially quarantined, but not fully removable yet because cleanup-smoke still depends on `pnpm openclaw ...`.
 - This area should remain yellow because the package/build boundary is now real, but the remaining blockers are runtime ownership and observability rather than packaging viability.
 
 ### 8. CI gates before split
