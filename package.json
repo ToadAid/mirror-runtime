@@ -14,8 +14,7 @@
     "url": "git+https://github.com/toadaid/mirror-runtime.git"
   },
   "bin": {
-    "mirror": "mirror.mjs",
-    "openclaw": "openclaw.mjs"
+    "mirror": "mirror.mjs"
   },
   "directories": {
     "doc": "docs",
@@ -47,8 +46,7 @@
       "types": "./dist/plugin-sdk/account-id.d.ts",
       "default": "./dist/plugin-sdk/account-id.js"
     },
-    "./cli-entry": "./mirror.mjs",
-    "./openclaw-cli-entry": "./openclaw.mjs"
+    "./cli-entry": "./mirror.mjs"
   },
   "scripts": {
     "android:assemble": "cd apps/android && ./gradlew :app:assembleDebug",
