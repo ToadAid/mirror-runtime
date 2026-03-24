@@ -35,7 +35,7 @@ describe("mirror package boundary", () => {
     );
     expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
     expect(packageJson.exports?.["./mirror-runtime"]).toBe("./dist/mirror-package.js");
-    expect(packageJson.exports?.["./openclaw-compat"]).toBe("./dist/index.js");
+    expect(packageJson.exports?.["./openclaw-compat"]).toBeUndefined();
     expect(packageJson.exports?.["./cli-entry"]).toBe("./mirror.mjs");
   });
 
@@ -52,7 +52,7 @@ describe("mirror package boundary", () => {
 
     expect(packageJson.exports?.["."]).toBe("./dist/mirror-package.js");
     expect(packageJson.exports?.["./mirror-runtime"]).toBe("./dist/mirror-package.js");
-    expect(packageJson.exports?.["./openclaw-compat"]).toBe("./dist/index.js");
+    expect(packageJson.exports?.["./openclaw-compat"]).toBeUndefined();
 
     expect(mirrorPackageSource).not.toContain("compat/openclaw");
     expect(mirrorPackageSource).not.toContain("openclaw-compat");
